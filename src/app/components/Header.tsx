@@ -210,10 +210,10 @@ const Header = () => {
             }}
             onMouseEnter={() => setIsLogoHovered(true)}
             onMouseLeave={() => setIsLogoHovered(false)}
-            aria-label="AltrSeed Home"
+            aria-label="PoliDao Home"
           >
             <Image
-              src="/images/LogoPisaneAltrSeed.png"
+              src="/images/PoliDaoLogo.png"
               alt="AltrSeed"
               width={140}
               height={30}

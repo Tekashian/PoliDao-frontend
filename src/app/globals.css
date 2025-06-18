@@ -14,7 +14,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #E0f0ff;
     --foreground: #ededed;
   }
 }
@@ -24,3 +24,41 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* src/app/globals.css */
+html, body, #__next {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* 3D-Hero Banner */
+.hero-3d-wrapper {
+  perspective: 1000px;
+}
+
+.hero-3d {
+  width: 100%;
+  height: 50vh;
+  position: relative;
+  transform-style: preserve-3d;
+  transform-origin: center center;
+  transition: transform 0.6s ease-out; /* łagodniejszy powrót */
+}
+
+.hero-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 1; /* pełna nieprzezroczystość */
+}
+
+
+
+.layer-back  { transform: translateZ(-200px) scale(1.2); z-index: 10; }
+.layer-mid   { transform: translateZ(   0px) scale(1);   z-index: 20; }
+.layer-front { transform: translateZ( 200px) scale(0.8); z-index: 30; }

@@ -9,8 +9,8 @@ import ContextProvider from "./context";
 import Header from "./components/Header";
 
 export const metadata = {
-  title: "AltrSeed Crowdfunding",
-  description: "Zdecentralizowana platforma crowdfundingowa",
+  title: "PoliDao",
+  description: "Dla ludzi ktorzy nie chca przynalezec a chca miec wplyw",
 };
 
 export default function RootLayout({
