@@ -1,45 +1,62 @@
-// src/hooks/useCrowdfund.ts
-import { useReadContract } from 'wagmi';
-import { polidaoContractConfig } from '../blockchain/contracts'; // teraz używamy PoliDao
-import { sepolia } from '@reown/appkit/networks';              // sieć Sepolia
+import { useAccount, useReadContracts } from 'wagmi';
+import { polidaoContractConfig } from '../blockchain/contracts';
+import { sepolia } from '@reown/appkit/networks';
 
-// Typ pojedynczej kampanii, zgodny ze strukturą z ABI PoliDao
 export interface Campaign {
-  creator: `0x${string}`;         // adres twórcy kampanii
-  acceptedToken: `0x${string}`;   // adres tokena (USDC)
-  targetAmount: bigint;           // docelowa kwota w najmniejszych jednostkach tokena
-  raisedAmount: bigint;           // dotychczas zebrana kwota
-  totalEverRaised: bigint;        // całościowa kwota (jeśli np. były zwroty)
-  dataCID: string;                // CID metadanych na IPFS
-  endTime: bigint;                // timestamp zakończenia kampanii
-  status: number;                 // status kampanii (enum)
-  creationTimestamp: bigint;      // timestamp utworzenia
-  reclaimDeadline: bigint;        // deadline na zwrot środków po nieudanej kampanii
-  campaignType: number;           // typ kampanii (enum)
-  campaignId?: number;            // lokalne ID przypisane na podstawie indeksu w tablicy
+  id: number;
+  creator: `0x${string}`;
+  token: `0x${string}`;
+  target: bigint;
+  raised: bigint;
+  endTime: bigint;
+  isFlexible: boolean;
+  closureInitiated: boolean;
 }
 
 export function useGetAllCampaigns() {
-  const {
-    data: allCampaignsData,
-    isLoading,
-    error,
-    refetch
-  } = useReadContract({
-    address: polidaoContractConfig.address,
-    abi: polidaoContractConfig.abi,
-    functionName: 'getAllCampaigns',
-    chainId: sepolia.id,
+  const { address } = useAccount();
+
+  const fundraiserIds = useReadContracts({
+    contracts: [
+      {
+        address: polidaoContractConfig.address,
+        abi: polidaoContractConfig.abi,
+        functionName: 'getAllFundraiserIds',
+        chainId: sepolia.id,
+      },
+    ],
   });
 
-  // Dodajemy campaignId na podstawie pozycji w zwróconej tablicy
-  const campaignsWithIds = allCampaignsData?.map((campaign, index) => ({
-    ...campaign,
-    campaignId: index,
-  })) as Campaign[] | undefined;
+  const ids = fundraiserIds.data?.[0]?.result as bigint[] | undefined;
+
+  const fundraiserCalls = ids?.map((id) => ({
+    address: polidaoContractConfig.address,
+    abi: polidaoContractConfig.abi,
+    functionName: 'getFundraiserSummary',
+    args: [id],
+    chainId: sepolia.id,
+  })) ?? [];
+
+  const { data: campaignData, isLoading, error, refetch } = useReadContracts({
+    contracts: fundraiserCalls,
+  });
+
+  const campaigns = campaignData?.map((res, idx) => {
+    const [id, creator, token, target, raised, endTime, isFlexible, closureInitiated] = res.result as any[];
+    return {
+      id: Number(id),
+      creator,
+      token,
+      target,
+      raised,
+      endTime,
+      isFlexible,
+      closureInitiated,
+    } as Campaign;
+  });
 
   return {
-    campaigns: campaignsWithIds,
+    campaigns,
     isLoading,
     error,
     refetchCampaigns: refetch,
