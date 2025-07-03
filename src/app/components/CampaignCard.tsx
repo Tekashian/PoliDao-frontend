@@ -3,8 +3,17 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { formatUnits } from 'ethers';
-import { Campaign } from '../hooks/useCrowdfund';
+
+// Lokalny interfejs Campaign (usuń import z usePoliDao)
+interface Campaign {
+  campaignId: string;
+  targetAmount: bigint;
+  raisedAmount: bigint;
+  creator: string;
+  token: string;
+  endTime: bigint;
+  isFlexible: boolean;
+}
 
 interface CampaignCardProps {
   campaign: Campaign;
@@ -15,24 +24,32 @@ interface CampaignCardProps {
   };
 }
 
+// Zastąp formatUnits z ethers własną funkcją
+function formatUSDC(amount: bigint, decimals: number = 6): string {
+  const divisor = BigInt(10 ** decimals);
+  const quotient = Number(amount) / Number(divisor);
+  return quotient.toFixed(2);
+}
+
 export default function CampaignCard({ campaign, metadata }: CampaignCardProps) {
-  const raised = parseFloat(formatUnits(campaign.raisedAmount, 6));
-  const target = parseFloat(formatUnits(campaign.targetAmount, 6));
-  const progress = Math.min((raised / target) * 100, 100).toFixed(2);
-  const remaining = Math.max(target - raised, 0).toLocaleString('pl-PL', {
-    style: 'currency',
-    currency: 'PLN',
-  });
+  const raised = parseFloat(formatUSDC(campaign.raisedAmount, 6));
+  const target = parseFloat(formatUSDC(campaign.targetAmount, 6));
+  const progress = target > 0 ? Math.min((raised / target) * 100, 100) : 0;
+  const remaining = Math.max(target - raised, 0);
 
   return (
-    <Link href={`/campaigns/${campaign.campaignId}`} className="block w-full max-w-sm bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+    <Link 
+      href={`/campaigns/${campaign.campaignId}`} 
+      className="block w-full max-w-sm bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow"
+    >
       <div className="relative w-full h-60">
         <Image
           src={metadata.image || '/placeholder.jpg'}
           alt={metadata.title}
-          layout="fill"
-          objectFit="cover"
+          fill // Zastąp layout="fill"
+          style={{ objectFit: 'cover' }} // Zastąp objectFit="cover"
           className="rounded-t-xl"
+          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
         />
       </div>
 
@@ -47,23 +64,46 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
         </p>
 
         <div className="text-green-700 font-bold text-lg">
-          {raised.toLocaleString('pl-PL', {
+          {raised.toLocaleString('en-US', {
             style: 'currency',
-            currency: 'PLN',
+            currency: 'USD', // Zmieniono z PLN na USD dla USDC
           })}{' '}
-          <span className="text-sm text-green-600">({progress}%)</span>
+          <span className="text-sm text-green-600">({progress.toFixed(1)}%)</span>
         </div>
 
         <div className="w-full bg-gray-200 rounded-full h-2.5 mt-2 mb-2">
           <div
             className="bg-green-500 h-2.5 rounded-full transition-all duration-300"
-            style={{ width: `${progress}%` }}
+            style={{ width: `${Math.min(progress, 100)}%` }}
           />
         </div>
 
         <p className="text-sm text-gray-600">
-          Brakuje <span className="font-semibold">{remaining}</span>
+          Brakuje <span className="font-semibold">
+            {remaining.toLocaleString('en-US', {
+              style: 'currency',
+              currency: 'USD',
+            })}
+          </span>
         </p>
+
+        {/* Dodatkowe informacje */}
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <div className="flex justify-between text-xs text-gray-500">
+            <span>
+              {campaign.isFlexible ? '🔄 Elastyczna' : '🎯 Z celem'}
+            </span>
+            <span>
+              ID: {campaign.campaignId}
+            </span>
+          </div>
+          <div className="flex justify-between text-xs text-gray-400 mt-1">
+            <span>Twórca:</span>
+            <span className="font-mono">
+              {campaign.creator.slice(0, 6)}...{campaign.creator.slice(-4)}
+            </span>
+          </div>
+        </div>
       </div>
     </Link>
   );
