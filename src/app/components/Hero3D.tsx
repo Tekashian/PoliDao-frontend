@@ -5,10 +5,10 @@ import Image from "next/image";
 
 export default function Hero3D() {
   return (
-    <div className="fixed inset-0 w-full h-full -z-10">
+    <div className="w-full h-[500px] relative overflow-hidden">
       {/* Tło banner */}
       <Image
-        src="/images/PoliDaoBanner.png"
+        src="/images/tuskBanner.png"
         alt="PoliDao tło"
         fill
         quality={100}

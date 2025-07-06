@@ -8,10 +8,10 @@
   top: 0;
   z-index: 10000;  /* Nagłówek zawsze na wierzchu */
   transition:
-    background-color 0.3s ease,
-    backdrop-filter 0.3s ease,
+    background-color 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    backdrop-filter 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
     padding 0.3s ease-in-out,
-    box-shadow 0.3s ease-in-out;
+    box-shadow 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   pointer-events: auto;
   width: 100%;
   left: 0;
@@ -19,27 +19,67 @@
 }
 
 /* ----------------------------------------
-   1) Stan „nie przewinięto” (unscrolled):
-      - Subtelny gradient tła
+   ZMIENNE KOLORÓW - ENHANCED Z WIĘKSZĄ PRZEZROCZYSTOŚCIĄ
+---------------------------------------- */
+/* Dark mode variables - bardziej przezroczyste podczas scrollowania */
+:global(.dark) .header {
+  --bg-primary-unscrolled: rgba(15, 15, 15, 0.85);
+  --bg-primary-scrolled: rgba(15, 15, 15, 0.65);
+  --bg-secondary: rgba(25, 25, 25, 0.8);
+  --text-primary: #ffffff;
+  --text-secondary: #a0a0a0;
+  --border-primary-unscrolled: rgba(255, 255, 255, 0.12);
+  --border-primary-scrolled: rgba(255, 255, 255, 0.08);
+  --accent-color: #64dc96;
+  --hover-color: #52c279;
+  --hover-shadow: rgba(100, 220, 150, 0.4);
+  --hover-shadow-intense: rgba(100, 220, 150, 0.6);
+}
+
+/* Light mode variables - bardziej przezroczyste podczas scrollowania */
+:global(.light) .header,
+:global(:not(.dark)) .header {
+  --bg-primary-unscrolled: rgba(255, 255, 255, 0.85);
+  --bg-primary-scrolled: rgba(255, 255, 255, 0.65);
+  --bg-secondary: rgba(248, 249, 250, 0.8);
+  --text-primary: #2d3748;
+  --text-secondary: #718096;
+  --border-primary-unscrolled: rgba(0, 0, 0, 0.12);
+  --border-primary-scrolled: rgba(0, 0, 0, 0.08);
+  --accent-color: #059669;
+  --hover-color: #047857;
+  --hover-shadow: rgba(5, 150, 105, 0.4);
+  --hover-shadow-intense: rgba(5, 150, 105, 0.6);
+}
+
+/* ----------------------------------------
+   1) Stan „nie przewinięto" (unscrolled):
+      - Mniej przezroczyste tło
 ---------------------------------------- */
 .unscrolled {
-  background: linear-gradient(90deg, #1E1B2E 0%, #161424 100%);
-  backdrop-filter: none;
+  background: var(--bg-primary-unscrolled);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   padding: 0.525rem 0.875rem;
-  color: white;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-primary-unscrolled);
   z-index: 10000;
 }
 
 /* ----------------------------------------
-   2) Stan „przewinięto” (scrolled):
-      - Półprzezroczyste, z blur & dolnym cieniem
+   2) Stan „przewinięto" (scrolled):
+      - Bardziej przezroczyste tło z silniejszym blur
 ---------------------------------------- */
 .scrolled {
-  background-color: rgba(30, 27, 46, 0.7);
-  backdrop-filter: blur(12px);
+  background: var(--bg-primary-scrolled);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   padding: 0.525rem 0.875rem;
-  color: white;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  color: var(--text-primary);
+  box-shadow: 
+    0 4px 20px rgba(0, 0, 0, 0.08),
+    0 1px 3px rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid var(--border-primary-scrolled);
   z-index: 10000;
 }
 
@@ -47,9 +87,9 @@
    Placeholder (gdy komponent nie jest renderowany)
 ---------------------------------------- */
 .headerPlaceholder {
-  background-color: #1E1B2E;
+  background: var(--bg-primary-unscrolled);
   padding: 0.525rem 0.875rem;
-  color: white;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
 }
@@ -82,11 +122,26 @@
 .logoWrapper {
   display: flex;
   align-items: center;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.logoWrapper:hover {
+  transform: scale(1.05) translateY(-2px);
+  filter: drop-shadow(0 8px 16px var(--hover-shadow));
 }
 
 .logoImage {
-  filter: brightness(0) invert(1);
   display: block;
+  transition: filter 0.3s ease;
+}
+
+:global(.dark) .logoImage {
+  filter: brightness(0) invert(1);
+}
+
+:global(.light) .logoImage,
+:global(:not(.dark)) .logoImage {
+  filter: none;
 }
 
 .navLink {
@@ -95,19 +150,20 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 500;
-  color: white;
+  color: var(--text-primary);
   text-decoration: none;
   padding: 0.4rem 0.6rem;
   border-radius: 6px;
   display: inline-block;
-  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   position: relative;
   z-index: 10001;
 }
 
 .navLink:hover {
-  transform: scale(1.05);
-  box-shadow: 0 0 12px rgba(100, 220, 150, 0.5);
+  transform: scale(1.05) translateY(-3px);
+  filter: drop-shadow(0 8px 16px var(--hover-shadow));
+  color: var(--accent-color);
 }
 
 /* ----------------------------------------
@@ -121,9 +177,9 @@
   align-items: center;
 }
 
-/* Teraz zielone tło (#63D391) – bez gradientu */
+/* Enhanced Create Campaign Button z efektem unoszenia */
 .createCampaignButton {
-  background-color: #63D391;
+  background: linear-gradient(135deg, var(--accent-color) 0%, var(--hover-color) 100%);
   color: white;
   font-family: 'Poppins', sans-serif;
   font-size: 1.05rem;
@@ -131,32 +187,41 @@
   padding: 0.85rem 2rem;
   border: none;
   border-radius: 12px;
-  box-shadow: 0 4px 16px rgba(40, 180, 100, 0.3);
   cursor: pointer;
-  transition: transform 0.2s ease-in-out,
-              box-shadow 0.2s ease-in-out,
-              filter 0.2s ease-in-out;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   animation: fadeInUp 0.6s ease-out;
   display: flex;
   align-items: center;
   z-index: 10002;
+  box-shadow: 
+    0 4px 16px rgba(100, 220, 150, 0.25),
+    0 2px 8px rgba(100, 220, 150, 0.15);
 }
 
 .buttonIcon {
   margin-right: 0.5rem;
   font-size: 1.2rem;
+  transition: transform 0.3s ease;
 }
 
 .createCampaignButton:hover {
-  transform: translateY(-2px) scale(1.02);
-  filter: brightness(1.03);
-  box-shadow: 0 6px 20px rgba(40, 180, 100, 0.45);
+  transform: scale(1.03) translateY(-4px);
+  box-shadow: 
+    0 12px 32px rgba(100, 220, 150, 0.35),
+    0 4px 16px rgba(100, 220, 150, 0.25),
+    0 0 0 1px rgba(100, 220, 150, 0.1);
+  background: linear-gradient(135deg, var(--hover-color) 0%, var(--accent-color) 100%);
+}
+
+.createCampaignButton:hover .buttonIcon {
+  transform: rotate(10deg) scale(1.1);
 }
 
 .createCampaignButton:active {
-  transform: scale(0.98);
-  filter: brightness(0.95);
-  box-shadow: 0 3px 12px rgba(40, 180, 100, 0.25);
+  transform: scale(0.98) translateY(-2px);
+  box-shadow: 
+    0 6px 20px rgba(100, 220, 150, 0.3),
+    0 2px 8px rgba(100, 220, 150, 0.2);
 }
 
 @keyframes fadeInUp {
@@ -172,7 +237,7 @@
 
 /* ----------------------------------------
    PRAWA CZĘŚĆ NAGŁÓWKA:
-   SearchBar, ikony tematu/języka i Connect Wallet (w3m-button)
+   SearchBar, ikony i Connect Wallet (w3m-button)
 ---------------------------------------- */
 .navRight {
   display: flex;
@@ -184,29 +249,27 @@
 .searchBarContainer {
   display: flex;
   align-items: center;
-  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   border-radius: 8px;
   position: relative;
   z-index: 10001;
 }
 
 .searchBarShadow {
-  transform: scale(1.03);
-  box-shadow: 0 0 15px rgba(100, 220, 150, 0.6);
+  transform: scale(1.02) translateY(-2px);
+  filter: drop-shadow(0 8px 20px var(--hover-shadow-intense));
 }
 
 .searchInput {
   padding: 0.4rem 0.7rem;
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  border: 1px solid var(--border-primary-unscrolled);
   border-top-left-radius: 8px;
   border-bottom-left-radius: 8px;
   border-right: none;
   font-size: 0.8rem;
-  background-color: rgba(255, 255, 255, 0.1);
-  color: white;
-  transition:
-    background-color 0.2s ease-in-out,
-    border-color 0.2s ease-in-out;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   height: 36px;
   box-sizing: border-box;
   min-width: 140px;
@@ -214,21 +277,22 @@
 }
 
 .searchInput::placeholder {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
   opacity: 1;
 }
 
 .searchInput:focus {
   outline: none;
-  border-color: rgba(255, 255, 255, 0.65);
-  background-color: rgba(255, 255, 255, 0.15);
+  border-color: var(--accent-color);
+  background-color: var(--bg-secondary);
+  box-shadow: 0 0 0 2px rgba(100, 220, 150, 0.2);
   z-index: 10002;
   position: relative;
 }
 
 .searchButton {
   padding: 0.4rem 1rem;
-  background-color: #63D391; /* przy okazji zielone – pasujące do search */
+  background: linear-gradient(135deg, var(--accent-color) 0%, var(--hover-color) 100%);
   color: white;
   border: none;
   border-top-right-radius: 8px;
@@ -236,9 +300,7 @@
   cursor: pointer;
   font-size: 0.85rem;
   font-weight: 500;
-  transition:
-    background-color 0.2s ease-in-out,
-    transform 0.2s ease-in-out;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   white-space: nowrap;
   height: 36px;
   box-sizing: border-box;
@@ -248,17 +310,17 @@
 }
 
 .searchButton:hover {
-  background-color: #52c280;
+  background: linear-gradient(135deg, var(--hover-color) 0%, var(--accent-color) 100%);
+  transform: translateY(-1px);
 }
 
 .searchButton:active {
-  background-color: #47ad71;
   transform: scale(0.98);
 }
 
 .iconThemeToggle {
   background-color: transparent;
-  color: white;
+  color: var(--text-primary);
   border: none;
   padding: 0.5rem;
   cursor: pointer;
@@ -266,10 +328,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition:
-    background-color 0.2s ease-in-out,
-    transform 0.2s ease-in-out,
-    box-shadow 0.2s ease-in-out;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   position: relative;
   z-index: 10001;
 }
@@ -277,51 +336,61 @@
 .themeIconSvg {
   width: 22px;
   height: 22px;
+  transition: transform 0.3s ease;
 }
 
 .iconThemeToggle:hover {
-  background-color: rgba(255, 255, 255, 0.15);
-  transform: rotate(10deg) scale(1.1);
-  box-shadow: 0 0 12px rgba(100, 220, 150, 0.4);
+  background-color: var(--bg-secondary);
+  transform: scale(1.1) translateY(-2px);
+  filter: drop-shadow(0 6px 12px var(--hover-shadow));
 }
 
-/* Teraz Connect Wallet korzysta z wrappera, więc sam w3m-button przyjmuje style przydzielone w globalnym CSS Web3Modal */ 
+.iconThemeToggle:hover .themeIconSvg {
+  transform: rotate(15deg);
+}
+
+/* Enhanced Connect Wallet Button */
 .connectWalletButtonWrapper {
   display: flex;
   align-items: center;
-  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   border-radius: 12px;
   overflow: hidden;
-  /* Dopasowanie wymiarów identyczne jak niebieski przycisk: */
-  background-color: #4DA8FF;
-  box-shadow: 0 4px 14px rgba(30, 120, 200, 0.3);
+  background: linear-gradient(135deg, #4DA8FF 0%, #3b82f6 100%);
   cursor: pointer;
   z-index: 10001;
+  box-shadow: 
+    0 4px 16px rgba(77, 168, 255, 0.25),
+    0 2px 8px rgba(77, 168, 255, 0.15);
 }
 
 .connectWalletButtonWrapper:hover {
-  transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 6px 20px rgba(30, 120, 200, 0.45);
+  transform: scale(1.03) translateY(-3px);
+  box-shadow: 
+    0 12px 32px rgba(77, 168, 255, 0.35),
+    0 4px 16px rgba(77, 168, 255, 0.25),
+    0 0 0 1px rgba(77, 168, 255, 0.1);
+  background: linear-gradient(135deg, #3b82f6 0%, #4DA8FF 100%);
 }
 
 .connectWalletButtonWrapper:active {
-  transform: scale(0.98);
-  box-shadow: 0 3px 12px rgba(30, 120, 200, 0.25);
+  transform: scale(0.98) translateY(-1px);
+  box-shadow: 
+    0 6px 20px rgba(77, 168, 255, 0.3),
+    0 2px 8px rgba(77, 168, 255, 0.2);
 }
 
 /* Upewnij się, że w3m-button rozciąga się na cały wrapper: */
 .connectWalletButtonWrapper ::slotted(w3m-button) {
   width: 100%;
   height: 100%;
-  /* Usuń domyślne marginesy wewnętrzne, jeśli istnieją */
   margin: 0;
   padding: 0;
 }
 
 /* ----------------------------------------
    MOBILNE KONTROLKI:
-   ikony zmiany języka, motyw oraz hamburger
-   (bez przycisków CTA)  
+   ikona motywu oraz hamburger
 ---------------------------------------- */
 .mobileHeaderControls {
   display: none;   /* Domyślnie ukryte, zobaczymy w ≤1490px */
@@ -342,22 +411,35 @@
 .hamburgerButton {
   background: none;
   border: none;
-  color: white;
+  color: var(--text-primary);
   padding: 0.5rem;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 10002;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  border-radius: 6px;
+}
+
+.hamburgerButton:hover {
+  background-color: var(--bg-secondary);
+  transform: scale(1.05) translateY(-1px);
+  filter: drop-shadow(0 4px 8px var(--hover-shadow));
 }
 
 .hamburgerIconSvg {
   width: 28px;
   height: 28px;
+  transition: transform 0.3s ease;
+}
+
+.hamburgerButton:hover .hamburgerIconSvg {
+  transform: rotate(5deg);
 }
 
 /* ----------------------------------------
-   Overlay dla menu mobilnego
+   Overlay dla menu mobilnego - Enhanced
 ---------------------------------------- */
 .mobileMenu {
   display: flex;
@@ -367,13 +449,14 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(30, 27, 46, 0.7);
-  backdrop-filter: blur(12px);
+  background: var(--bg-primary-scrolled);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   padding: 1rem;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
   z-index: 10001;
   transform: translateX(100%);
-  transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   overflow-y: auto;
 }
 
@@ -402,25 +485,27 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 500;
-  color: white;
+  color: var(--text-primary);
   text-decoration: none;
   padding: 0.9rem 1.2rem;
   display: block;
   width: 100%;
   max-width: 360px;
   border-radius: 8px;
-  transition: background-color 0.2s ease, transform 0.2s ease;
-  border: 1px solid rgba(255,255,255,0.1);
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  border: 1px solid var(--border-primary-unscrolled);
   text-align: center;
 }
 
 .mobileNavLink:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  transform: scale(1.01);
+  background-color: var(--bg-secondary);
+  transform: scale(1.02) translateY(-2px);
+  filter: drop-shadow(0 6px 12px var(--hover-shadow));
+  border-color: var(--accent-color);
 }
 
 /* ----------------------------------------
-   „Specjalny” kontener wokół SearchBar w menu mobilnym
+   „Specjalny" kontener wokół SearchBar w menu mobilnym
 ---------------------------------------- */
 .mobileMenuItem {
   display: flex;
@@ -430,16 +515,22 @@
 }
 
 .mobileMenuItemSpecial {
-  background-color: rgba(255,255,255,0.05);
+  background-color: var(--bg-secondary);
   padding: 0.6rem;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid var(--border-primary-unscrolled);
   width: 100%;
   max-width: 360px;
+  transition: all 0.3s ease;
+}
+
+.mobileMenuItemSpecial:hover {
+  transform: translateY(-1px);
+  filter: drop-shadow(0 4px 8px var(--hover-shadow));
 }
 
 /* ----------------------------------------
-   SearchBar wewnątrz menu mobilnego – pełna szerokość + schludny wygląd
+   SearchBar wewnątrz menu mobilnego – enhanced
 ---------------------------------------- */
 .mobileSearchBarContainer {
   flex-direction: column;
@@ -461,73 +552,60 @@
   border-radius: 8px;
   height: 42px;
   font-size: 0.9rem;
+  transition: all 0.3s ease;
 }
 
 .mobileSearchBarContainer .searchInput {
-  border-right: 1px solid rgba(255,255,255,0.25);
-  background-color: rgba(255, 255, 255, 0.1);
+  border-right: 1px solid var(--border-primary-unscrolled);
+  background-color: var(--bg-secondary);
+}
+
+.mobileSearchBarContainer .searchInput:focus {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px var(--hover-shadow);
 }
 
 .mobileSearchBarContainer .searchButton {
-  background-color: #63D391;  /* Zgodnie z desktopowym Search */
+  background: linear-gradient(135deg, var(--accent-color) 0%, var(--hover-color) 100%);
 }
 
 .mobileSearchBarContainer .searchButton:hover {
-  background-color: #52c280;
+  background: linear-gradient(135deg, var(--hover-color) 0%, var(--accent-color) 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--hover-shadow);
 }
 
 /* ----------------------------------------
-   Przycisk zmiany języka w menu mobilnym
----------------------------------------- */
-.mobileLangButton {
-  font-family: 'Inter', sans-serif;
-  font-size: 1rem;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-weight: 500;
-  color: white;
-  text-decoration: none;
-  padding: 0.9rem 1.2rem;
-  width: 100%;
-  max-width: 360px;
-  border-radius: 8px;
-  background-color: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
-  transition: background-color 0.2s ease, transform 0.2s ease;
-  cursor: pointer;
-  text-align: center;
-}
-
-.mobileLangButton:hover {
-  background-color: rgba(255,255,255,0.08);
-  transform: scale(1.01);
-}
-
-/* ----------------------------------------
-   Dodatkowy wrapper dla w3m-button w menu mobilnym,
-   aby przycisk Connect Wallet miał ten sam styl
+   Enhanced Mobile Connect Wallet Wrapper
 ---------------------------------------- */
 .mobileConnectWalletWrapper {
   display: flex;
   align-items: center;
-  background-color: #4DA8FF;  /* stałe niebieskie tło */
+  background: linear-gradient(135deg, #4DA8FF 0%, #3b82f6 100%);
   border-radius: 12px;
-  box-shadow: 0 4px 14px rgba(30, 120, 200, 0.3);
+  box-shadow: 
+    0 4px 16px rgba(77, 168, 255, 0.25),
+    0 2px 8px rgba(77, 168, 255, 0.15);
   width: 100%;
   max-width: 360px;
   height: 48px;
   cursor: pointer;
-  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .mobileConnectWalletWrapper:hover {
-  transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 6px 20px rgba(30, 120, 200, 0.45);
+  transform: scale(1.02) translateY(-3px);
+  box-shadow: 
+    0 12px 32px rgba(77, 168, 255, 0.35),
+    0 4px 16px rgba(77, 168, 255, 0.25);
+  background: linear-gradient(135deg, #3b82f6 0%, #4DA8FF 100%);
 }
 
 .mobileConnectWalletWrapper:active {
-  transform: scale(0.98);
-  box-shadow: 0 3px 12px rgba(30, 120, 200, 0.25);
+  transform: scale(0.98) translateY(-1px);
+  box-shadow: 
+    0 6px 20px rgba(77, 168, 255, 0.3),
+    0 2px 8px rgba(77, 168, 255, 0.2);
 }
 
 /* Upewnij się, że w3m-button rozciąga się na cały wrapper: */
@@ -540,26 +618,17 @@
 
 /* ----------------------------------------
    BREAKPOINT: ≤ 1490px  
-   - Logo pozostaje widoczne (z `.navLeft`), 
-   - linki „My Account / WhitePaper / Contact” są ukryte, 
-   - `.navCenter` (desktopowy Create Campaign) i `.navRight` (desktopowy SearchBar + ikony + ConnectWallet) są ukryte, 
-   - w zamian pokazujemy pasek mobilny z ikonami (bez CTA), a CTA znajdziemy w rozwijanym menu.
 ---------------------------------------- */
 @media (max-width: 1490px) {
-  /* 1. Ukryj linki w navLeft, lecz pozostaw logo */
   .navLeft .navLink {
     display: none !important;
   }
-  /* 2. Ukryj desktopowy „Create Campaign” */
   .navCenter {
     display: none !important;
   }
-  /* 3. Ukryj desktopowy SearchBar + ikony + ConnectWallet */
   .navRight {
     display: none !important;
   }
-
-  /* 4. Pokaż pasek mobilny (ikony + hamburger) */
   .mobileHeaderControls {
     display: flex !important;
   }
@@ -572,16 +641,15 @@
 }
 
 /* ----------------------------------------
-   Dodatkowe dostosowania dla węższych ekranów (≤ 1024px)
+   Responsive breakpoints z enhanced effects
 ---------------------------------------- */
 @media (max-width: 1024px) {
   .mobileMenuContent {
-    gap: 0.8rem;                /* Mniejszy odstęp między elementami */
+    gap: 0.8rem;
     padding-top: 1rem;
   }
-  .mobileNavLink,
-  .mobileLangButton {
-    font-size: 1rem;            /* Nieco mniejszy tekst */
+  .mobileNavLink {
+    font-size: 1rem;
     padding: 0.8rem 1rem;
   }
   .mobileSearchBarContainer .searchInput,
@@ -590,24 +658,20 @@
     font-size: 0.9rem;
   }
   .createCampaignButton {
-    padding: 0.8rem 1.8rem;     /* Mniejszy padding na tabletach */
+    padding: 0.8rem 1.8rem;
     font-size: 1rem;
   }
 }
 
-/* ----------------------------------------
-   Jeszcze węższe ekrany (≤ 768px)
----------------------------------------- */
 @media (max-width: 768px) {
   .nav {
-    padding: 0 1.5rem;            /* Zmniejszony padding boczny */
+    padding: 0 1.5rem;
   }
   .mobileMenuContent {
     gap: 0.7rem;
     padding-top: 0.9rem;
   }
-  .mobileNavLink,
-  .mobileLangButton {
+  .mobileNavLink {
     font-size: 0.95rem;
     padding: 0.7rem 0.9rem;
   }
@@ -617,24 +681,20 @@
     font-size: 0.85rem;
   }
   .createCampaignButton {
-    padding: 0.7rem 1.5rem;      /* Jeszcze mniejszy padding na smartfonach */
+    padding: 0.7rem 1.5rem;
     font-size: 0.95rem;
   }
 }
 
-/* ----------------------------------------
-   Najmniejsze ekrany (≤ 480px)
----------------------------------------- */
 @media (max-width: 480px) {
   .nav {
-    padding: 0 1rem;            /* Najmniejszy padding boczny */
+    padding: 0 1rem;
   }
   .mobileMenuContent {
     gap: 0.6rem;
     padding-top: 0.8rem;
   }
-  .mobileNavLink,
-  .mobileLangButton {
+  .mobileNavLink {
     font-size: 0.9rem;
     padding: 0.6rem 0.8rem;
   }
@@ -644,30 +704,7 @@
     font-size: 0.85rem;
   }
   .createCampaignButton {
-    padding: 0.6rem 1.2rem;      /* Najbardziej kompaktowe ustawienia */
+    padding: 0.6rem 1.2rem;
     font-size: 0.9rem;
   }
 }
-
-/* ----------------------------------------
-   STYLE DLA CIEMNEGO MOTYWU (html.dark)
----------------------------------------- */
-:global(html.dark) .unscrolled { }
-:global(html.dark) .scrolled { }
-:global(html.dark) .logoImage { filter: brightness(0) invert(1); }
-:global(html.dark) .navLink:hover { box-shadow: 0 0 12px rgba(100,220,150,0.4); }
-:global(html.dark) .iconThemeToggle:hover { background-color: rgba(0,0,0,0.25); box-shadow: 0 0 12px rgba(100,220,150,0.3); }
-:global(html.dark) .searchInput { background-color: rgba(0,0,0,0.08); color: #e2e8f0; border-color: rgba(255,255,255,0.2); }
-:global(html.dark) .searchInput::placeholder { color: rgba(255,255,255,0.5); }
-:global(html.dark) .searchInput:focus { background-color: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.5); }
-:global(html.dark) .searchBarShadow { box-shadow: 0 0 15px rgba(100,220,150,0.5); }
-:global(html.dark) .connectWalletButtonWrapper:hover { box-shadow: 0 0 12px rgba(100,220,150,0.4); }
-:global(html.dark) .mobileMenu { background-color: rgba(30, 21, 52, 0.7); backdrop-filter: blur(12px); }
-:global(html.dark) .mobileNavLink { color: #cbd5e1; border-color: rgba(255,255,255,0.08); }
-:global(html.dark) .mobileNavLink:hover { background-color: rgba(255,255,255,0.06); }
-:global(html.dark) .mobileMenuItemSpecial { background-color: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.06); }
-:global(html.dark) .mobileSearchBarContainer .searchInput { background-color: rgba(0,0,0,0.08); color: #e2e8f0; border-color: rgba(255,255,255,0.2); }
-:global(html.dark) .mobileSearchBarContainer .searchButton { background-color: #47ad71; }
-:global(html.dark) .mobileSearchBarContainer .searchButton:hover { background-color: #52c280; }
-:global(html.dark) .mobileLangButton { background-color: rgba(0,0,0,0.1); color: #cbd5e1; border-color: rgba(255,255,255,0.08); }
-:global(html.dark) .mobileLangButton:hover { background-color: rgba(255,255,255,0.06); }

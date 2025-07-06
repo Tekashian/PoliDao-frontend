@@ -68,24 +68,7 @@ const CloseIcon = () => (
   </svg>
 );
 
-const TranslatorIcon = () => (
-  <svg
-    className={styles.themeIconSvg}
-    xmlns="http://www.w3.org/2000/svg"
-    fill="none"
-    viewBox="0 0 24 24"
-    strokeWidth={1.5}
-    stroke="currentColor"
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M10.5 21l5.25-11.25L21 21m-9.75-4.5H21m-12-3a9 9 0 11-18 0 9 9 0 0118 0z"
-    />
-  </svg>
-);
-
-// --- SearchBar komponent ---
+// --- Enhanced SearchBar komponent z lepszymi efektami ---
 const SearchBar = ({
   isFocused,
   setFocused,
@@ -117,7 +100,7 @@ const SearchBar = ({
   </div>
 );
 
-// --- GŁÓWNY KOMPONENT HEADER ---
+// --- GŁÓWNY KOMPONENT HEADER Z ENHANCED EFFECTS ---
 const Header = () => {
   const router = useRouter();
   const [isMounted, setIsMounted] = useState(false);
@@ -128,9 +111,7 @@ const Header = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
 
-  const darkHoverBoxShadow = '0 0 12px rgba(100, 220, 150, 0.4)';
-
-  // Ustawienie dark/light
+  // Enhanced scroll detection z lepszą responsywnością
   useEffect(() => {
     setIsMounted(true);
     const savedTheme = localStorage.getItem('theme');
@@ -144,51 +125,85 @@ const Header = () => {
     }
   }, []);
 
-  // Obsługa scrollowania
+  // Enhanced scroll handling z throttling dla lepszej wydajności
   useEffect(() => {
+    let ticking = false;
+    
     const handleScroll = () => {
-      setScrolled(window.scrollY > 0);
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          const scrollPosition = window.scrollY;
+          setScrolled(scrollPosition > 10); // Slight delay for smoother transition
+          ticking = false;
+        });
+        ticking = true;
+      }
     };
-    window.addEventListener('scroll', handleScroll);
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Obsługa kliknięcia poza menu mobilnym
+  // Enhanced outside click handling
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (headerRef.current && !headerRef.current.contains(e.target as Node)) {
         setIsMobileMenuOpen(false);
       }
     };
+    
+    const handleEscapeKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsMobileMenuOpen(false);
+      }
+    };
+
     if (isMobileMenuOpen) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleEscapeKey);
       document.body.style.overflow = 'hidden';
     } else {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscapeKey);
       document.body.style.overflow = '';
     }
+    
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscapeKey);
       document.body.style.overflow = '';
     };
   }, [isMobileMenuOpen]);
 
-  // Toggle dark/light
+  // Enhanced dark mode toggle z smooth transition
   const toggleDarkMode = () => {
     setDarkMode((prev) => {
       const next = !prev;
+      
+      // Add transition class temporarily
+      document.documentElement.style.setProperty('--transition-duration', '0.3s');
       document.documentElement.classList.toggle('dark', next);
       localStorage.setItem('theme', next ? 'dark' : 'light');
+      
+      // Remove transition after animation
+      setTimeout(() => {
+        document.documentElement.style.removeProperty('--transition-duration');
+      }, 300);
+      
       return next;
     });
   };
 
-  const handleLanguageChange = () => console.log('Change language clicked');
   const toggleMobileMenu = () => setIsMobileMenuOpen((m) => !m);
 
   if (!isMounted) {
-    // Placeholder, aby uniknąć skoku layoutu przed inicjacją stanu
-    return <header className={`${styles.header} ${styles.unscrolled}`} style={{ minHeight: '80px' }} />;
+    // Enhanced placeholder with better styling
+    return (
+      <header 
+        className={`${styles.header} ${styles.unscrolled}`} 
+        style={{ minHeight: '80px', opacity: 0.9 }} 
+      />
+    );
   }
 
   return (
@@ -202,19 +217,13 @@ const Header = () => {
           <Link
             href="/"
             className={styles.logoWrapper}
-            style={{
-              transform: isLogoHovered ? 'scale(1.05)' : 'scale(1)',
-              boxShadow: isLogoHovered ? darkHoverBoxShadow : 'none',
-              padding: '0.4rem 0.2rem',
-              borderRadius: '6px',
-            }}
             onMouseEnter={() => setIsLogoHovered(true)}
             onMouseLeave={() => setIsLogoHovered(false)}
             aria-label="PoliDao Home"
           >
             <Image
               src="/images/PoliDaoLogo.png"
-              alt="AltrSeed"
+              alt="PoliDao"
               width={140}
               height={30}
               className={styles.logoImage}
@@ -232,7 +241,7 @@ const Header = () => {
           </Link>
         </div>
 
-        {/* --- ŚRODEK (przycisk Create Campaign) --- */}
+        {/* --- ŚRODEK (enhanced przycisk Create Campaign) --- */}
         <div className={styles.navCenter}>
           <button
             onClick={() => router.push('/create-campaign')}
@@ -243,20 +252,13 @@ const Header = () => {
           </button>
         </div>
 
-        {/* --- PRAWA CZĘŚĆ (SearchBar + ikony + Connect Wallet – w3m-button) --- */}
+        {/* --- PRAWA CZĘŚĆ (enhanced SearchBar + ikony + Connect Wallet) --- */}
         <div className={styles.navRight}>
           <SearchBar isFocused={isSearchFocused} setFocused={setIsSearchFocused} />
           <button
-            onClick={handleLanguageChange}
-            className={`${styles.iconThemeToggle} ${styles.desktopThemeToggle}`}
-            title="Change language"
-          >
-            <TranslatorIcon />
-          </button>
-          <button
             onClick={toggleDarkMode}
             className={`${styles.iconThemeToggle} ${styles.desktopThemeToggle}`}
-            title={darkMode ? 'Light Mode' : 'Dark Mode'}
+            title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
           >
             {darkMode ? <SunIcon /> : <MoonIcon />}
           </button>
@@ -265,19 +267,12 @@ const Header = () => {
           </div>
         </div>
 
-        {/* --- MOBILNE KONTROLKI: tylko ikony i hamburger --- */}
+        {/* --- ENHANCED MOBILNE KONTROLKI --- */}
         <div className={styles.mobileHeaderControls}>
-          <button
-            onClick={handleLanguageChange}
-            className={`${styles.iconThemeToggle} ${styles.mobileInlineThemeToggle}`}
-            title="Change language"
-          >
-            <TranslatorIcon />
-          </button>
           <button
             onClick={toggleDarkMode}
             className={`${styles.iconThemeToggle} ${styles.mobileInlineThemeToggle}`}
-            title={darkMode ? 'Light Mode' : 'Dark Mode'}
+            title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
           >
             {darkMode ? <SunIcon /> : <MoonIcon />}
           </button>
@@ -286,6 +281,7 @@ const Header = () => {
               onClick={toggleMobileMenu}
               className={styles.hamburgerButton}
               aria-expanded={isMobileMenuOpen}
+              aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
             >
               {isMobileMenuOpen ? <CloseIcon /> : <HamburgerIcon />}
             </button>
@@ -293,31 +289,34 @@ const Header = () => {
         </div>
       </nav>
 
-      {/* --- Pełne menu mobilne (po kliknięciu hamburger) --- */}
+      {/* --- Enhanced mobile menu z lepszymi animacjami --- */}
       {isMobileMenuOpen && (
         <div className={`${styles.mobileMenu} ${styles.mobileMenuOpen}`}>
           <div className={styles.mobileMenuContent}>
-            <Link href="/my-account" className={styles.mobileNavLink} onClick={toggleMobileMenu}>
+            <Link 
+              href="/my-account" 
+              className={styles.mobileNavLink} 
+              onClick={toggleMobileMenu}
+            >
               My Account
             </Link>
-            <Link href="/whitepaper" className={styles.mobileNavLink} onClick={toggleMobileMenu}>
+            <Link 
+              href="/whitepaper" 
+              className={styles.mobileNavLink} 
+              onClick={toggleMobileMenu}
+            >
               WhitePaper
             </Link>
-            <Link href="/contact" className={styles.mobileNavLink} onClick={toggleMobileMenu}>
+            <Link 
+              href="/contact" 
+              className={styles.mobileNavLink} 
+              onClick={toggleMobileMenu}
+            >
               Contact
             </Link>
             <div className={`${styles.mobileMenuItem} ${styles.mobileMenuItemSpecial}`}>
               <SearchBar isFocused={isSearchFocused} setFocused={setIsSearchFocused} isMobile />
             </div>
-            <button
-              onClick={() => {
-                handleLanguageChange();
-                toggleMobileMenu();
-              }}
-              className={styles.mobileLangButton}
-            >
-              Change Language
-            </button>
             <button
               onClick={() => {
                 router.push('/create-campaign');
