@@ -3,15 +3,14 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Header from "./components/Header";
-import Hero3D from "./components/Hero3D";
-import HeroWithForm from "./components/HeroWithForm";
+import ProposalCard from "./components/ProposalCard";
 import CampaignCard from "./components/CampaignCard";
 import { useAccount } from 'wagmi';
 import { polidaoContractConfig } from './blockchain/contracts';
 import { useGetAllFundraisers, useGetAllProposals, type Campaign, type Proposal } from './hooks/usePoliDao';
 
-// Komponent karty propozycji
-function ProposalCard({ proposal }: { proposal: Proposal }) {
+// Komponent karty propozycji dla zakładki głosowań (mniejszy niż główny ProposalCard)
+function MiniProposalCard({ proposal }: { proposal: Proposal }) {
   const totalVotes = Number(proposal.yesVotes) + Number(proposal.noVotes);
   const yesPercentage = totalVotes > 0 ? (Number(proposal.yesVotes) / totalVotes) * 100 : 0;
   const noPercentage = totalVotes > 0 ? (Number(proposal.noVotes) / totalVotes) * 100 : 0;
@@ -121,8 +120,14 @@ export default function HomePage() {
     proposalCount 
   } = useGetAllProposals();
 
-  const [activeTab, setActiveTab] = useState<"zbiorki" | "glosowania">("zbiorki");
+  const [activeTab, setActiveTab] = useState<"zbiorki" | "glosowania">("glosowania");
   const { isConnected } = useAccount();
+
+  // Sprawdź czy są aktywne propozycje
+  const hasActiveProposals = proposals && proposals.some((proposal: Proposal) => {
+    const timeLeft = Number(proposal.endTime) - Math.floor(Date.now() / 1000);
+    return timeLeft > 0;
+  });
 
   // Funkcja do formatowania nazw kampanii na podstawie prawdziwych danych
   const getCampaignMetadata = (campaign: Campaign) => {
@@ -155,27 +160,15 @@ export default function HomePage() {
     <div className="min-h-screen bg-gray-50">
       <Header />
 
-      {/* HERO BANNER + FORM */}
-      <div className="relative w-full aspect-[1920/800] overflow-hidden">
-        <Hero3D />
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <HeroWithForm />
-        </div>
-      </div>
+      {/* GŁÓWNY HERO BANNER Z INTERAKTYWNYM GŁOSOWANIEM */}
+      {/* Pokazuj tylko gdy są aktywne propozycje, albo gdy zakładka głosowania jest wybrana */}
+      {(hasActiveProposals || activeTab === "glosowania") && (
+        <ProposalCard />
+      )}
 
       {/* TABS */}
       <div className="container mx-auto px-4 mt-8">
         <div className="flex border-b border-gray-300">
-          <button
-            onClick={() => setActiveTab("zbiorki")}
-            className={`py-2 px-4 -mb-px border-b-2 font-medium ${
-              activeTab === "zbiorki"
-                ? "border-green-500 text-green-500"
-                : "border-transparent text-gray-600"
-            }`}
-          >
-            🎯 Zbiórki ({campaignCount})
-          </button>
           <button
             onClick={() => setActiveTab("glosowania")}
             className={`py-2 px-4 -mb-px border-b-2 font-medium ${
@@ -185,6 +178,16 @@ export default function HomePage() {
             }`}
           >
             🗳️ Głosowania ({proposalCount})
+          </button>
+          <button
+            onClick={() => setActiveTab("zbiorki")}
+            className={`py-2 px-4 -mb-px border-b-2 font-medium ${
+              activeTab === "zbiorki"
+                ? "border-green-500 text-green-500"
+                : "border-transparent text-gray-600"
+            }`}
+          >
+            🎯 Zbiórki ({campaignCount})
           </button>
         </div>
 
@@ -214,6 +217,71 @@ export default function HomePage() {
 
         {/* CONTENT */}
         <div className="mt-6">
+          {activeTab === "glosowania" && (
+            <>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-800">
+                  Wszystkie głosowania
+                  <span className="text-sm font-normal text-gray-500 ml-2">
+                    (prawdziwe dane blockchain)
+                  </span>
+                </h2>
+                <button
+                  onClick={refetchProposals}
+                  disabled={proposalsLoading}
+                  className={`px-4 py-2 rounded-lg transition-colors ${
+                    proposalsLoading
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : 'bg-blue-500 hover:bg-blue-600'
+                  } text-white`}
+                >
+                  {proposalsLoading ? '⏳ Ładowanie...' : '🔄 Odśwież'}
+                </button>
+              </div>
+
+              {proposalsLoading && (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                  <span className="ml-3 text-gray-600">Pobieranie danych z kontraktu...</span>
+                </div>
+              )}
+
+              {proposalsError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                  <div className="flex items-center">
+                    <span className="text-red-500 text-xl mr-3">⚠️</span>
+                    <div>
+                      <h3 className="font-bold text-red-800">Błąd ładowania propozycji</h3>
+                      <p className="text-red-700 text-sm mt-1">{proposalsError.message}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!proposalsLoading && !proposalsError && (
+                <>
+                  {proposals && proposals.length > 0 ? (
+                    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                      {proposals.map((proposal: Proposal) => (
+                        <MiniProposalCard
+                          key={proposal.id.toString()}
+                          proposal={proposal}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 bg-white rounded-lg shadow">
+                      <span className="text-4xl mb-4 block">🗳️</span>
+                      <p className="text-gray-500 text-lg">Brak propozycji na kontrakcie</p>
+                      <p className="text-gray-400 mt-2">Utwórz pierwszą propozycję, aby zobaczyć ją tutaj!</p>
+                      <p className="text-gray-400 text-sm mt-1">Contract: {polidaoContractConfig.address}</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+
           {activeTab === "zbiorki" && (
             <>
               <div className="flex justify-between items-center mb-6">
@@ -287,71 +355,6 @@ export default function HomePage() {
                       <span className="text-4xl mb-4 block">🌱</span>
                       <p className="text-gray-500 text-lg">Brak zbiórek na kontrakcie</p>
                       <p className="text-gray-400 mt-2">Utwórz pierwszą zbiórkę, aby zobaczyć ją tutaj!</p>
-                      <p className="text-gray-400 text-sm mt-1">Contract: {polidaoContractConfig.address}</p>
-                    </div>
-                  )}
-                </>
-              )}
-            </>
-          )}
-
-          {activeTab === "glosowania" && (
-            <>
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800">
-                  Głosowania z kontraktu
-                  <span className="text-sm font-normal text-gray-500 ml-2">
-                    (prawdziwe dane blockchain)
-                  </span>
-                </h2>
-                <button
-                  onClick={refetchProposals}
-                  disabled={proposalsLoading}
-                  className={`px-4 py-2 rounded-lg transition-colors ${
-                    proposalsLoading
-                      ? 'bg-gray-400 cursor-not-allowed'
-                      : 'bg-blue-500 hover:bg-blue-600'
-                  } text-white`}
-                >
-                  {proposalsLoading ? '⏳ Ładowanie...' : '🔄 Odśwież'}
-                </button>
-              </div>
-
-              {proposalsLoading && (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-                  <span className="ml-3 text-gray-600">Pobieranie danych z kontraktu...</span>
-                </div>
-              )}
-
-              {proposalsError && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-                  <div className="flex items-center">
-                    <span className="text-red-500 text-xl mr-3">⚠️</span>
-                    <div>
-                      <h3 className="font-bold text-red-800">Błąd ładowania propozycji</h3>
-                      <p className="text-red-700 text-sm mt-1">{proposalsError.message}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {!proposalsLoading && !proposalsError && (
-                <>
-                  {proposals && proposals.length > 0 ? (
-                    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                      {proposals.map((proposal: Proposal) => (
-                        <ProposalCard
-                          key={proposal.id.toString()}
-                          proposal={proposal}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-12 bg-white rounded-lg shadow">
-                      <span className="text-4xl mb-4 block">🗳️</span>
-                      <p className="text-gray-500 text-lg">Brak propozycji na kontrakcie</p>
-                      <p className="text-gray-400 mt-2">Utwórz pierwszą propozycję, aby zobaczyć ją tutaj!</p>
                       <p className="text-gray-400 text-sm mt-1">Contract: {polidaoContractConfig.address}</p>
                     </div>
                   )}
