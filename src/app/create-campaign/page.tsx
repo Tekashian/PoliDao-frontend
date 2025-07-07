@@ -3,36 +3,23 @@
 
 import React, { useState } from 'react';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { parseEther, parseUnits } from 'viem';
+import { parseUnits } from 'viem';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { POLIDAO_ABI } from '../../blockchain/poliDaoAbi';
 
-// Adres kontraktu PoliDAO (zastąp właściwym)
-const POLIDAO_CONTRACT_ADDRESS = "0x..." as `0x${string}`;
+// Adresy kontraktów z pliku contracts.ts
+const POLIDAO_CONTRACT_ADDRESS = "0xec0d7574E6f4A269Eea62011Af02b85D86d4c171" as `0x${string}`;
+const USDC_CONTRACT_ADDRESS = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}`;
 
-// Dostępne tokeny
-const SUPPORTED_TOKENS = [
-  {
-    address: "0x0000000000000000000000000000000000000000",
-    symbol: "ETH",
-    name: "Ethereum",
-    decimals: 18
-  },
-  {
-    address: "0xA0b86a33E6441CAACfD336E3B3C5A8E52D4B8B5c", // Example USDC
-    symbol: "USDC",
-    name: "USD Coin",
-    decimals: 6
-  }
-];
+// USDC ma 6 miejsc po przecinku
+const USDC_DECIMALS = 6;
 
 interface FormData {
   title: string;
   description: string;
   beneficiary: string;
   campaignType: 'target' | 'flexible';
-  token: string;
   targetAmount: string;
   duration: string;
   category: string;
@@ -53,7 +40,6 @@ export default function CreateCampaignPage() {
     description: '',
     beneficiary: '',
     campaignType: 'target',
-    token: SUPPORTED_TOKENS[0].address,
     targetAmount: '',
     duration: '30',
     category: 'medical',
@@ -89,6 +75,9 @@ export default function CreateCampaignPage() {
         if (!formData.targetAmount || parseFloat(formData.targetAmount) <= 0) {
           newErrors.targetAmount = 'Kwota docelowa musi być większa od 0';
         }
+        if (parseFloat(formData.targetAmount) > 1000000) {
+          newErrors.targetAmount = 'Kwota docelowa nie może przekraczać 1,000,000 USDC';
+        }
       }
       if (!formData.duration || parseInt(formData.duration) < 1 || parseInt(formData.duration) > 365) {
         newErrors.duration = 'Czas trwania musi być między 1 a 365 dni';
@@ -118,12 +107,9 @@ export default function CreateCampaignPage() {
     if (!validateStep(3) || !isConnected) return;
 
     try {
-      const selectedToken = SUPPORTED_TOKENS.find(t => t.address === formData.token);
-      const decimals = selectedToken?.decimals || 18;
-      
-      // Konwertuj kwotę docelową na wei
-      const targetInWei = formData.campaignType === 'target' 
-        ? parseUnits(formData.targetAmount, decimals)
+      // Konwertuj kwotę docelową na jednostki USDC (6 miejsc po przecinku)
+      const targetInUSDC = formData.campaignType === 'target' 
+        ? parseUnits(formData.targetAmount, USDC_DECIMALS)
         : BigInt(0);
 
       // Konwertuj dni na sekundy
@@ -134,8 +120,8 @@ export default function CreateCampaignPage() {
         abi: POLIDAO_ABI,
         functionName: 'createFundraiser',
         args: [
-          formData.token as `0x${string}`,
-          targetInWei,
+          USDC_CONTRACT_ADDRESS, // Zawsze USDC
+          targetInUSDC,
           durationInSeconds,
           formData.campaignType === 'flexible'
         ],
@@ -210,12 +196,16 @@ export default function CreateCampaignPage() {
       <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white py-16">
         <div className="container mx-auto px-4 text-center">
           <h1 className="text-4xl md:text-5xl font-bold mb-4">
-            Utwórz zbiórkę i zbieraj na PoliDAO.pl
+            Utwórz zbiórkę i zbieraj w USDC
           </h1>
           <p className="text-xl text-green-100 max-w-3xl mx-auto">
-            Zakładając zbiórkę na naszej platformie blockchain, otrzymujesz narzędzia do skutecznego 
-            zbierania funduszy z pełną przejrzystością i bezpieczeństwem.
+            Zakładając zbiórkę na naszej platformie blockchain, otrzymujesz stabilną walutę USDC 
+            z pełną przejrzystością i bezpieczeństwem.
           </p>
+          <div className="mt-6 inline-flex items-center bg-white/20 rounded-full px-6 py-3">
+            <span className="text-2xl mr-3">💲</span>
+            <span className="font-semibold">Tylko USDC - stabilna kryptowaluta</span>
+          </div>
         </div>
       </div>
 
@@ -269,12 +259,13 @@ export default function CreateCampaignPage() {
                       value={formData.title}
                       onChange={(e) => handleInputChange('title', e.target.value)}
                       placeholder="Podaj krótki i opisowy tytuł swojej zbiórki"
-                      className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                      className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all text-lg font-medium ${
                         errors.title ? 'border-red-500 bg-red-50' : 'border-gray-300'
                       }`}
+                      style={{ fontSize: '18px' }}
                     />
                     {errors.title && (
-                      <p className="mt-2 text-sm text-red-600">{errors.title}</p>
+                      <p className="mt-2 text-sm text-red-600 font-medium">{errors.title}</p>
                     )}
                     <p className="mt-1 text-sm text-gray-500">
                       {formData.title.length}/100 znaków
@@ -286,31 +277,31 @@ export default function CreateCampaignPage() {
                       Kto potrzebuje pomocy? *
                     </label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                      <label className="flex items-center p-4 border rounded-xl cursor-pointer hover:bg-gray-50">
+                      <label className="flex items-center p-4 border-2 rounded-xl cursor-pointer hover:bg-gray-50 transition-all">
                         <input
                           type="radio"
                           name="beneficiary"
                           value="myself"
                           checked={formData.beneficiary === 'myself'}
                           onChange={(e) => handleInputChange('beneficiary', e.target.value)}
-                          className="mr-3 text-green-600"
+                          className="mr-3 text-green-600 w-5 h-5"
                         />
-                        <span className="font-medium">Ja</span>
+                        <span className="font-semibold text-lg">Ja</span>
                       </label>
-                      <label className="flex items-center p-4 border rounded-xl cursor-pointer hover:bg-gray-50">
+                      <label className="flex items-center p-4 border-2 rounded-xl cursor-pointer hover:bg-gray-50 transition-all">
                         <input
                           type="radio"
                           name="beneficiary"
                           value="other"
                           checked={formData.beneficiary === 'other'}
                           onChange={(e) => handleInputChange('beneficiary', e.target.value)}
-                          className="mr-3 text-green-600"
+                          className="mr-3 text-green-600 w-5 h-5"
                         />
-                        <span className="font-medium">Inna osoba</span>
+                        <span className="font-semibold text-lg">Inna osoba</span>
                       </label>
                     </div>
                     {errors.beneficiary && (
-                      <p className="mt-2 text-sm text-red-600">{errors.beneficiary}</p>
+                      <p className="mt-2 text-sm text-red-600 font-medium">{errors.beneficiary}</p>
                     )}
                   </div>
 
@@ -323,12 +314,13 @@ export default function CreateCampaignPage() {
                       onChange={(e) => handleInputChange('description', e.target.value)}
                       rows={6}
                       placeholder="Opisz szczegółowo sytuację, na co będą przeznaczone zebrane środki, dlaczego potrzebujesz pomocy..."
-                      className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all resize-none ${
+                      className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all resize-none font-medium ${
                         errors.description ? 'border-red-500 bg-red-50' : 'border-gray-300'
                       }`}
+                      style={{ fontSize: '16px', lineHeight: '1.5' }}
                     />
                     {errors.description && (
-                      <p className="mt-2 text-sm text-red-600">{errors.description}</p>
+                      <p className="mt-2 text-sm text-red-600 font-medium">{errors.description}</p>
                     )}
                     <p className="mt-1 text-sm text-gray-500">
                       {formData.description.length}/2000 znaków (minimum 50)
@@ -342,7 +334,7 @@ export default function CreateCampaignPage() {
                     <select
                       value={formData.category}
                       onChange={(e) => handleInputChange('category', e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      className="w-full px-5 py-4 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-medium text-lg"
                     >
                       <option value="medical">💊 Medycyna i zdrowie</option>
                       <option value="education">📚 Edukacja</option>
@@ -366,6 +358,22 @@ export default function CreateCampaignPage() {
                   💰 Ustawienia finansowe
                 </h2>
 
+                {/* Info o USDC */}
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-8">
+                  <div className="flex items-center mb-3">
+                    <span className="text-3xl mr-4">💲</span>
+                    <div>
+                      <h3 className="text-lg font-bold text-blue-900">USDC - Stabilna kryptowaluta</h3>
+                      <p className="text-blue-700">Twoja zbiórka będzie zbierać fundusze w USDC (1 USDC = ~1 USD)</p>
+                    </div>
+                  </div>
+                  <div className="text-sm text-blue-800 space-y-1">
+                    <p>✅ Stabilna wartość - nie podlega wahaniom jak Bitcoin czy Ethereum</p>
+                    <p>✅ Łatwa wymiana na złotówki przez giełdy kryptowalut</p>
+                    <p>✅ Przejrzyste transakcje na blockchain</p>
+                  </div>
+                </div>
+
                 <div className="space-y-6">
                   {/* Typ zbiórki */}
                   <div>
@@ -388,13 +396,13 @@ export default function CreateCampaignPage() {
                         />
                         <div className="flex items-center mb-3">
                           <span className="text-2xl mr-3">🎯</span>
-                          <span className="font-semibold">Zbiórka z celem</span>
+                          <span className="font-bold text-lg">Zbiórka z celem</span>
                         </div>
-                        <p className="text-sm text-gray-600">
-                          Określasz konkretną kwotę. Jeśli cel nie zostanie osiągnięty, 
+                        <p className="text-sm text-gray-600 font-medium">
+                          Określasz konkretną kwotę w USDC. Jeśli cel nie zostanie osiągnięty, 
                           środki zostaną zwrócone wpłacającym.
                         </p>
-                        <div className="mt-3 text-xs text-green-600 font-medium">
+                        <div className="mt-3 text-xs text-green-600 font-bold">
                           ✓ Wszystko albo nic
                         </div>
                       </label>
@@ -414,13 +422,13 @@ export default function CreateCampaignPage() {
                         />
                         <div className="flex items-center mb-3">
                           <span className="text-2xl mr-3">🌊</span>
-                          <span className="font-semibold">Zbiórka elastyczna</span>
+                          <span className="font-bold text-lg">Zbiórka elastyczna</span>
                         </div>
-                        <p className="text-sm text-gray-600">
+                        <p className="text-sm text-gray-600 font-medium">
                           Zbierasz środki bez określonego celu. 
-                          Wszystkie wpłaty pozostają u ciebie.
+                          Wszystkie wpłaty w USDC pozostają u ciebie.
                         </p>
-                        <div className="mt-3 text-xs text-green-600 font-medium">
+                        <div className="mt-3 text-xs text-green-600 font-bold">
                           ✓ Każda kwota pomaga
                         </div>
                       </label>
@@ -431,50 +439,33 @@ export default function CreateCampaignPage() {
                   {formData.campaignType === 'target' && (
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Podaj kwotę zbiórki *
+                        Podaj kwotę zbiórki w USDC *
                       </label>
                       <div className="relative">
                         <input
                           type="number"
                           step="0.01"
-                          min="0"
+                          min="1"
+                          max="1000000"
                           value={formData.targetAmount}
                           onChange={(e) => handleInputChange('targetAmount', e.target.value)}
-                          placeholder="0.00"
-                          className={`w-full px-4 py-3 pr-16 border rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent text-lg font-semibold ${
+                          placeholder="1000.00"
+                          className={`w-full px-6 py-5 pr-20 border-2 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-bold text-2xl ${
                             errors.targetAmount ? 'border-red-500 bg-red-50' : 'border-gray-300'
                           }`}
                         />
-                        <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">
-                          {SUPPORTED_TOKENS.find(t => t.address === formData.token)?.symbol}
+                        <div className="absolute right-6 top-1/2 transform -translate-y-1/2 text-gray-600 font-bold text-xl">
+                          USDC
                         </div>
                       </div>
                       {errors.targetAmount && (
-                        <p className="mt-2 text-sm text-red-600">{errors.targetAmount}</p>
+                        <p className="mt-2 text-sm text-red-600 font-medium">{errors.targetAmount}</p>
                       )}
-                      <p className="mt-2 text-sm text-green-600">
-                        💡 Zastanów się nad realną kwotą - zbyt wysoki cel może zniechęcić darczyńców
+                      <p className="mt-2 text-sm text-green-600 font-medium">
+                        💡 1 USDC ≈ 1 USD ≈ 4 PLN | Zastanów się nad realną kwotą
                       </p>
                     </div>
                   )}
-
-                  {/* Token */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Waluta zbiórki
-                    </label>
-                    <select
-                      value={formData.token}
-                      onChange={(e) => handleInputChange('token', e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    >
-                      {SUPPORTED_TOKENS.map((token) => (
-                        <option key={token.address} value={token.address}>
-                          {token.symbol} - {token.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
 
                   {/* Czas trwania */}
                   <div>
@@ -484,7 +475,7 @@ export default function CreateCampaignPage() {
                     <select
                       value={formData.duration}
                       onChange={(e) => handleInputChange('duration', e.target.value)}
-                      className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent ${
+                      className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-bold text-lg ${
                         errors.duration ? 'border-red-500 bg-red-50' : 'border-gray-300'
                       }`}
                     >
@@ -497,7 +488,7 @@ export default function CreateCampaignPage() {
                       <option value="365">365 dni</option>
                     </select>
                     {errors.duration && (
-                      <p className="mt-2 text-sm text-red-600">{errors.duration}</p>
+                      <p className="mt-2 text-sm text-red-600 font-medium">{errors.duration}</p>
                     )}
                   </div>
 
@@ -511,7 +502,7 @@ export default function CreateCampaignPage() {
                       value={formData.contactInfo}
                       onChange={(e) => handleInputChange('contactInfo', e.target.value)}
                       placeholder="Email lub numer telefonu do kontaktu"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      className="w-full px-5 py-4 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-medium text-lg"
                     />
                     <p className="mt-1 text-sm text-gray-500">
                       Darczyńcy będą mogli skontaktować się z Tobą w sprawie zbiórki
@@ -529,34 +520,38 @@ export default function CreateCampaignPage() {
                 </h2>
 
                 {/* Podsumowanie */}
-                <div className="bg-gray-50 rounded-xl p-6 mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Podsumowanie zbiórki</h3>
+                <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl p-6 mb-6 border-2 border-gray-200">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">Podsumowanie zbiórki</h3>
                   <div className="space-y-3">
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Tytuł:</span>
-                      <span className="font-medium">{formData.title}</span>
+                      <span className="text-gray-600 font-medium">Tytuł:</span>
+                      <span className="font-bold">{formData.title}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Typ:</span>
-                      <span className="font-medium">
+                      <span className="text-gray-600 font-medium">Typ:</span>
+                      <span className="font-bold">
                         {formData.campaignType === 'target' ? '🎯 Zbiórka z celem' : '🌊 Zbiórka elastyczna'}
                       </span>
                     </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Waluta:</span>
+                      <span className="font-bold text-blue-600">💲 USDC (stabilny dolar)</span>
+                    </div>
                     {formData.campaignType === 'target' && (
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Kwota docelowa:</span>
-                        <span className="font-medium">
-                          {formData.targetAmount} {SUPPORTED_TOKENS.find(t => t.address === formData.token)?.symbol}
+                        <span className="text-gray-600 font-medium">Kwota docelowa:</span>
+                        <span className="font-bold text-green-600 text-xl">
+                          {formData.targetAmount} USDC
                         </span>
                       </div>
                     )}
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Czas trwania:</span>
-                      <span className="font-medium">{formData.duration} dni</span>
+                      <span className="text-gray-600 font-medium">Czas trwania:</span>
+                      <span className="font-bold">{formData.duration} dni</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Beneficjent:</span>
-                      <span className="font-medium">
+                      <span className="text-gray-600 font-medium">Beneficjent:</span>
+                      <span className="font-bold">
                         {formData.beneficiary === 'myself' ? 'Ja' : 'Inna osoba'}
                       </span>
                     </div>
@@ -565,48 +560,49 @@ export default function CreateCampaignPage() {
 
                 {/* Zgody */}
                 <div className="space-y-4">
-                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
-                    <h4 className="font-semibold text-blue-900 mb-3">ℹ️ Ważne informacje</h4>
-                    <ul className="text-sm text-blue-800 space-y-2">
+                  <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6">
+                    <h4 className="font-bold text-blue-900 mb-3 text-lg">ℹ️ Ważne informacje</h4>
+                    <ul className="text-sm text-blue-800 space-y-2 font-medium">
                       <li>• Wszystkie transakcje są rejestrowane na blockchain i są publicznie dostępne</li>
                       <li>• Opłata platformy wynosi 2.5% od zebranej kwoty</li>
                       <li>• Po utworzeniu zbiórki nie będziesz mógł edytować jej podstawowych parametrów</li>
+                      <li>• Zbiórka będzie zbierać tylko USDC - stabilną kryptowalutę</li>
                       <li>• Zbiórka zostanie automatycznie zakończona po upływie określonego czasu</li>
                     </ul>
                   </div>
 
-                  <label className={`flex items-start p-4 border rounded-xl cursor-pointer ${
-                    errors.agreeTerms ? 'border-red-500 bg-red-50' : 'border-gray-200'
+                  <label className={`flex items-start p-5 border-2 rounded-xl cursor-pointer transition-all ${
+                    errors.agreeTerms ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-green-300'
                   }`}>
                     <input
                       type="checkbox"
                       checked={formData.agreeTerms}
                       onChange={(e) => handleInputChange('agreeTerms', e.target.checked)}
-                      className="mt-1 mr-3 text-green-600"
+                      className="mt-1 mr-4 text-green-600 w-5 h-5"
                     />
-                    <span className="text-sm">
-                      Akceptuję <a href="#" className="text-green-600 underline">Regulamin</a> platformy PoliDAO i zobowiązuję się do przestrzegania jego postanowień *
+                    <span className="text-sm font-medium">
+                      Akceptuję <a href="#" className="text-green-600 underline font-bold">Regulamin</a> platformy PoliDAO i zobowiązuję się do przestrzegania jego postanowień *
                     </span>
                   </label>
                   {errors.agreeTerms && (
-                    <p className="text-sm text-red-600">{errors.agreeTerms}</p>
+                    <p className="text-sm text-red-600 font-medium">{errors.agreeTerms}</p>
                   )}
 
-                  <label className={`flex items-start p-4 border rounded-xl cursor-pointer ${
-                    errors.agreeDataProcessing ? 'border-red-500 bg-red-50' : 'border-gray-200'
+                  <label className={`flex items-start p-5 border-2 rounded-xl cursor-pointer transition-all ${
+                    errors.agreeDataProcessing ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-green-300'
                   }`}>
                     <input
                       type="checkbox"
                       checked={formData.agreeDataProcessing}
                       onChange={(e) => handleInputChange('agreeDataProcessing', e.target.checked)}
-                      className="mt-1 mr-3 text-green-600"
+                      className="mt-1 mr-4 text-green-600 w-5 h-5"
                     />
-                    <span className="text-sm">
-                      Wyrażam zgodę na przetwarzanie moich danych osobowych zgodnie z <a href="#" className="text-green-600 underline">Polityką Prywatności</a> *
+                    <span className="text-sm font-medium">
+                      Wyrażam zgodę na przetwarzanie moich danych osobowych zgodnie z <a href="#" className="text-green-600 underline font-bold">Polityką Prywatności</a> *
                     </span>
                   </label>
                   {errors.agreeDataProcessing && (
-                    <p className="text-sm text-red-600">{errors.agreeDataProcessing}</p>
+                    <p className="text-sm text-red-600 font-medium">{errors.agreeDataProcessing}</p>
                   )}
                 </div>
 
@@ -615,7 +611,7 @@ export default function CreateCampaignPage() {
                   <button
                     onClick={handleSubmit}
                     disabled={isPending || isConfirming || !formData.agreeTerms || !formData.agreeDataProcessing}
-                    className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-4 px-8 rounded-xl transition-all duration-300 transform hover:scale-[1.02] disabled:hover:scale-100 text-lg"
+                    className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-5 px-8 rounded-xl transition-all duration-300 transform hover:scale-[1.02] disabled:hover:scale-100 text-xl shadow-lg"
                   >
                     {isPending || isConfirming ? (
                       <div className="flex items-center justify-center">
@@ -625,14 +621,14 @@ export default function CreateCampaignPage() {
                     ) : (
                       <div className="flex items-center justify-center">
                         <span className="mr-3">🚀</span>
-                        Opublikuj zbiórkę
+                        Opublikuj zbiórkę w USDC
                       </div>
                     )}
                   </button>
 
                   {error && (
-                    <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl">
-                      <p className="text-red-700 text-sm">
+                    <div className="mt-4 p-4 bg-red-50 border-2 border-red-200 rounded-xl">
+                      <p className="text-red-700 text-sm font-medium">
                         <strong>Błąd:</strong> {error.message}
                       </p>
                     </div>
@@ -643,17 +639,17 @@ export default function CreateCampaignPage() {
 
             {/* Nawigacja */}
             {currentStep < 3 && (
-              <div className="px-8 py-4 bg-gray-50 border-t border-gray-200 flex justify-between">
+              <div className="px-8 py-4 bg-gray-50 border-t-2 border-gray-200 flex justify-between">
                 <button
                   onClick={handleBack}
                   disabled={currentStep === 1}
-                  className="px-6 py-2 text-gray-600 hover:text-gray-800 font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="px-6 py-3 text-gray-600 hover:text-gray-800 font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-lg"
                 >
                   ← Wstecz
                 </button>
                 <button
                   onClick={handleNext}
-                  className="px-8 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-all duration-300"
+                  className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg transition-all duration-300 text-lg"
                 >
                   Dalej →
                 </button>
@@ -663,103 +659,103 @@ export default function CreateCampaignPage() {
 
           {/* Dodatkowe informacje */}
           <div className="mt-12 grid md:grid-cols-3 gap-6">
-            <div className="bg-white rounded-xl p-6 shadow-sm">
+            <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-blue-100">
+              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
+                <span className="text-2xl">💲</span>
+              </div>
+              <h3 className="font-bold text-gray-900 mb-2 text-lg">USDC - Stabilność</h3>
+              <p className="text-gray-600 text-sm font-medium">
+                Zbierasz w stabilnej walucie USDC która nie podlega wahaniom jak Bitcoin czy Ethereum.
+              </p>
+            </div>
+            
+            <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-green-100">
               <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center mb-4">
                 <span className="text-2xl">🔒</span>
               </div>
-              <h3 className="font-semibold text-gray-900 mb-2">Bezpieczeństwo</h3>
-              <p className="text-gray-600 text-sm">
+              <h3 className="font-bold text-gray-900 mb-2 text-lg">Bezpieczeństwo</h3>
+              <p className="text-gray-600 text-sm font-medium">
                 Wszystkie transakcje są zabezpieczone przez blockchain i smart kontrakty.
               </p>
             </div>
             
-            <div className="bg-white rounded-xl p-6 shadow-sm">
-              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
+            <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-purple-100">
+              <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mb-4">
                 <span className="text-2xl">📊</span>
               </div>
-              <h3 className="font-semibold text-gray-900 mb-2">Przejrzystość</h3>
-              <p className="text-gray-600 text-sm">
+              <h3 className="font-bold text-gray-900 mb-2 text-lg">Przejrzystość</h3>
+              <p className="text-gray-600 text-sm font-medium">
                 Każda wpłata jest widoczna publicznie. Darczyńcy wiedzą dokładnie, na co idą ich pieniądze.
-              </p>
-            </div>
-            
-            <div className="bg-white rounded-xl p-6 shadow-sm">
-              <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mb-4">
-                <span className="text-2xl">🌍</span>
-              </div>
-              <h3 className="font-semibold text-gray-900 mb-2">Globalny zasięg</h3>
-              <p className="text-gray-600 text-sm">
-                Twoja zbiórka jest dostępna dla każdego na świecie z dostępem do internetu.
               </p>
             </div>
           </div>
 
-          {/* FAQ */}
-          <div className="mt-12 bg-white rounded-xl p-8 shadow-sm">
-            <h3 className="text-xl font-bold text-gray-900 mb-6">❓ Często zadawane pytania</h3>
+          {/* FAQ dla USDC */}
+          <div className="mt-12 bg-white rounded-xl p-8 shadow-lg border-2 border-gray-200">
+            <h3 className="text-xl font-bold text-gray-900 mb-6">❓ Często zadawane pytania o USDC</h3>
             <div className="space-y-4">
               <details className="group">
                 <summary className="flex items-center justify-between cursor-pointer p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <span className="font-medium text-gray-900">Ile kosztuje utworzenie zbiórki?</span>
+                  <span className="font-bold text-gray-900">Co to jest USDC?</span>
                   <span className="text-gray-500 group-open:rotate-180 transition-transform">▼</span>
                 </summary>
-                <div className="mt-3 p-4 text-gray-600 text-sm leading-relaxed">
-                  Utworzenie zbiórki jest darmowe. Płacisz tylko opłatę za transakcję blockchain (gas fee) 
-                  oraz 2.5% prowizji od zebranej kwoty przy wypłacie środków.
+                <div className="mt-3 p-4 text-gray-600 text-sm leading-relaxed font-medium">
+                  USDC (USD Coin) to stabilna kryptowaluta która ma zawsze wartość około 1 dolara amerykańskiego. 
+                  Jest to bezpieczna alternatywa dla zmiennych kryptowalut jak Bitcoin czy Ethereum.
                 </div>
               </details>
 
               <details className="group">
                 <summary className="flex items-center justify-between cursor-pointer p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <span className="font-medium text-gray-900">Czy mogę edytować zbiórkę po publikacji?</span>
+                  <span className="font-bold text-gray-900">Jak wymienić USDC na złotówki?</span>
                   <span className="text-gray-500 group-open:rotate-180 transition-transform">▼</span>
                 </summary>
-                <div className="mt-3 p-4 text-gray-600 text-sm leading-relaxed">
-                  Ze względów bezpieczeństwa blockchain, podstawowe parametry zbiórki (kwota docelowa, czas trwania, typ) 
-                  nie mogą być zmienione po publikacji. Możesz jednak aktualizować opis w przyszłych wersjach platformy.
+                <div className="mt-3 p-4 text-gray-600 text-sm leading-relaxed font-medium">
+                  USDC możesz łatwo wymienić na złotówki przez polskie giełdy kryptowalut takie jak BitBay, Zonda czy Binance. 
+                  Proces jest prosty i bezpieczny.
                 </div>
               </details>
 
               <details className="group">
                 <summary className="flex items-center justify-between cursor-pointer p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <span className="font-medium text-gray-900">Jak wypłacić zebrane środki?</span>
+                  <span className="font-bold text-gray-900">Dlaczego nie ETH lub Bitcoin?</span>
                   <span className="text-gray-500 group-open:rotate-180 transition-transform">▼</span>
                 </summary>
-                <div className="mt-3 p-4 text-gray-600 text-sm leading-relaxed">
-                  Dla zbiórek z celem: środki można wypłacić tylko po osiągnięciu celu przed upływem terminu. 
-                  Dla zbiórek elastycznych: możesz wypłacić środki w dowolnym momencie przez panel swojego konta.
+                <div className="mt-3 p-4 text-gray-600 text-sm leading-relaxed font-medium">
+                  ETH i Bitcoin mogą drastycznie zmienić wartość (nawet o 50% w ciągu dnia). USDC jest stabilny - 
+                  jeśli zbierzesz 1000 USDC, będzie to nadal około 1000 USD/4000 PLN niezależnie od wahań rynku.
                 </div>
               </details>
 
               <details className="group">
                 <summary className="flex items-center justify-between cursor-pointer p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <span className="font-medium text-gray-900">Co się dzieje z niewykorzystanymi środkami?</span>
+                  <span className="font-bold text-gray-900">Czy USDC jest bezpieczny?</span>
                   <span className="text-gray-500 group-open:rotate-180 transition-transform">▼</span>
                 </summary>
-                <div className="mt-3 p-4 text-gray-600 text-sm leading-relaxed">
-                  W zbiórce z celem: jeśli cel nie zostanie osiągnięty, wszystkie środki automatycznie wracają do darczyńców. 
-                  W zbiórce elastycznej: wszystkie środki trafiają do twojego portfela niezależnie od kwoty.
+                <div className="mt-3 p-4 text-gray-600 text-sm leading-relaxed font-medium">
+                  Tak! USDC jest wydawany przez regulowane firmy i jest zabezpieczony rezerwami dolara amerykańskiego. 
+                  To jedna z najbezpieczniejszych kryptowalut na rynku.
                 </div>
               </details>
             </div>
           </div>
 
           {/* Wsparcie */}
-          <div className="mt-8 bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-8 text-center">
-            <h3 className="text-xl font-bold text-gray-900 mb-4">Potrzebujesz pomocy?</h3>
-            <p className="text-gray-600 mb-6">
-              Nasz zespół pomoże Ci w każdym kroku tworzenia zbiórki.
+          <div className="mt-8 bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-8 text-center border-2 border-green-200">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">Potrzebujesz pomocy z USDC?</h3>
+            <p className="text-gray-600 mb-6 font-medium">
+              Nasz zespół pomoże Ci w każdym kroku tworzenia zbiórki i wyjaśni jak działa USDC.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <a 
                 href="/contact" 
-                className="bg-white text-green-600 font-semibold py-3 px-6 rounded-lg hover:shadow-md transition-all duration-300"
+                className="bg-white text-green-600 font-bold py-3 px-6 rounded-lg hover:shadow-md transition-all duration-300 border-2 border-green-200"
               >
                 📧 Skontaktuj się z nami
               </a>
               <a 
                 href="/white-paper" 
-                className="bg-green-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-green-700 transition-all duration-300"
+                className="bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition-all duration-300"
               >
                 📖 Przeczytaj dokumentację
               </a>
