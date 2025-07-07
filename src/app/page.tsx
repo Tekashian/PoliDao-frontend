@@ -25,13 +25,13 @@ import {
   CheckCircle,
   Cancel
 } from '@mui/icons-material';
-import Header from "./components/Header";
-import Footer from "./components/Footer";
-import Hero3D from "./components/Hero3D";
-import VoteCardPage from "./components/VoteCardPage";
-import CampaignCard from "./components/CampaignCard";
+import Header from "../components/Header";
+import Footer from "../components/Footer";
+import Hero3D from "../components/Hero3D";
+import VoteCardPage from "../components/VoteCardPage";
+import CampaignCard from "../components/CampaignCard";
 import { useAccount } from 'wagmi';
-import { useGetAllFundraisers, useGetAllProposals, type Campaign, type Proposal } from './hooks/usePoliDao';
+import { useGetAllFundraisers, useGetAllProposals, type Campaign, type Proposal } from '../hooks/usePoliDao';
 
 // Material-UI Proposal Card
 function MUIProposalCard({ proposal }: { proposal: Proposal }) {

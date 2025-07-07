@@ -5,8 +5,8 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 
 import "./globals.css";
-import ContextProvider from "./context";
-import Header from "./components/Header";
+import ContextProvider from "../context";
+import Header from "../components/Header";
 
 export const metadata = {
   title: "PoliDao",
