@@ -52,7 +52,7 @@ const Footer = () => {
           <div className={styles.footerColumn}>
             <Link href="/" className={styles.footerLogo}>
               <Image
-                src="/images/PoliDaoLogo.png"
+                src="/images/PoliDaoLogoPro.png"
                 alt="PoliDao"
                 width={140}
                 height={30}

@@ -19,9 +19,9 @@
 }
 
 /* ----------------------------------------
-   ZMIENNE KOLORÓW - ENHANCED Z WIĘKSZĄ PRZEZROCZYSTOŚCIĄ
+   ZIELONA PALETA - UJEDNOLICONA Z CONNECT WALLET
 ---------------------------------------- */
-/* Dark mode variables - bardziej przezroczyste podczas scrollowania */
+/* Dark mode variables */
 :global(.dark) .header {
   --bg-primary-unscrolled: rgba(15, 15, 15, 0.85);
   --bg-primary-scrolled: rgba(15, 15, 15, 0.65);
@@ -30,13 +30,15 @@
   --text-secondary: #a0a0a0;
   --border-primary-unscrolled: rgba(255, 255, 255, 0.12);
   --border-primary-scrolled: rgba(255, 255, 255, 0.08);
-  --accent-color: #64dc96;
-  --hover-color: #52c279;
-  --hover-shadow: rgba(100, 220, 150, 0.4);
-  --hover-shadow-intense: rgba(100, 220, 150, 0.6);
+  /* UJEDNOLICONE KOLORY ZIELONE */
+  --accent-color: #10b981; /* emerald-500 - jak Connect Wallet */
+  --hover-color: #059669;  /* emerald-600 */
+  --active-color: #047857; /* emerald-700 */
+  --hover-shadow: rgba(16, 185, 129, 0.4);
+  --hover-shadow-intense: rgba(16, 185, 129, 0.6);
 }
 
-/* Light mode variables - bardziej przezroczyste podczas scrollowania */
+/* Light mode variables */
 :global(.light) .header,
 :global(:not(.dark)) .header {
   --bg-primary-unscrolled: rgba(255, 255, 255, 0.85);
@@ -46,10 +48,12 @@
   --text-secondary: #718096;
   --border-primary-unscrolled: rgba(0, 0, 0, 0.12);
   --border-primary-scrolled: rgba(0, 0, 0, 0.08);
-  --accent-color: #059669;
-  --hover-color: #047857;
-  --hover-shadow: rgba(5, 150, 105, 0.4);
-  --hover-shadow-intense: rgba(5, 150, 105, 0.6);
+  /* UJEDNOLICONE KOLORY ZIELONE */
+  --accent-color: #10b981; /* emerald-500 - jak Connect Wallet */
+  --hover-color: #059669;  /* emerald-600 */
+  --active-color: #047857; /* emerald-700 */
+  --hover-shadow: rgba(16, 185, 129, 0.4);
+  --hover-shadow-intense: rgba(16, 185, 129, 0.6);
 }
 
 /* ----------------------------------------
@@ -168,7 +172,7 @@
 
 /* ----------------------------------------
    ŚRODEK NAGŁÓWKA:
-   Wyśrodkowany przycisk Create Campaign
+   Wyśrodkowany przycisk Create Campaign - ZIELONY
 ---------------------------------------- */
 .navCenter {
   flex: 1;                          /* Zajmuje wolną przestrzeń */
@@ -177,9 +181,9 @@
   align-items: center;
 }
 
-/* Enhanced Create Campaign Button z efektem unoszenia */
+/* ZIELONY Create Campaign Button - zgodny z Connect Wallet */
 .createCampaignButton {
-  background: linear-gradient(135deg, var(--accent-color) 0%, var(--hover-color) 100%);
+  background: var(--accent-color);
   color: white;
   font-family: 'Poppins', sans-serif;
   font-size: 1.05rem;
@@ -194,8 +198,8 @@
   align-items: center;
   z-index: 10002;
   box-shadow: 
-    0 4px 16px rgba(100, 220, 150, 0.25),
-    0 2px 8px rgba(100, 220, 150, 0.15);
+    0 4px 16px rgba(16, 185, 129, 0.25),
+    0 2px 8px rgba(16, 185, 129, 0.15);
 }
 
 .buttonIcon {
@@ -207,10 +211,10 @@
 .createCampaignButton:hover {
   transform: scale(1.03) translateY(-4px);
   box-shadow: 
-    0 12px 32px rgba(100, 220, 150, 0.35),
-    0 4px 16px rgba(100, 220, 150, 0.25),
-    0 0 0 1px rgba(100, 220, 150, 0.1);
-  background: linear-gradient(135deg, var(--hover-color) 0%, var(--accent-color) 100%);
+    0 12px 32px rgba(16, 185, 129, 0.35),
+    0 4px 16px rgba(16, 185, 129, 0.25),
+    0 0 0 1px rgba(16, 185, 129, 0.1);
+  background: var(--hover-color);
 }
 
 .createCampaignButton:hover .buttonIcon {
@@ -220,8 +224,9 @@
 .createCampaignButton:active {
   transform: scale(0.98) translateY(-2px);
   box-shadow: 
-    0 6px 20px rgba(100, 220, 150, 0.3),
-    0 2px 8px rgba(100, 220, 150, 0.2);
+    0 6px 20px rgba(16, 185, 129, 0.3),
+    0 2px 8px rgba(16, 185, 129, 0.2);
+  background: var(--active-color);
 }
 
 @keyframes fadeInUp {
@@ -285,14 +290,15 @@
   outline: none;
   border-color: var(--accent-color);
   background-color: var(--bg-secondary);
-  box-shadow: 0 0 0 2px rgba(100, 220, 150, 0.2);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
   z-index: 10002;
   position: relative;
 }
 
+/* ZIELONY Search Button - zgodny z resztą */
 .searchButton {
   padding: 0.4rem 1rem;
-  background: linear-gradient(135deg, var(--accent-color) 0%, var(--hover-color) 100%);
+  background: var(--accent-color);
   color: white;
   border: none;
   border-top-right-radius: 8px;
@@ -310,12 +316,13 @@
 }
 
 .searchButton:hover {
-  background: linear-gradient(135deg, var(--hover-color) 0%, var(--accent-color) 100%);
+  background: var(--hover-color);
   transform: translateY(-1px);
 }
 
 .searchButton:active {
   transform: scale(0.98);
+  background: var(--active-color);
 }
 
 .iconThemeToggle {
@@ -349,35 +356,25 @@
   transform: rotate(15deg);
 }
 
-/* Enhanced Connect Wallet Button */
+/* Connect Wallet Button - NATURALNY KOLOR (bez zmian) */
 .connectWalletButtonWrapper {
   display: flex;
   align-items: center;
   transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   border-radius: 12px;
   overflow: hidden;
-  background: linear-gradient(135deg, #4DA8FF 0%, #3b82f6 100%);
   cursor: pointer;
   z-index: 10001;
-  box-shadow: 
-    0 4px 16px rgba(77, 168, 255, 0.25),
-    0 2px 8px rgba(77, 168, 255, 0.15);
 }
 
 .connectWalletButtonWrapper:hover {
   transform: scale(1.03) translateY(-3px);
-  box-shadow: 
-    0 12px 32px rgba(77, 168, 255, 0.35),
-    0 4px 16px rgba(77, 168, 255, 0.25),
-    0 0 0 1px rgba(77, 168, 255, 0.1);
-  background: linear-gradient(135deg, #3b82f6 0%, #4DA8FF 100%);
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.15));
 }
 
 .connectWalletButtonWrapper:active {
   transform: scale(0.98) translateY(-1px);
-  box-shadow: 
-    0 6px 20px rgba(77, 168, 255, 0.3),
-    0 2px 8px rgba(77, 168, 255, 0.2);
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.1));
 }
 
 /* Upewnij się, że w3m-button rozciąga się na cały wrapper: */
@@ -565,27 +562,26 @@
   box-shadow: 0 4px 8px var(--hover-shadow);
 }
 
+/* ZIELONY Mobile Search Button */
 .mobileSearchBarContainer .searchButton {
-  background: linear-gradient(135deg, var(--accent-color) 0%, var(--hover-color) 100%);
+  background: var(--accent-color);
 }
 
 .mobileSearchBarContainer .searchButton:hover {
-  background: linear-gradient(135deg, var(--hover-color) 0%, var(--accent-color) 100%);
+  background: var(--hover-color);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px var(--hover-shadow);
 }
 
-/* ----------------------------------------
-   Enhanced Mobile Connect Wallet Wrapper
----------------------------------------- */
+.mobileSearchBarContainer .searchButton:active {
+  background: var(--active-color);
+}
+
+/* Mobile Connect Wallet Wrapper - NATURALNY KOLOR (bez zmian) */
 .mobileConnectWalletWrapper {
   display: flex;
   align-items: center;
-  background: linear-gradient(135deg, #4DA8FF 0%, #3b82f6 100%);
   border-radius: 12px;
-  box-shadow: 
-    0 4px 16px rgba(77, 168, 255, 0.25),
-    0 2px 8px rgba(77, 168, 255, 0.15);
   width: 100%;
   max-width: 360px;
   height: 48px;
@@ -595,17 +591,12 @@
 
 .mobileConnectWalletWrapper:hover {
   transform: scale(1.02) translateY(-3px);
-  box-shadow: 
-    0 12px 32px rgba(77, 168, 255, 0.35),
-    0 4px 16px rgba(77, 168, 255, 0.25);
-  background: linear-gradient(135deg, #3b82f6 0%, #4DA8FF 100%);
+  filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.15));
 }
 
 .mobileConnectWalletWrapper:active {
   transform: scale(0.98) translateY(-1px);
-  box-shadow: 
-    0 6px 20px rgba(77, 168, 255, 0.3),
-    0 2px 8px rgba(77, 168, 255, 0.2);
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.1));
 }
 
 /* Upewnij się, że w3m-button rozciąga się na cały wrapper: */

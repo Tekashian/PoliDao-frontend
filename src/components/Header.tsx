@@ -222,7 +222,7 @@ const Header = () => {
             aria-label="PoliDao Home"
           >
             <Image
-              src="/images/PoliDaoLogo.png"
+              src="/images/PoliDaoLogoPro.png"
               alt="PoliDao"
               width={140}
               height={30}
