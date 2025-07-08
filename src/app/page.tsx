@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { useRouter } from 'next/navigation';
 import { 
   Box, 
   Typography, 
@@ -13,7 +14,9 @@ import {
   Stack,
   Container,
   useTheme,
-  alpha
+  alpha,
+  Paper,
+  LinearProgress
 } from '@mui/material';
 import { 
   ChevronLeft, 
@@ -23,7 +26,9 @@ import {
   AccessTime,
   Person,
   CheckCircle,
-  Cancel
+  Cancel,
+  Launch,
+  VisibilityOutlined
 } from '@mui/icons-material';
 import Header from "../components/Header";
 import Footer from "../components/Footer";
@@ -33,9 +38,11 @@ import CampaignCard from "../components/CampaignCard";
 import { useAccount } from 'wagmi';
 import { useGetAllFundraisers, useGetAllProposals, type Campaign, type Proposal } from '../hooks/usePoliDao';
 
-// Material-UI Proposal Card
+// Material-UI Proposal Card z nawigacją - ZAKTUALIZOWANE
 function MUIProposalCard({ proposal }: { proposal: Proposal }) {
   const theme = useTheme();
+  const router = useRouter();
+  
   const totalVotes = Number(proposal.yesVotes) + Number(proposal.noVotes);
   const yesPercentage = totalVotes > 0 ? (Number(proposal.yesVotes) / totalVotes) * 100 : 0;
   const noPercentage = totalVotes > 0 ? (Number(proposal.noVotes) / totalVotes) * 100 : 0;
@@ -46,6 +53,17 @@ function MUIProposalCard({ proposal }: { proposal: Proposal }) {
   
   const isActive = timeLeft > 0;
 
+  // ✅ ZMIENIONE: Nawigacja do /votes/[id]
+  const handleCardClick = () => {
+    router.push(`/votes/${proposal.id.toString()}`);
+  };
+
+  const handleVote = (e: React.MouseEvent, support: boolean) => {
+    e.stopPropagation();
+    // Tutaj wywołaj funkcję głosowania
+    console.log(`Voting ${support ? 'YES' : 'NO'} on proposal ${proposal.id}`);
+  };
+
   return (
     <Card 
       sx={{ 
@@ -53,6 +71,7 @@ function MUIProposalCard({ proposal }: { proposal: Proposal }) {
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
+        cursor: 'pointer',
         transition: 'all 0.3s ease',
         '&:hover': {
           transform: 'translateY(-4px)',
@@ -61,6 +80,7 @@ function MUIProposalCard({ proposal }: { proposal: Proposal }) {
         background: `linear-gradient(135deg, ${alpha(theme.palette.primary.light, 0.05)} 0%, ${alpha(theme.palette.secondary.light, 0.05)} 100%)`,
         border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
       }}
+      onClick={handleCardClick}
     >
       <CardContent sx={{ flex: 1, p: 3 }}>
         {/* Header with status */}
@@ -159,50 +179,54 @@ function MUIProposalCard({ proposal }: { proposal: Proposal }) {
           </Box>
         </Box>
 
-        {/* Action Buttons */}
+        {/* Action Buttons - ✅ ZAKTUALIZOWANE */}
         {isActive ? (
           <Stack direction="row" spacing={1}>
             <Button
               variant="contained"
               color="success"
               size="small"
-              fullWidth
+              sx={{ flex: 1, fontWeight: 600, textTransform: 'none', borderRadius: 2 }}
               startIcon={<CheckCircle />}
-              sx={{ 
-                fontWeight: 600,
-                textTransform: 'none',
-                borderRadius: 2
-              }}
+              onClick={(e) => handleVote(e, true)}
             >
-              Głosuj TAK
+              TAK
             </Button>
             <Button
               variant="contained"
               color="error"
               size="small"
-              fullWidth
+              sx={{ flex: 1, fontWeight: 600, textTransform: 'none', borderRadius: 2 }}
               startIcon={<Cancel />}
-              sx={{ 
-                fontWeight: 600,
-                textTransform: 'none',
-                borderRadius: 2
-              }}
+              onClick={(e) => handleVote(e, false)}
             >
-              Głosuj NIE
+              NIE
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(`/votes/${proposal.id.toString()}`); // ✅ ZMIENIONE
+              }}
+              sx={{ fontWeight: 600, textTransform: 'none', borderRadius: 2, minWidth: '80px' }}
+            >
+              <VisibilityOutlined fontSize="small" />
             </Button>
           </Stack>
         ) : (
           <Button
             variant="outlined"
-            disabled
             fullWidth
             size="small"
-            sx={{ 
-              textTransform: 'none',
-              borderRadius: 2
+            onClick={(e) => {
+              e.stopPropagation();
+              router.push(`/votes/${proposal.id.toString()}`); // ✅ ZMIENIONE
             }}
+            sx={{ textTransform: 'none', borderRadius: 2 }}
+            startIcon={<VisibilityOutlined />}
           >
-            Głosowanie zakończone
+            Zobacz szczegóły
           </Button>
         )}
       </CardContent>
@@ -210,8 +234,8 @@ function MUIProposalCard({ proposal }: { proposal: Proposal }) {
   );
 }
 
-// Material-UI Carousel Component
-function MUICarousel({ 
+// Futurystyczna karuzela z minimalistycznym designem
+function FuturisticCarousel({ 
   title, 
   icon,
   items, 
@@ -228,12 +252,18 @@ function MUICarousel({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   const checkScrollButtons = () => {
     if (scrollContainerRef.current) {
       const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
       setCanScrollLeft(scrollLeft > 0);
       setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 10);
+      
+      // Oblicz aktualny indeks
+      const cardWidth = 340; // szerokość karty + gap
+      const newIndex = Math.round(scrollLeft / cardWidth);
+      setCurrentIndex(newIndex);
     }
   };
 
@@ -259,77 +289,196 @@ function MUICarousel({
     }
   };
 
+  const scrollToIndex = (index: number) => {
+    if (scrollContainerRef.current) {
+      const scrollAmount = 340 * index;
+      scrollContainerRef.current.scrollTo({
+        left: scrollAmount,
+        behavior: 'smooth'
+      });
+    }
+  };
+
   if (items.length === 0) return null;
 
+  const visibleDots = Math.min(items.length, 8); // Maksymalnie 8 kropek
+
   return (
-    <Box sx={{ mb: 4 }}>
-      {/* Header */}
+    <Paper 
+      elevation={0}
+      sx={{ 
+        mb: 6,
+        background: `linear-gradient(135deg, ${alpha(theme.palette.background.paper, 0.8)} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+        backdropFilter: 'blur(20px)',
+        border: `1px solid ${alpha(theme.palette.primary.main, 0.08)}`,
+        borderRadius: 4,
+        overflow: 'hidden',
+        position: 'relative',
+      }}
+    >
+      {/* Futurystyczny header */}
       <Box sx={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-        mb: 3,
-        p: 3,
-        background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.1)} 0%, ${alpha(theme.palette.secondary.main, 0.1)} 100%)`,
-        borderRadius: 3,
-        border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`
+        p: 4,
+        background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.03)} 0%, ${alpha(theme.palette.secondary.main, 0.02)} 100%)`,
+        borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+        position: 'relative',
       }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          {icon}
-          <Typography variant="h4" component="h2" sx={{ 
-            fontWeight: 700,
-            background: `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-            backgroundClip: 'text',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            textShadow: 'none'
-          }}>
-            {title}
-          </Typography>
-          <Chip 
-            label={`${items.length} elementów`}
-            size="small"
-            color="primary"
-            variant="outlined"
-          />
-        </Box>
+        {/* Animowane tło */}
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: `radial-gradient(ellipse at top left, ${alpha(theme.palette.primary.main, 0.1)} 0%, transparent 50%)`,
+            opacity: 0.3,
+          }}
+        />
         
-        <Stack direction="row" spacing={1}>
-          <IconButton
-            onClick={() => scroll('left')}
-            disabled={!canScrollLeft}
-            sx={{
-              bgcolor: canScrollLeft ? theme.palette.background.paper : alpha(theme.palette.grey[300], 0.5),
-              border: `1px solid ${alpha(theme.palette.primary.main, canScrollLeft ? 0.3 : 0.1)}`,
-              '&:hover': {
-                bgcolor: canScrollLeft ? alpha(theme.palette.primary.main, 0.1) : alpha(theme.palette.grey[300], 0.5),
-                transform: canScrollLeft ? 'scale(1.05)' : 'none',
-              },
-              transition: 'all 0.3s ease',
-            }}
-          >
-            <ChevronLeft />
-          </IconButton>
-          <IconButton
-            onClick={() => scroll('right')}
-            disabled={!canScrollRight}
-            sx={{
-              bgcolor: canScrollRight ? theme.palette.background.paper : alpha(theme.palette.grey[300], 0.5),
-              border: `1px solid ${alpha(theme.palette.primary.main, canScrollRight ? 0.3 : 0.1)}`,
-              '&:hover': {
-                bgcolor: canScrollRight ? alpha(theme.palette.primary.main, 0.1) : alpha(theme.palette.grey[300], 0.5),
-                transform: canScrollRight ? 'scale(1.05)' : 'none',
-              },
-              transition: 'all 0.3s ease',
-            }}
-          >
-            <ChevronRight />
-          </IconButton>
-        </Stack>
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          position: 'relative',
+          zIndex: 1,
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 3,
+                background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: 56,
+                minHeight: 56,
+                boxShadow: `0 8px 32px ${alpha(theme.palette.primary.main, 0.3)}`,
+              }}
+            >
+              {icon}
+            </Box>
+            
+            <Box>
+              <Typography variant="h4" component="h2" sx={{ 
+                fontWeight: 800,
+                background: `linear-gradient(135deg, ${theme.palette.text.primary}, ${theme.palette.primary.main})`,
+                backgroundClip: 'text',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                mb: 0.5,
+                letterSpacing: '-0.02em',
+              }}>
+                {title}
+              </Typography>
+              
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Chip 
+                  label={`${items.length} elementów`}
+                  size="small"
+                  sx={{
+                    bgcolor: alpha(theme.palette.primary.main, 0.1),
+                    color: theme.palette.primary.main,
+                    fontWeight: 600,
+                    border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
+                  }}
+                />
+                
+                {/* Minimalistyczne kropki nawigacji */}
+                <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                  {Array.from({ length: visibleDots }).map((_, index) => (
+                    <Box
+                      key={index}
+                      onClick={() => scrollToIndex(index)}
+                      sx={{
+                        width: currentIndex === index ? 24 : 8,
+                        height: 8,
+                        borderRadius: 4,
+                        bgcolor: currentIndex === index 
+                          ? theme.palette.primary.main 
+                          : alpha(theme.palette.primary.main, 0.2),
+                        cursor: 'pointer',
+                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                        '&:hover': {
+                          bgcolor: currentIndex === index 
+                            ? theme.palette.primary.dark 
+                            : alpha(theme.palette.primary.main, 0.4),
+                        }
+                      }}
+                    />
+                  ))}
+                </Box>
+              </Box>
+            </Box>
+          </Box>
+          
+          {/* Futurystyczne przyciski nawigacji */}
+          <Stack direction="row" spacing={1}>
+            <IconButton
+              onClick={() => scroll('left')}
+              disabled={!canScrollLeft}
+              sx={{
+                width: 48,
+                height: 48,
+                bgcolor: canScrollLeft 
+                  ? alpha(theme.palette.background.paper, 0.9) 
+                  : alpha(theme.palette.action.disabled, 0.1),
+                backdropFilter: 'blur(10px)',
+                border: `1px solid ${alpha(theme.palette.divider, canScrollLeft ? 0.2 : 0.1)}`,
+                color: canScrollLeft 
+                  ? theme.palette.primary.main 
+                  : theme.palette.action.disabled,
+                '&:hover': {
+                  bgcolor: canScrollLeft 
+                    ? alpha(theme.palette.primary.main, 0.1) 
+                    : alpha(theme.palette.action.disabled, 0.1),
+                  transform: canScrollLeft ? 'scale(1.05)' : 'none',
+                  borderColor: canScrollLeft 
+                    ? alpha(theme.palette.primary.main, 0.3) 
+                    : alpha(theme.palette.divider, 0.1),
+                },
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+            >
+              <ChevronLeft />
+            </IconButton>
+            
+            <IconButton
+              onClick={() => scroll('right')}
+              disabled={!canScrollRight}
+              sx={{
+                width: 48,
+                height: 48,
+                bgcolor: canScrollRight 
+                  ? alpha(theme.palette.background.paper, 0.9) 
+                  : alpha(theme.palette.action.disabled, 0.1),
+                backdropFilter: 'blur(10px)',
+                border: `1px solid ${alpha(theme.palette.divider, canScrollRight ? 0.2 : 0.1)}`,
+                color: canScrollRight 
+                  ? theme.palette.primary.main 
+                  : theme.palette.action.disabled,
+                '&:hover': {
+                  bgcolor: canScrollRight 
+                    ? alpha(theme.palette.primary.main, 0.1) 
+                    : alpha(theme.palette.action.disabled, 0.1),
+                  transform: canScrollRight ? 'scale(1.05)' : 'none',
+                  borderColor: canScrollRight 
+                    ? alpha(theme.palette.primary.main, 0.3) 
+                    : alpha(theme.palette.divider, 0.1),
+                },
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+            >
+              <ChevronRight />
+            </IconButton>
+          </Stack>
+        </Box>
       </Box>
       
-      {/* Carousel Content */}
-      <Box sx={{ position: 'relative', overflow: 'hidden' }}>
+      {/* Zawartość karuzeli */}
+      <Box sx={{ position: 'relative', overflow: 'hidden', p: 3, pt: 4 }}>
         <Box
           ref={scrollContainerRef}
           sx={{
@@ -341,28 +490,37 @@ function MUICarousel({
               display: 'none',
             },
             pb: 2,
-            px: 1, // Small padding for shadows
+            px: 1,
+            scrollBehavior: 'smooth',
           }}
         >
           {items.map((item, index) => (
-            <Box key={index} sx={{ flexShrink: 0 }}>
+            <Box 
+              key={index} 
+              sx={{ 
+                flexShrink: 0,
+                transform: currentIndex === index ? 'scale(1.02)' : 'scale(1)',
+                transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+            >
               {renderItem(item, index)}
             </Box>
           ))}
         </Box>
         
-        {/* Gradient Overlays */}
+        {/* Eleganckie gradienty po bokach */}
         <Box
           sx={{
             position: 'absolute',
             left: 0,
             top: 0,
             bottom: 0,
-            width: 60,
-            background: `linear-gradient(90deg, ${theme.palette.background.default} 0%, transparent 100%)`,
+            width: 80,
+            background: `linear-gradient(90deg, ${alpha(theme.palette.background.paper, 0.8)} 0%, transparent 100%)`,
             pointerEvents: 'none',
             opacity: canScrollLeft ? 1 : 0,
             transition: 'opacity 0.3s ease',
+            zIndex: 1,
           }}
         />
         <Box
@@ -371,19 +529,40 @@ function MUICarousel({
             right: 0,
             top: 0,
             bottom: 0,
-            width: 60,
-            background: `linear-gradient(270deg, ${theme.palette.background.default} 0%, transparent 100%)`,
+            width: 80,
+            background: `linear-gradient(270deg, ${alpha(theme.palette.background.paper, 0.8)} 0%, transparent 100%)`,
             pointerEvents: 'none',
             opacity: canScrollRight ? 1 : 0,
             transition: 'opacity 0.3s ease',
+            zIndex: 1,
+          }}
+        />
+        
+        {/* Subtelny progress bar */}
+        <LinearProgress
+          variant="determinate"
+          value={(currentIndex / Math.max(items.length - 1, 1)) * 100}
+          sx={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 2,
+            bgcolor: alpha(theme.palette.primary.main, 0.1),
+            '& .MuiLinearProgress-bar': {
+              bgcolor: theme.palette.primary.main,
+              transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            }
           }}
         />
       </Box>
-    </Box>
+    </Paper>
   );
 }
 
 export default function HomePage() {
+  const router = useRouter();
+  
   // Używaj nowych hooków
   const { 
     campaigns, 
@@ -527,9 +706,9 @@ export default function HomePage() {
         {/* KARUZELE - pokazują się tylko gdy są dane */}
         <Container maxWidth="xl" sx={{ mt: 4 }}>
           {/* Karuzela aktywnych głosowań */}
-          <MUICarousel
+          <FuturisticCarousel
             title="Aktywne głosowania"
-            icon={<HowToVote sx={{ fontSize: 32, color: 'primary.main' }} />}
+            icon={<HowToVote sx={{ fontSize: 28 }} />}
             items={carouselProposals}
             renderItem={(proposal: Proposal) => (
               <MUIProposalCard
@@ -541,9 +720,9 @@ export default function HomePage() {
           />
 
           {/* Karuzela najlepszych zbiórek */}
-          <MUICarousel
+          <FuturisticCarousel
             title="Najgorętsze kampanie i zbiórki"
-            icon={<TrendingUp sx={{ fontSize: 32, color: 'secondary.main' }} />}
+            icon={<TrendingUp sx={{ fontSize: 28 }} />}
             items={carouselCampaigns}
             renderItem={(campaign: Campaign) => {
               const metadata = getCampaignMetadata(campaign);
