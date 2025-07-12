@@ -1,3 +1,4 @@
+// src/app/campaigns/[id]/page.tsx
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -52,11 +53,13 @@ import {
 } from "@mui/icons-material";
 import Header from "../../../components/Header";
 import Footer from "../../../components/Footer";
+import Image from 'next/image';
 
 // Reown AppKit hooks
 import { useAppKitAccount, useAppKitNetwork } from "@reown/appkit/react";
 import { useReadContract, useWriteContract } from "wagmi";
 import { formatUnits, parseUnits } from "viem";
+import { BrowserProvider, Contract } from 'ethers';
 
 // Contract ABIs
 import { POLIDAO_ABI } from "../../../blockchain/poliDaoAbi";
@@ -97,10 +100,18 @@ const ERC20_ABI = [
     outputs: [{ name: "", type: "string" }],
     type: "function"
   },
+  {
+    constant: true,
+    inputs: [],
+    name: "decimals",
+    outputs: [{ name: "", type: "uint8" }],
+    type: "function"
+  },
 ] as const;
 
 // Contract configuration
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_POLIDAO_CONTRACT_ADDRESS as `0x${string}`;
+const PLACEHOLDER_IMAGE = '/images/zbiorka.png';
 
 interface FundraiserData {
   id: string;
@@ -113,6 +124,18 @@ interface FundraiserData {
   closureInitiated: boolean;
   reclaimDeadline: bigint;
   fundsWithdrawn: boolean;
+}
+
+interface DonationLog {
+  donor: string;
+  amount: number;
+  timestamp: number;
+  txHash: string;
+}
+
+interface Update {
+  content: string;
+  timestamp: number;
 }
 
 export default function CampaignPage() {
@@ -132,6 +155,11 @@ export default function CampaignPage() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsApproval, setNeedsApproval] = useState(false);
+  const [donations, setDonations] = useState<DonationLog[]>([]);
+  const [uniqueDonorsCount, setUniqueDonorsCount] = useState(0);
+  const [updates, setUpdates] = useState<Update[]>([]);
+  const [newUpdateText, setNewUpdateText] = useState<string>('');
+  const [isOwner, setIsOwner] = useState(false);
 
   const campaignId = params.id as string;
 
@@ -150,7 +178,7 @@ export default function CampaignPage() {
     },
   });
 
-  // Get fundraiser title/description
+  // Get fundraiser metadata
   const {
     data: fundraiserTitle,
   } = useReadContract({
@@ -279,6 +307,18 @@ export default function CampaignPage() {
     },
   });
 
+  const {
+    data: tokenDecimals,
+  } = useReadContract({
+    address: campaignData?.token,
+    abi: ERC20_ABI,
+    functionName: "decimals",
+    query: {
+      enabled: !!campaignData?.token,
+    },
+  });
+
+  // Set up fundraiser data
   useEffect(() => {
     if (fundraiserData) {
       const [id, creator, token, target, raised, endTime, isFlexible, closureInitiated, reclaimDeadline, fundsWithdrawn] = fundraiserData;
@@ -300,6 +340,62 @@ export default function CampaignPage() {
     }
   }, [fundraiserData, campaignId]);
 
+  // Check ownership
+  useEffect(() => {
+    if (!campaignData || !address) {
+      setIsOwner(false);
+      return;
+    }
+    setIsOwner(campaignData.creator.toLowerCase() === address.toLowerCase());
+  }, [campaignData, address]);
+
+  // Fetch donation logs using ethers
+  useEffect(() => {
+    if (!campaignData) return;
+    if (typeof window === 'undefined') return;
+
+    const fetchDonationLogs = async () => {
+      try {
+        const ethersProvider = new BrowserProvider(
+          (window as any).ethereum,
+          chainId || 1
+        );
+        const contract = new Contract(
+          CONTRACT_ADDRESS,
+          POLIDAO_ABI,
+          ethersProvider
+        );
+        
+        // Query filter for donations to this specific campaign
+        const filter = contract.filters.DonationReceived?.(BigInt(campaignId), null);
+        if (!filter) return;
+
+        const rawLogs = await contract.queryFilter(filter);
+        const parsed: DonationLog[] = rawLogs.map((log: any) => {
+          const { donor, amount, timestamp } = log.args || {};
+          const decimals = tokenDecimals || 6;
+          return {
+            donor: donor?.toLowerCase() || '',
+            amount: Number(amount || 0) / Math.pow(10, decimals),
+            timestamp: Number(timestamp || 0) * 1000,
+            txHash: log.transactionHash || ''
+          };
+        });
+        
+        parsed.sort((a, b) => b.timestamp - a.timestamp);
+        setDonations(parsed);
+        setUniqueDonorsCount(new Set(parsed.map(d => d.donor)).size);
+      } catch (err) {
+        console.error('Error fetching donation logs:', err);
+        // Fallback - set empty array if event fetching fails
+        setDonations([]);
+        setUniqueDonorsCount(0);
+      }
+    };
+
+    fetchDonationLogs();
+  }, [campaignData, chainId, tokenDecimals, campaignId]);
+
   useEffect(() => {
     if (fundraiserError) {
       setError("Nie udało się załadować danych kampanii. Sprawdź czy ID kampanii jest poprawne.");
@@ -319,7 +415,15 @@ export default function CampaignPage() {
     });
   };
 
-  // Event handlers
+  // Handle updates
+  const handleAddUpdate = () => {
+    const trimmed = newUpdateText.trim();
+    if (!trimmed) return;
+    setUpdates(prev => [{ content: trimmed, timestamp: Date.now() }, ...prev]);
+    setNewUpdateText('');
+  };
+
+  // Event handlers - Enhanced donation flow like DonateButton
   const handleDonate = async () => {
     if (!isConnected || !campaignData) {
       alert("Najpierw połącz portfel!");
@@ -332,30 +436,50 @@ export default function CampaignPage() {
     }
 
     try {
-      const amount = parseUnits(donateAmount, 6);
+      const decimals = tokenDecimals || 6;
+      const amount = parseUnits(donateAmount, decimals);
       
       if (userBalance && amount > userBalance) {
         alert("Niewystarczający balans tokenów!");
         return;
       }
 
-      if (allowance && amount > allowance) {
-        setNeedsApproval(true);
-        return;
-      }
-
-      await writeContract({
-        address: CONTRACT_ADDRESS,
-        abi: POLIDAO_ABI,
-        functionName: "donate",
-        args: [BigInt(campaignId), amount],
+      // Two-step process like in DonateButton
+      // Step 1: Approve
+      console.log('Step 1: Approving token spending...');
+      await writeApproval({
+        address: campaignData.token,
+        abi: ERC20_ABI,
+        functionName: "approve",
+        args: [CONTRACT_ADDRESS, amount],
       });
 
-      setDonateOpen(false);
-      setDonateAmount("");
+      // Wait a moment for approval to be processed
+      setTimeout(async () => {
+        try {
+          // Step 2: Donate
+          console.log('Step 2: Making donation...');
+          await writeContract({
+            address: CONTRACT_ADDRESS,
+            abi: POLIDAO_ABI,
+            functionName: "donate",
+            args: [BigInt(campaignId), amount],
+          });
+
+          setDonateOpen(false);
+          setDonateAmount("");
+          setNeedsApproval(false);
+          // Refresh donation data
+          window.location.reload();
+        } catch (error) {
+          console.error("Donation failed:", error);
+          alert("Wystąpił błąd podczas wpłaty");
+        }
+      }, 3000);
+
     } catch (error) {
-      console.error("Donation failed:", error);
-      alert("Wystąpił błąd podczas wpłaty");
+      console.error("Approval failed:", error);
+      alert("Wystąpił błąd podczas zatwierdzania tokenów");
     }
   };
 
@@ -363,7 +487,8 @@ export default function CampaignPage() {
     if (!campaignData || !donateAmount) return;
 
     try {
-      const amount = parseUnits(donateAmount, 6);
+      const decimals = tokenDecimals || 6;
+      const amount = parseUnits(donateAmount, decimals);
 
       await writeApproval({
         address: campaignData.token,
@@ -468,8 +593,9 @@ export default function CampaignPage() {
 
   // Calculations and display data
   const displayTokenSymbol = tokenSymbol || 'USDC';
-  const targetAmount = Number(formatUnits(campaignData.target, 6));
-  const raisedAmount = Number(formatUnits(campaignData.raised, 6));
+  const decimals = tokenDecimals || 6;
+  const targetAmount = Number(formatUnits(campaignData.target, decimals));
+  const raisedAmount = Number(formatUnits(campaignData.raised, decimals));
   const progressPercentage = targetAmount > 0 ? (raisedAmount / targetAmount) * 100 : 0;
   const timeLeftSeconds = timeLeft ? Number(timeLeft) : 0;
   const daysLeft = Math.max(0, Math.floor(timeLeftSeconds / (24 * 60 * 60)));
@@ -478,7 +604,7 @@ export default function CampaignPage() {
   const amountLeft = Math.max(0, targetAmount - raisedAmount);
   const isCreator = address?.toLowerCase() === campaignData.creator.toLowerCase();
   const hasUserDonated = userDonation && userDonation > 0n;
-  const userBalanceFormatted = userBalance ? Number(formatUnits(userBalance, 6)) : 0;
+  const userBalanceFormatted = userBalance ? Number(formatUnits(userBalance, decimals)) : 0;
 
   // Display data from blockchain or fallbacks
   const displayTitle = fundraiserTitle || `Kampania Blockchain #${campaignData.id}`;
@@ -515,51 +641,16 @@ export default function CampaignPage() {
           {/* Lewa kolumna - Main Content */}
           <div className="lg:col-span-2 space-y-8">
             
-            {/* Hero Video/Image Section */}
+            {/* Hero Image Section */}
             <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 overflow-hidden">
-              <Box
-                sx={{
-                  height: 400,
-                  background: `linear-gradient(135deg, rgba(22, 163, 74, 0.9), rgba(21, 128, 61, 0.9))`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  position: "relative",
-                }}
-              >
-                {/* Play Button */}
-                <Box
-                  sx={{
-                    width: 100,
-                    height: 100,
-                    borderRadius: "50%",
-                    bgcolor: "rgba(255,255,255,0.9)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: "pointer",
-                    boxShadow: '0 8px 25px rgba(0,0,0,0.3)',
-                    '&:hover': {
-                      bgcolor: "white",
-                      transform: 'scale(1.1)',
-                    },
-                    transition: 'all 0.3s ease'
-                  }}
-                >
-                  <Box
-                    sx={{
-                      width: 0,
-                      height: 0,
-                      borderLeft: '25px solid #16a34a',
-                      borderTop: '15px solid transparent',
-                      borderBottom: '15px solid transparent',
-                      ml: '5px'
-                    }}
-                  />
-                </Box>
-
+              <Box sx={{ position: 'relative', height: 400 }}>
+                <Image
+                  src={PLACEHOLDER_IMAGE}
+                  alt={displayTitle}
+                  fill
+                  className="object-cover"
+                  priority
+                />
                 {/* Floating Status Badge */}
                 <Chip
                   label="PILNE!"
@@ -572,7 +663,8 @@ export default function CampaignPage() {
                     fontWeight: 700,
                     fontSize: '0.9rem',
                     px: 2,
-                    py: 1
+                    py: 1,
+                    zIndex: 10
                   }}
                 />
               </Box>
@@ -669,6 +761,62 @@ export default function CampaignPage() {
               </Alert>
             </div>
 
+            {/* Aktualności Section (jak w Altrseed) */}
+            <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 overflow-hidden">
+              <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
+                <Typography variant="h5" sx={{ fontWeight: 700, color: '#111827', display: 'flex', alignItems: 'center', gap: 1 }}>
+                  📰 Aktualności
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  Najnowsze informacje o kampanii
+                </Typography>
+              </Box>
+              
+              <Box sx={{ p: 3, maxHeight: 400, overflow: 'auto' }}>
+                {updates.length === 0 && (
+                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+                    Brak aktualności. {isOwner && "Dodaj pierwszą aktualność poniżej."}
+                  </Typography>
+                )}
+                {updates.map((update, idx) => (
+                  <Paper key={idx} sx={{ p: 3, mb: 2, bgcolor: '#f9fafb', border: '1px solid #e5e7eb' }}>
+                    <Typography variant="body1" sx={{ mb: 1, color: '#374151' }}>
+                      {update.content}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {new Date(update.timestamp).toLocaleString('pl-PL')}
+                    </Typography>
+                  </Paper>
+                ))}
+              </Box>
+              
+              {isOwner && (
+                <Box sx={{ p: 3, borderTop: '1px solid #e5e7eb', bgcolor: '#f9fafb' }}>
+                  <TextField
+                    fullWidth
+                    multiline
+                    rows={3}
+                    placeholder="Nowa aktualność..."
+                    value={newUpdateText}
+                    onChange={e => setNewUpdateText(e.target.value)}
+                    sx={{ mb: 2 }}
+                  />
+                  <Button
+                    variant="contained"
+                    onClick={handleAddUpdate}
+                    disabled={!newUpdateText.trim()}
+                    sx={{
+                      bgcolor: '#16a34a',
+                      '&:hover': { bgcolor: '#15803d' },
+                      fontWeight: 600
+                    }}
+                  >
+                    Dodaj aktualność
+                  </Button>
+                </Box>
+              )}
+            </div>
+
             {/* Status Alerts */}
             {!campaignData.isFlexible && (
               <Alert 
@@ -696,6 +844,65 @@ export default function CampaignPage() {
                 </Typography>
               </Alert>
             )}
+
+            {/* Historia wpłat */}
+            <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 overflow-hidden">
+              <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
+                <Typography variant="h5" sx={{ fontWeight: 700, color: '#111827', display: 'flex', alignItems: 'center', gap: 1 }}>
+                  💰 Historia wpłat
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  Wszystkie dotacje do tej kampanii
+                </Typography>
+              </Box>
+              
+              {donations.length === 0 && (
+                <Box sx={{ p: 4, textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Brak wpłat. Zostań pierwszym darczyńcą!
+                  </Typography>
+                </Box>
+              )}
+              
+              {donations.length > 0 && (
+                <List sx={{ maxHeight: 400, overflow: 'auto' }}>
+                  {donations.map((donation, idx) => (
+                    <ListItem key={idx} sx={{ borderBottom: '1px solid #f3f4f6' }}>
+                      <ListItemAvatar>
+                        <Avatar sx={{ bgcolor: '#16a34a' }}>
+                          {donation.donor.slice(2, 4).toUpperCase()}
+                        </Avatar>
+                      </ListItemAvatar>
+                      <ListItemText
+                        primary={
+                          <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                            {formatAddress(donation.donor)}
+                          </Typography>
+                        }
+                        secondary={
+                          <Typography variant="body2" color="text.secondary">
+                            {new Date(donation.timestamp).toLocaleString('pl-PL')}
+                          </Typography>
+                        }
+                      />
+                      <Box sx={{ textAlign: 'right' }}>
+                        <Typography variant="h6" sx={{ fontWeight: 700, color: '#16a34a' }}>
+                          {donation.amount.toFixed(2)} {displayTokenSymbol}
+                        </Typography>
+                        <Button
+                          size="small"
+                          startIcon={<Launch />}
+                          onClick={() => window.open(`https://sepolia.etherscan.io/tx/${donation.txHash}`, "_blank")}
+                          sx={{ fontSize: '0.75rem' }}
+                        >
+                          Etherscan
+                        </Button>
+                      </Box>
+                    </ListItem>
+                  ))}
+                </List>
+              )}
+            </div>
           </div>
 
           {/* Prawa kolumna - Sidebar with all panels */}
@@ -713,10 +920,10 @@ export default function CampaignPage() {
                   fontSize: '2.5rem'
                 }}
               >
-                {formatTokenAmount(campaignData.raised)} {displayTokenSymbol}
+                {formatTokenAmount(campaignData.raised, decimals)} {displayTokenSymbol}
               </Typography>
               <Typography variant="body1" color="text.secondary" sx={{ mb: 1 }}>
-                zebrano z {formatTokenAmount(campaignData.target)} {displayTokenSymbol}
+                zebrano z {formatTokenAmount(campaignData.target, decimals)} {displayTokenSymbol}
               </Typography>
               <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
                 ({Math.round(progressPercentage)}%)
@@ -739,7 +946,7 @@ export default function CampaignPage() {
               />
 
               <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
-                Brakuje {formatTokenAmount(BigInt(Math.max(0, amountLeft) * 1000000), 6)} {displayTokenSymbol}
+                Brakuje {amountLeft.toFixed(2)} {displayTokenSymbol}
               </Typography>
               
               {/* Donate Button */}
@@ -778,7 +985,7 @@ export default function CampaignPage() {
                     Wsparło
                   </Typography>
                   <Typography variant="h5" sx={{ fontWeight: 700, color: '#111827' }}>
-                    {donorsCount ? Number(donorsCount).toLocaleString('pl-PL') : 0}
+                    {uniqueDonorsCount}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     osób
@@ -875,7 +1082,7 @@ export default function CampaignPage() {
               {hasUserDonated && (
                 <Alert severity="success" sx={{ mb: 4, borderRadius: 2 }}>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    ✅ Twoja wpłata: {formatTokenAmount(userDonation || 0n)} {displayTokenSymbol}
+                    ✅ Twoja wpłata: {formatTokenAmount(userDonation || 0n, decimals)} {displayTokenSymbol}
                   </Typography>
                 </Alert>
               )}
@@ -942,7 +1149,7 @@ export default function CampaignPage() {
                 </Avatar>
                 <Box>
                   <Typography variant="h6" sx={{ fontWeight: 600, color: '#111827', mb: 0.5 }}>
-                    Fundacja Siepomaga
+                    PoliDAO Creator
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.9rem' }}>
                     {formatAddress(campaignData.creator)}
@@ -955,7 +1162,7 @@ export default function CampaignPage() {
                 size="small"
                 fullWidth
                 startIcon={<Launch />}
-                onClick={() => window.open(`https://etherscan.io/address/${campaignData.creator}`, "_blank")}
+                onClick={() => window.open(`https://sepolia.etherscan.io/address/${campaignData.creator}`, "_blank")}
                 sx={{
                   borderColor: '#d1d5db',
                   color: '#6b7280',
@@ -981,66 +1188,6 @@ export default function CampaignPage() {
                     {userBalanceFormatted.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} {displayTokenSymbol}
                   </Typography>
                 </Alert>
-              </div>
-            )}
-
-            {/* Recent Donors */}
-            {donorsList && donorsList.length > 0 && (
-              <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-6">
-                <Typography variant="h6" sx={{ fontWeight: 700, mb: 3, color: '#111827', display: "flex", alignItems: "center", gap: 1 }}>
-                  <Group sx={{ color: '#16a34a' }} />
-                  Ostatnie wpłaty
-                </Typography>
-                
-                <List sx={{ p: 0 }}>
-                  {donorsList.slice(0, 5).map((donor, index) => (
-                    <ListItem key={index} sx={{ px: 0, py: 2 }}>
-                      <ListItemAvatar>
-                        <Avatar 
-                          sx={{ 
-                            width: 40, 
-                            height: 40, 
-                            bgcolor: '#16a34a',
-                            fontSize: '0.875rem',
-                            fontWeight: 600
-                          }}
-                        >
-                          {(donor as string).slice(2, 4).toUpperCase()}
-                        </Avatar>
-                      </ListItemAvatar>
-                      <ListItemText
-                        primary={
-                          <Typography variant="body1" sx={{ fontWeight: 500, color: '#111827' }}>
-                            {formatAddress(donor as string)}
-                          </Typography>
-                        }
-                        secondary={
-                          <Typography variant="body2" color="text.secondary">
-                            {index === 0 ? 'przed chwilą' : `${index + 1}h temu`}
-                          </Typography>
-                        }
-                      />
-                      <Chip
-                        label="❤️"
-                        size="small"
-                        sx={{
-                          bgcolor: '#fecaca',
-                          color: '#dc2626',
-                          fontSize: '0.75rem',
-                          height: 24
-                        }}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-                
-                {donorsList.length > 5 && (
-                  <Box sx={{ textAlign: 'center', mt: 2, pt: 2, borderTop: '1px solid #e5e7eb' }}>
-                    <Typography variant="body2" color="text.secondary">
-                      i {donorsList.length - 5} kolejnych osób
-                    </Typography>
-                  </Box>
-                )}
               </div>
             )}
 
@@ -1228,6 +1375,17 @@ export default function CampaignPage() {
               </Typography>
             </Alert>
           )}
+
+          {(isDonating || isApproving) && (
+            <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>
+              <Typography variant="body2">
+                {isApproving ? "🔄 Zatwierdzanie tokenów..." : "💰 Przetwarzanie wpłaty..."}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Proszę czekać na potwierdzenie transakcji w portfelu.
+              </Typography>
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions sx={{ p: 3, pt: 1, bgcolor: '#f9fafb' }}>
           <Button 
@@ -1237,12 +1395,13 @@ export default function CampaignPage() {
               setDonateAmount("");
             }}
             sx={{ color: '#6b7280' }}
+            disabled={isDonating || isApproving}
           >
             Anuluj
           </Button>
           <Button
             variant="contained"
-            onClick={needsApproval ? handleApprove : handleDonate}
+            onClick={handleDonate}
             disabled={
               !donateAmount || 
               (isDonating || isApproving) || 
@@ -1258,8 +1417,7 @@ export default function CampaignPage() {
             }}
           >
             {isApproving ? "⏳ Zatwierdzanie..." : 
-             isDonating ? "⏳ Przetwarzanie..." : 
-             needsApproval ? `✅ Zatwierdź ${displayTokenSymbol}` :
+             isDonating ? "⏳ Wpłacanie..." : 
              `❤️ Wpłać ${donateAmount} ${displayTokenSymbol}`}
           </Button>
         </DialogActions>
