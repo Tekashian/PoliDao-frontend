@@ -27,7 +27,6 @@ import {
   Person,
   CheckCircle,
   Cancel,
-  Launch,
   VisibilityOutlined
 } from '@mui/icons-material';
 import Header from "../components/Header";
@@ -597,7 +596,7 @@ export default function HomePage() {
     return timeLeft > 0;
   });
 
-  // Logika dla karuzeli propozycji - aktywne propozycje pierwsze
+  // ✅ ZAKTUALIZOWANE: Logika dla karuzeli propozycji - aktywne propozycje pierwsze
   const getCarouselProposals = () => {
     if (!proposals || proposals.length === 0) return [];
     
@@ -626,7 +625,7 @@ export default function HomePage() {
     }).slice(0, 8); // Maksymalnie 8 propozycji w karuzeli
   };
 
-  // Logika dla karuzeli kampanii - najbliższe celu lub najbardziej aktywne
+  // ✅ ZAKTUALIZOWANE: Logika dla karuzeli kampanii z nowymi danymi z ABI
   const getCarouselCampaigns = () => {
     if (!campaigns || campaigns.length === 0) return [];
     
@@ -660,27 +659,6 @@ export default function HomePage() {
         return Number(b.raised) - Number(a.raised);
       }
     }).slice(0, 8); // Maksymalnie 8 kampanii w karuzeli
-  };
-
-  // Funkcja do formatowania nazw kampanii na podstawie prawdziwych danych
-  const getCampaignMetadata = (campaign: Campaign) => {
-    // Sprawdź czy to USDC (6 decimals) czy inny token (18 decimals)
-    const isUSDC = campaign.token.toLowerCase() === '0xa0b86a33e6441caacfd336e3b3c5a8e52d4b8b5c' || 
-                   campaign.token.toLowerCase().includes('usdc');
-    
-    const decimals = isUSDC ? 6 : 18;
-    const symbol = isUSDC ? 'USDC' : 'tokens';
-    const targetAmount = Number(campaign.target) / Math.pow(10, decimals);
-    
-    return {
-      title: campaign.isFlexible ? 
-        `Elastyczna zbiórka #${campaign.id}` : 
-        `Cel: ${targetAmount.toLocaleString()} ${symbol} (#${campaign.id})`,
-      description: campaign.isFlexible ?
-        `Elastyczna zbiórka bez określonego celu. Każda kwota pomaga!` :
-        `Zbiórka z celem ${targetAmount.toLocaleString()} ${symbol}. Wszystko albo nic!`,
-      image: '/images/zbiorka.png',
-    };
   };
 
   const carouselProposals = getCarouselProposals();
@@ -719,30 +697,37 @@ export default function HomePage() {
             emptyMessage="Brak aktywnych głosowań"
           />
 
-          {/* Karuzela najlepszych zbiórek */}
+          {/* ✅ ZAKTUALIZOWANA: Karuzela najlepszych zbiórek używająca CampaignCard */}
           <FuturisticCarousel
             title="Najgorętsze kampanie i zbiórki"
             icon={<TrendingUp sx={{ fontSize: 28 }} />}
             items={carouselCampaigns}
             renderItem={(campaign: Campaign) => {
-              const metadata = getCampaignMetadata(campaign);
-              const adaptedCampaign = {
+              // Mapowanie z typu Campaign z usePoliDao na typ wymagany przez CampaignCard
+              const mappedCampaign = {
                 campaignId: campaign.id.toString(),
-                targetAmount: campaign.target,
-                raisedAmount: campaign.raised,
+                targetAmount: BigInt(campaign.target),
+                raisedAmount: BigInt(campaign.raised),
                 creator: campaign.creator,
                 token: campaign.token,
-                endTime: campaign.endTime,
-                isFlexible: campaign.isFlexible,
+                endTime: BigInt(campaign.endTime),
+                isFlexible: campaign.isFlexible
               };
-
+              
+              const metadata = {
+                title: campaign.isFlexible 
+                  ? `Elastyczna kampania #${campaign.id}` 
+                  : `Zbiórka z celem #${campaign.id}`,
+                description: `Kampania utworzona przez ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
+                image: "/images/zbiorka.png"
+              };
+              
               return (
-                <Box sx={{ minWidth: 320, height: '100%' }}>
-                  <CampaignCard
-                    campaign={adaptedCampaign}
-                    metadata={metadata}
-                  />
-                </Box>
+                <CampaignCard
+                  key={campaign.id.toString()}
+                  campaign={mappedCampaign}
+                  metadata={metadata}
+                />
               );
             }}
             emptyMessage="Brak aktywnych kampanii i zbiórek"
@@ -943,25 +928,32 @@ export default function HomePage() {
                           </div>
                         )}
                         
+                        {/* ✅ ZAKTUALIZOWANE: Używa CampaignCard zamiast EnhancedCampaignCard */}
                         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                           {filteredCampaigns.map((campaign: Campaign) => {
-                            const metadata = getCampaignMetadata(campaign);
-                            
-                            // Adaptuj strukturę danych dla CampaignCard
-                            const adaptedCampaign = {
+                            // Mapowanie z typu Campaign z usePoliDao na typ wymagany przez CampaignCard
+                            const mappedCampaign = {
                               campaignId: campaign.id.toString(),
-                              targetAmount: campaign.target,
-                              raisedAmount: campaign.raised,
+                              targetAmount: BigInt(campaign.target),
+                              raisedAmount: BigInt(campaign.raised),
                               creator: campaign.creator,
                               token: campaign.token,
-                              endTime: campaign.endTime,
-                              isFlexible: campaign.isFlexible,
+                              endTime: BigInt(campaign.endTime),
+                              isFlexible: campaign.isFlexible
                             };
-
+                            
+                            const metadata = {
+                              title: campaign.isFlexible 
+                                ? `Elastyczna kampania #${campaign.id}` 
+                                : `Zbiórka z celem #${campaign.id}`,
+                              description: `Kampania utworzona przez ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
+                              image: "/images/zbiorka.png"
+                            };
+                            
                             return (
                               <CampaignCard
                                 key={campaign.id.toString()}
-                                campaign={adaptedCampaign}
+                                campaign={mappedCampaign}
                                 metadata={metadata}
                               />
                             );

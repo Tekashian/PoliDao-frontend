@@ -4,7 +4,7 @@ import { POLIDAO_ABI } from './poliDaoAbi'
 
 // Adres kontraktu PoliDao (zastępuje wcześniejszy Crowdfund)
 export const POLIDAO_CONTRACT_ADDRESS =
-  '0xec0d7574E6f4A269Eea62011Af02b85D86d4c171' as const
+  '0x408589993d926C71292764843eeF0D77160BfD39' as const
 
 // Adres kontraktu USDC na Sepolii (jeśli potrzebny)
 export const USDC_CONTRACT_ADDRESS =

@@ -19,17 +19,17 @@ import {
   TextField,
   DialogActions,
   Alert,
-  Divider,
   Stack,
   IconButton,
-  Tooltip,
-  Paper,
   List,
   ListItem,
   ListItemAvatar,
   ListItemText,
+  Paper,
+  Divider,
   useTheme,
   alpha,
+  CircularProgress,
 } from "@mui/material";
 import {
   Favorite,
@@ -37,538 +37,1302 @@ import {
   AccessTime,
   Person,
   AccountBalanceWallet,
-  TrendingUp,
-  Flag,
   ArrowBack,
   Launch,
   ContentCopy,
   CheckCircle,
   Cancel,
-  Info,
   Group,
-  Timeline,
+  Warning,
+  LocalHospital,
+  VolunteerActivism,
+  TrendingUp,
+  Schedule,
+  Visibility,
 } from "@mui/icons-material";
 import Header from "../../../components/Header";
 import Footer from "../../../components/Footer";
-import { useAccount } from "wagmi";
 
-// Mock data dla przykładu - w prawdziwej aplikacji pobierałbyś to z kontraktu
-const mockCampaignData = {
-  id: "123",
-  title: "Rewitalizacja parku w centrum miasta",
-  description: `
-Nasz lokalny park w centrum miasta wymaga pilnej rewitalizacji. 
-Infrastruktura została zniszczona przez lata zaniedbań, a dzieci i rodziny nie mają bezpiecznego miejsca do spędzania czasu na świeżym powietrzu.
+// Reown AppKit hooks
+import { useAppKitAccount, useAppKitNetwork } from "@reown/appkit/react";
+import { useReadContract, useWriteContract } from "wagmi";
+import { formatUnits, parseUnits } from "viem";
 
-Planujemy:
-• Remont placu zabaw z nowoczesnymi, bezpiecznymi urządzeniami
-• Renowację ścieżek spacerowych i miejsc do siedzenia  
-• Nasadzenie nowych drzew i krzewów
-• Instalację nowego oświetlenia LED
-• Utworzenie strefy fitness na powietrzu
+// Contract ABIs
+import { POLIDAO_ABI } from "../../../blockchain/poliDaoAbi";
 
-Każda złotówka zostanie przeznaczona na te konkretne cele. Regularnie będziemy publikować raporty z postępów prac.
+// ERC20 ABI inline
+const ERC20_ABI = [
+  {
+    constant: true,
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" }
+    ],
+    name: "allowance",
+    outputs: [{ name: "", type: "uint256" }],
+    type: "function"
+  },
+  {
+    constant: false,
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" }
+    ],
+    name: "approve",
+    outputs: [{ name: "", type: "bool" }],
+    type: "function"
+  },
+  {
+    constant: true,
+    inputs: [{ name: "account", type: "address" }],
+    name: "balanceOf",
+    outputs: [{ name: "", type: "uint256" }],
+    type: "function"
+  },
+  {
+    constant: true,
+    inputs: [],
+    name: "symbol",
+    outputs: [{ name: "", type: "string" }],
+    type: "function"
+  },
+] as const;
 
-Razem możemy stworzyć przestrzeń, z której będą korzystać pokolenia!
-  `,
-  image: "/images/park-rewitalizacja.jpg", // Przykładowe zdjęcie
-  creator: "0x1234567890123456789012345678901234567890",
-  creatorName: "Stowarzyszenie Zielone Miasto",
-  target: "50000000000", // 50,000 USDC (6 decimals)
-  raised: "32500000000", // 32,500 USDC
-  token: "0xa0b86a33e6441caacfd336e3b3c5a8e52d4b8b5c", // Mock USDC address
-  endTime: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60, // 30 dni od teraz
-  isFlexible: false,
-  donorsCount: 127,
-  lastDonation: Date.now() - 2 * 60 * 60 * 1000, // 2 godziny temu
-  category: "Środowisko",
-  location: "Warszawa, Śródmieście",
-  updates: [
-    {
-      date: "2025-07-07",
-      title: "Otrzymaliśmy zgodę na prace!",
-      content: "Magistrat wydał pozwolenie na rozpoczęcie prac rewitalizacyjnych. Planowane rozpoczęcie: 15 lipca.",
-      amount: "5000000000", // 5,000 USDC
-    },
-    {
-      date: "2025-07-05", 
-      title: "Przekroczyliśmy 30,000 zł!",
-      content: "Dziękujemy wszystkim darczyńcom za wsparcie. Jesteśmy już o krok bliżej realizacji marzeń!",
-      amount: "30000000000",
-    },
-  ],
-  topDonors: [
-    { address: "0xabc123...", amount: "2500000000", isAnonymous: false },
-    { address: "0xdef456...", amount: "2000000000", isAnonymous: true },
-    { address: "0x789ghi...", amount: "1500000000", isAnonymous: false },
-  ],
-};
+// Contract configuration
+const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_POLIDAO_CONTRACT_ADDRESS as `0x${string}`;
+
+interface FundraiserData {
+  id: string;
+  creator: `0x${string}`;
+  token: `0x${string}`;
+  target: bigint;
+  raised: bigint;
+  endTime: bigint;
+  isFlexible: boolean;
+  closureInitiated: boolean;
+  reclaimDeadline: bigint;
+  fundsWithdrawn: boolean;
+}
 
 export default function CampaignPage() {
   const params = useParams();
   const router = useRouter();
   const theme = useTheme();
-  const { isConnected, address } = useAccount();
   
-  const [campaign, setCampaign] = useState(mockCampaignData);
+  // Reown AppKit hooks
+  const { address, isConnected } = useAppKitAccount();
+  const { chainId } = useAppKitNetwork();
+  
+  const [campaignData, setCampaignData] = useState<FundraiserData | null>(null);
   const [donateOpen, setDonateOpen] = useState(false);
   const [donateAmount, setDonateAmount] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [needsApproval, setNeedsApproval] = useState(false);
 
-  // Obliczenia
-  const targetAmount = Number(campaign.target) / 1000000; // USDC ma 6 decimals
-  const raisedAmount = Number(campaign.raised) / 1000000;
-  const progressPercentage = (raisedAmount / targetAmount) * 100;
-  const timeLeft = campaign.endTime - Math.floor(Date.now() / 1000);
-  const daysLeft = Math.max(0, Math.floor(timeLeft / (24 * 60 * 60)));
-  const hoursLeft = Math.max(0, Math.floor((timeLeft % (24 * 60 * 60)) / 3600));
-  const isActive = timeLeft > 0;
-  const amountLeft = targetAmount - raisedAmount;
+  const campaignId = params.id as string;
+
+  // Contract read hooks
+  const {
+    data: fundraiserData,
+    error: fundraiserError,
+    isLoading: fundraiserLoading,
+  } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: POLIDAO_ABI,
+    functionName: "getFundraiser",
+    args: [BigInt(campaignId)],
+    query: {
+      enabled: !!campaignId && !isNaN(Number(campaignId)) && !!CONTRACT_ADDRESS,
+    },
+  });
+
+  // Get fundraiser title/description
+  const {
+    data: fundraiserTitle,
+  } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: POLIDAO_ABI,
+    functionName: "getFundraiserTitle",
+    args: [BigInt(campaignId)],
+    query: {
+      enabled: !!campaignId && !isNaN(Number(campaignId)) && !!CONTRACT_ADDRESS,
+    },
+  });
+
+  const {
+    data: fundraiserDescription,
+  } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: POLIDAO_ABI,
+    functionName: "getFundraiserDescription",
+    args: [BigInt(campaignId)],
+    query: {
+      enabled: !!campaignId && !isNaN(Number(campaignId)) && !!CONTRACT_ADDRESS,
+    },
+  });
+
+  const {
+    data: fundraiserCategory,
+  } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: POLIDAO_ABI,
+    functionName: "getFundraiserCategory",
+    args: [BigInt(campaignId)],
+    query: {
+      enabled: !!campaignId && !isNaN(Number(campaignId)) && !!CONTRACT_ADDRESS,
+    },
+  });
+
+  const {
+    data: donorsCount,
+  } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: POLIDAO_ABI,
+    functionName: "getDonorsCount",
+    args: [BigInt(campaignId)],
+    query: {
+      enabled: !!campaignId && !isNaN(Number(campaignId)) && !!CONTRACT_ADDRESS,
+    },
+  });
+
+  const {
+    data: donorsList,
+  } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: POLIDAO_ABI,
+    functionName: "getDonors",
+    args: [BigInt(campaignId)],
+    query: {
+      enabled: !!campaignId && !isNaN(Number(campaignId)) && !!CONTRACT_ADDRESS,
+    },
+  });
+
+  const {
+    data: timeLeft,
+  } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: POLIDAO_ABI,
+    functionName: "timeLeftOnFundraiser",
+    args: [BigInt(campaignId)],
+    query: {
+      enabled: !!campaignId && !isNaN(Number(campaignId)) && !!CONTRACT_ADDRESS,
+    },
+  });
+
+  const {
+    data: userDonation,
+  } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: POLIDAO_ABI,
+    functionName: "donationOf",
+    args: [BigInt(campaignId), address || "0x0000000000000000000000000000000000000000"],
+    query: {
+      enabled: !!campaignId && !isNaN(Number(campaignId)) && !!address && !!CONTRACT_ADDRESS,
+    },
+  });
+
+  // Contract write hooks
+  const { writeContract, isPending: isDonating, error: donateError } = useWriteContract();
+  const { writeContract: writeApproval, isPending: isApproving } = useWriteContract();
+
+  // Check user's token balance and allowance
+  const {
+    data: userBalance,
+  } = useReadContract({
+    address: campaignData?.token,
+    abi: ERC20_ABI,
+    functionName: "balanceOf",
+    args: [address || "0x0000000000000000000000000000000000000000"],
+    query: {
+      enabled: !!campaignData?.token && !!address,
+    },
+  });
+
+  const {
+    data: allowance,
+    refetch: refetchAllowance,
+  } = useReadContract({
+    address: campaignData?.token,
+    abi: ERC20_ABI,
+    functionName: "allowance",
+    args: [
+      address || "0x0000000000000000000000000000000000000000",
+      CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000",
+    ],
+    query: {
+      enabled: !!campaignData?.token && !!address && !!CONTRACT_ADDRESS,
+    },
+  });
+
+  const {
+    data: tokenSymbol,
+  } = useReadContract({
+    address: campaignData?.token,
+    abi: ERC20_ABI,
+    functionName: "symbol",
+    query: {
+      enabled: !!campaignData?.token,
+    },
+  });
 
   useEffect(() => {
-    // W prawdziwej aplikacji tutaj pobierałbyś dane z kontraktu
-    // na podstawie params.id
-    console.log("Loading campaign with ID:", params.id);
-  }, [params.id]);
+    if (fundraiserData) {
+      const [id, creator, token, target, raised, endTime, isFlexible, closureInitiated, reclaimDeadline, fundsWithdrawn] = fundraiserData;
+      
+      setCampaignData({
+        id: campaignId,
+        creator: creator as `0x${string}`,
+        token: token as `0x${string}`,
+        target: target as bigint,
+        raised: raised as bigint,
+        endTime: endTime as bigint,
+        isFlexible: isFlexible as boolean,
+        closureInitiated: closureInitiated as boolean,
+        reclaimDeadline: reclaimDeadline as bigint,
+        fundsWithdrawn: fundsWithdrawn as boolean,
+      });
+      
+      setLoading(false);
+    }
+  }, [fundraiserData, campaignId]);
 
+  useEffect(() => {
+    if (fundraiserError) {
+      setError("Nie udało się załadować danych kampanii. Sprawdź czy ID kampanii jest poprawne.");
+      setLoading(false);
+    }
+  }, [fundraiserError]);
+
+  // Helper functions
+  const formatAddress = (addr: string) => {
+    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+  };
+
+  const formatTokenAmount = (amount: bigint, decimals: number = 6) => {
+    return Number(formatUnits(amount, decimals)).toLocaleString("pl-PL", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
+  };
+
+  // Event handlers
   const handleDonate = async () => {
-    if (!isConnected) {
+    if (!isConnected || !campaignData) {
       alert("Najpierw połącz portfel!");
       return;
     }
-    
-    setLoading(true);
+
+    if (!donateAmount || isNaN(Number(donateAmount)) || Number(donateAmount) <= 0) {
+      alert("Wprowadź poprawną kwotę!");
+      return;
+    }
+
     try {
-      // Tutaj wywołałbyś funkcję donate z kontraktu
-      console.log(`Donating ${donateAmount} USDC to campaign ${campaign.id}`);
+      const amount = parseUnits(donateAmount, 6);
       
-      // Symulacja
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
+      if (userBalance && amount > userBalance) {
+        alert("Niewystarczający balans tokenów!");
+        return;
+      }
+
+      if (allowance && amount > allowance) {
+        setNeedsApproval(true);
+        return;
+      }
+
+      await writeContract({
+        address: CONTRACT_ADDRESS,
+        abi: POLIDAO_ABI,
+        functionName: "donate",
+        args: [BigInt(campaignId), amount],
+      });
+
       setDonateOpen(false);
       setDonateAmount("");
-      alert("Wpłata została pomyślnie wykonana!");
     } catch (error) {
       console.error("Donation failed:", error);
       alert("Wystąpił błąd podczas wpłaty");
-    } finally {
-      setLoading(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!campaignData || !donateAmount) return;
+
+    try {
+      const amount = parseUnits(donateAmount, 6);
+
+      await writeApproval({
+        address: campaignData.token,
+        abi: ERC20_ABI,
+        functionName: "approve",
+        args: [CONTRACT_ADDRESS, amount],
+      });
+
+      setTimeout(() => {
+        refetchAllowance();
+        setNeedsApproval(false);
+      }, 3000);
+    } catch (error) {
+      console.error("Approval failed:", error);
+      alert("Wystąpił błąd podczas zatwierdzania");
+    }
+  };
+
+  const handleRefund = async () => {
+    if (!isConnected || !campaignData) {
+      alert("Najpierw połącz portfel!");
+      return;
+    }
+
+    try {
+      await writeContract({
+        address: CONTRACT_ADDRESS,
+        abi: POLIDAO_ABI,
+        functionName: "refund",
+        args: [BigInt(campaignId)],
+      });
+    } catch (error) {
+      console.error("Refund failed:", error);
+      alert("Wystąpił błąd podczas zwrotu środków");
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!isConnected || !campaignData) {
+      alert("Najpierw połącz portfel!");
+      return;
+    }
+
+    if (address?.toLowerCase() !== campaignData.creator.toLowerCase()) {
+      alert("Tylko twórca kampanii może wypłacić środki!");
+      return;
+    }
+
+    try {
+      await writeContract({
+        address: CONTRACT_ADDRESS,
+        abi: POLIDAO_ABI,
+        functionName: "withdraw",
+        args: [BigInt(campaignId)],
+      });
+    } catch (error) {
+      console.error("Withdrawal failed:", error);
+      alert("Wystąpił błąd podczas wypłaty środków");
     }
   };
 
   const handleShare = () => {
-    const url = window.location.href;
+    const url = typeof window !== 'undefined' ? window.location.href : '';
     navigator.clipboard.writeText(url);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
-  const formatDate = (timestamp: string) => {
-    return new Date(timestamp).toLocaleDateString("pl-PL", {
-      year: "numeric",
-      month: "long", 
-      day: "numeric"
-    });
-  };
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+        <Header />
+        <Container maxWidth="xl" sx={{ pt: 3, pb: 6 }}>
+          <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "50vh" }}>
+            <CircularProgress size={60} sx={{ color: '#16a34a' }} />
+          </Box>
+        </Container>
+        <Footer />
+      </div>
+    );
+  }
 
-  const formatAddress = (addr: string) => {
-    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-  };
+  // Show error state
+  if (error || !campaignData) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+        <Header />
+        <Container maxWidth="xl" sx={{ pt: 3, pb: 6 }}>
+          <Alert severity="error" sx={{ mt: 4 }}>
+            <Typography variant="h6">Błąd ładowania kampanii</Typography>
+            <Typography>{error || "Nie udało się załadować danych kampanii"}</Typography>
+            <Button onClick={() => router.back()} sx={{ mt: 2 }}>
+              Wróć
+            </Button>
+          </Alert>
+        </Container>
+        <Footer />
+      </div>
+    );
+  }
+
+  // Calculations and display data
+  const displayTokenSymbol = tokenSymbol || 'USDC';
+  const targetAmount = Number(formatUnits(campaignData.target, 6));
+  const raisedAmount = Number(formatUnits(campaignData.raised, 6));
+  const progressPercentage = targetAmount > 0 ? (raisedAmount / targetAmount) * 100 : 0;
+  const timeLeftSeconds = timeLeft ? Number(timeLeft) : 0;
+  const daysLeft = Math.max(0, Math.floor(timeLeftSeconds / (24 * 60 * 60)));
+  const hoursLeft = Math.max(0, Math.floor((timeLeftSeconds % (24 * 60 * 60)) / 3600));
+  const isActive = timeLeftSeconds > 0 && !campaignData.closureInitiated;
+  const amountLeft = Math.max(0, targetAmount - raisedAmount);
+  const isCreator = address?.toLowerCase() === campaignData.creator.toLowerCase();
+  const hasUserDonated = userDonation && userDonation > 0n;
+  const userBalanceFormatted = userBalance ? Number(formatUnits(userBalance, 6)) : 0;
+
+  // Display data from blockchain or fallbacks
+  const displayTitle = fundraiserTitle || `Kampania Blockchain #${campaignData.id}`;
+  const displayDescription = fundraiserDescription || "Decentralizowana zbiórka na platformie PoliDAO";
+  const displayCategory = fundraiserCategory || "Blockchain Campaign";
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       <Header />
       
-      <Container maxWidth="lg" sx={{ mt: 4, mb: 8 }}>
-        {/* Breadcrumb & Back Button */}
-        <Box sx={{ mb: 3, display: "flex", alignItems: "center", gap: 2 }}>
-          <IconButton onClick={() => router.back()} sx={{ bgcolor: "white", boxShadow: 1 }}>
+      {/* Breadcrumb Navigation */}
+      <Container maxWidth="xl" sx={{ pt: 3 }}>
+        <Box sx={{ mb: 3, display: "flex", alignItems: "center", gap: 1 }}>
+          <IconButton 
+            onClick={() => router.back()} 
+            sx={{ 
+              bgcolor: "white", 
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              border: '1px solid #e5e7eb',
+              '&:hover': { boxShadow: '0 4px 8px rgba(0,0,0,0.15)' }
+            }}
+          >
             <ArrowBack />
           </IconButton>
-          <Typography variant="body2" color="text.secondary">
-            Kampanie / Zbiórki / #{campaign.id}
+          <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.875rem' }}>
+            <span style={{ color: '#16a34a', fontWeight: 500 }}>PoliDAO</span> / Kampanie / #{campaignData.id}
           </Typography>
         </Box>
+      </Container>
 
-        <Grid container spacing={4}>
-          {/* Lewa kolumna - Główne informacje */}
-          <Grid item xs={12} md={8}>
-            {/* Zdjęcie główne */}
-            <Card sx={{ mb: 3, overflow: "hidden" }}>
+      <Container maxWidth="xl" sx={{ pb: 6 }}>
+        <div className="grid lg:grid-cols-3 gap-8">
+          
+          {/* Lewa kolumna - Main Content */}
+          <div className="lg:col-span-2 space-y-8">
+            
+            {/* Hero Video/Image Section */}
+            <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 overflow-hidden">
               <Box
                 sx={{
                   height: 400,
-                  background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.8)}, ${alpha(theme.palette.secondary.main, 0.6)}), url('/images/zbiorka.png')`,
+                  background: `linear-gradient(135deg, rgba(22, 163, 74, 0.9), rgba(21, 128, 61, 0.9))`,
                   backgroundSize: "cover",
                   backgroundPosition: "center",
                   display: "flex",
-                  alignItems: "flex-end",
+                  alignItems: "center",
+                  justifyContent: "center",
                   position: "relative",
                 }}
               >
-                {/* Overlay z kategoriami */}
-                <Box sx={{ position: "absolute", top: 16, left: 16 }}>
-                  <Chip
-                    label={campaign.category}
-                    color="primary"
-                    size="small"
-                    sx={{ bgcolor: "rgba(255,255,255,0.9)", color: "primary.main" }}
-                  />
-                </Box>
-                
-                <Box sx={{ position: "absolute", top: 16, right: 16, display: "flex", gap: 1 }}>
-                  <IconButton
-                    onClick={() => setShareOpen(true)}
-                    sx={{ bgcolor: "rgba(255,255,255,0.9)" }}
-                  >
-                    <Share />
-                  </IconButton>
-                  <IconButton sx={{ bgcolor: "rgba(255,255,255,0.9)" }}>
-                    <Flag />
-                  </IconButton>
-                </Box>
-
-                {/* Tytuł na zdjęciu */}
+                {/* Play Button */}
                 <Box
                   sx={{
-                    background: "linear-gradient(transparent, rgba(0,0,0,0.7))",
-                    color: "white",
-                    p: 3,
-                    width: "100%",
+                    width: 100,
+                    height: 100,
+                    borderRadius: "50%",
+                    bgcolor: "rgba(255,255,255,0.9)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    boxShadow: '0 8px 25px rgba(0,0,0,0.3)',
+                    '&:hover': {
+                      bgcolor: "white",
+                      transform: 'scale(1.1)',
+                    },
+                    transition: 'all 0.3s ease'
                   }}
                 >
-                  <Typography variant="h4" component="h1" sx={{ fontWeight: 700, mb: 1 }}>
-                    {campaign.title}
-                  </Typography>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                    <Typography variant="body2" sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                      <Person fontSize="small" />
-                      {campaign.creatorName}
-                    </Typography>
-                    <Typography variant="body2" sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                      <AccessTime fontSize="small" />
-                      {campaign.location}
-                    </Typography>
-                  </Box>
-                </Box>
-              </Box>
-            </Card>
-
-            {/* Status i postęp */}
-            <Card sx={{ mb: 3 }}>
-              <CardContent>
-                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-                  <Typography variant="h5" sx={{ fontWeight: 600 }}>
-                    Postęp zbiórki
-                  </Typography>
-                  <Chip
-                    icon={isActive ? <AccessTime /> : <CheckCircle />}
-                    label={isActive ? `${daysLeft} dni, ${hoursLeft}h` : "Zakończona"}
-                    color={isActive ? "success" : "default"}
-                    variant="outlined"
-                  />
-                </Box>
-
-                <Box sx={{ mb: 3 }}>
-                  <Box sx={{ display: "flex", justifyContent: "space-between", mb: 1 }}>
-                    <Typography variant="h4" sx={{ fontWeight: 700, color: "primary.main" }}>
-                      {raisedAmount.toLocaleString()} USDC
-                    </Typography>
-                    <Typography variant="body1" color="text.secondary">
-                      cel: {targetAmount.toLocaleString()} USDC
-                    </Typography>
-                  </Box>
-                  
-                  <LinearProgress
-                    variant="determinate"
-                    value={Math.min(progressPercentage, 100)}
+                  <Box
                     sx={{
-                      height: 12,
-                      borderRadius: 6,
-                      mb: 2,
-                      bgcolor: alpha(theme.palette.grey[300], 0.3),
-                      "& .MuiLinearProgress-bar": {
-                        borderRadius: 6,
-                        background: `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-                      },
+                      width: 0,
+                      height: 0,
+                      borderLeft: '25px solid #16a34a',
+                      borderTop: '15px solid transparent',
+                      borderBottom: '15px solid transparent',
+                      ml: '5px'
                     }}
                   />
-                  
-                  <Grid container spacing={2}>
-                    <Grid item xs={4}>
-                      <Box sx={{ textAlign: "center" }}>
-                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                          {Math.round(progressPercentage)}%
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          osiągnięte
-                        </Typography>
-                      </Box>
-                    </Grid>
-                    <Grid item xs={4}>
-                      <Box sx={{ textAlign: "center" }}>
-                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                          {campaign.donorsCount}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          darczyńców
-                        </Typography>
-                      </Box>
-                    </Grid>
-                    <Grid item xs={4}>
-                      <Box sx={{ textAlign: "center" }}>
-                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                          {Math.max(0, amountLeft).toLocaleString()}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          pozostało
-                        </Typography>
-                      </Box>
-                    </Grid>
-                  </Grid>
                 </Box>
 
-                {!campaign.isFlexible && (
-                  <Alert severity="info" sx={{ mb: 2 }}>
-                    <strong>Zbiórka z celem:</strong> Środki zostaną przekazane tylko gdy osiągniemy cel {targetAmount.toLocaleString()} USDC. 
-                    W przeciwnym razie wszystkie wpłaty zostaną zwrócone.
-                  </Alert>
-                )}
-              </CardContent>
-            </Card>
+                {/* Floating Status Badge */}
+                <Chip
+                  label="PILNE!"
+                  sx={{ 
+                    position: "absolute",
+                    top: 20,
+                    left: 20,
+                    bgcolor: '#dc2626',
+                    color: 'white',
+                    fontWeight: 700,
+                    fontSize: '0.9rem',
+                    px: 2,
+                    py: 1
+                  }}
+                />
+              </Box>
+            </div>
 
-            {/* Opis kampanii */}
-            <Card sx={{ mb: 3 }}>
-              <CardContent>
-                <Typography variant="h5" sx={{ fontWeight: 600, mb: 2 }}>
-                  O tej kampanii
-                </Typography>
-                <Typography variant="body1" sx={{ whiteSpace: "pre-line", lineHeight: 1.7 }}>
-                  {campaign.description}
-                </Typography>
-              </CardContent>
-            </Card>
+            {/* Campaign Description */}
+            <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-8">
+              <Typography variant="h4" sx={{ fontWeight: 700, mb: 4, color: '#111827' }}>
+                O tej kampanii
+              </Typography>
+              
+              <Typography 
+                variant="body1" 
+                sx={{ 
+                  lineHeight: 1.7, 
+                  color: '#374151',
+                  fontSize: '1.1rem',
+                  mb: 4
+                }}
+              >
+                {displayDescription || `To jest decentralizowana kampania crowdfundingowa uruchomiona na platformie PoliDAO 
+                (#${campaignData.id}). Wszystkie transakcje są transparentne i zapisane w blockchain, co gwarantuje 
+                pełną przejrzystość procesu zbierania funduszy.`}
+              </Typography>
+              
+              <Typography 
+                variant="body1" 
+                sx={{ 
+                  lineHeight: 1.7, 
+                  color: '#374151',
+                  fontSize: '1.1rem',
+                  mb: 4
+                }}
+              >
+                Kampania wykorzystuje smart contract do automatycznego zarządzania funduszami, 
+                co eliminuje potrzebę zaufania do pośredników. Każda wpłata jest natychmiast 
+                widoczna na blockchain, a zasady wypłaty są automatycznie egzekwowane przez kod.
+              </Typography>
 
-            {/* Aktualizacje */}
-            <Card>
-              <CardContent>
-                <Typography variant="h5" sx={{ fontWeight: 600, mb: 2, display: "flex", alignItems: "center", gap: 1 }}>
-                  <Timeline />
-                  Aktualizacje kampanii
+              {/* Campaign Details */}
+              <Box sx={{ p: 4, bgcolor: '#f0fdf4', borderRadius: 3, border: '1px solid #bbf7d0' }}>
+                <Typography variant="h6" sx={{ fontWeight: 600, mb: 3, color: '#166534' }}>
+                  📋 Szczegóły zbiórki
                 </Typography>
-                
-                {campaign.updates.map((update, index) => (
-                  <Box key={index} sx={{ mb: index < campaign.updates.length - 1 ? 3 : 0 }}>
-                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 1 }}>
-                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                        {update.title}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {formatDate(update.date)}
-                      </Typography>
-                    </Box>
-                    <Typography variant="body1" sx={{ mb: 1 }}>
-                      {update.content}
+                <Grid container spacing={3}>
+                  <Grid item xs={12} sm={6}>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 0.5 }}>
+                      Cel zbiórki:
                     </Typography>
-                    <Typography variant="body2" color="primary.main" sx={{ fontWeight: 600 }}>
-                      Zebrano: {(Number(update.amount) / 1000000).toLocaleString()} USDC
+                    <Typography variant="body1" sx={{ color: '#374151' }}>
+                      {displayCategory}
                     </Typography>
-                    {index < campaign.updates.length - 1 && <Divider sx={{ mt: 3 }} />}
-                  </Box>
-                ))}
-              </CardContent>
-            </Card>
-          </Grid>
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 0.5 }}>
+                      Typ kampanii:
+                    </Typography>
+                    <Typography variant="body1" sx={{ color: '#374151' }}>
+                      {campaignData.isFlexible ? "Elastyczna - środki dostępne zawsze" : "Z celem - środki tylko po osiągnięciu"}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 0.5 }}>
+                      Token płatności:
+                    </Typography>
+                    <Typography variant="body1" sx={{ color: '#374151' }}>
+                      {displayTokenSymbol}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 0.5 }}>
+                      Data zakończenia:
+                    </Typography>
+                    <Typography variant="body1" sx={{ color: '#374151' }}>
+                      {new Date(Number(campaignData.endTime) * 1000).toLocaleDateString("pl-PL")}
+                    </Typography>
+                  </Grid>
+                </Grid>
+              </Box>
 
-          {/* Prawa kolumna - Akcje i statystyki */}
-          <Grid item xs={12} md={4}>
-            {/* Karta wpłaty */}
-            <Card sx={{ mb: 3, position: "sticky", top: 100 }}>
-              <CardContent>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-                  Wesprzyj kampanię
+              <Alert 
+                severity="info" 
+                sx={{ 
+                  mt: 4,
+                  borderRadius: 2,
+                  bgcolor: '#f0f9ff',
+                  border: '1px solid #0ea5e9'
+                }}
+              >
+                <Typography variant="body1">
+                  <strong>Blockchain gwarantuje transparentność:</strong> Każda transakcja jest 
+                  publiczna i niemożliwa do sfałszowania. Możesz śledzić wszystkie wpłaty w czasie rzeczywistym.
                 </Typography>
-                
-                {isActive ? (
-                  <Stack spacing={2}>
-                    <Button
-                      variant="contained"
-                      size="large"
-                      fullWidth
-                      onClick={() => setDonateOpen(true)}
-                      disabled={!isConnected}
-                      startIcon={<Favorite />}
-                      sx={{
-                        py: 1.5,
-                        background: `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-                        fontWeight: 600,
-                        fontSize: "1.1rem",
-                      }}
-                    >
-                      {isConnected ? "Wpłać środki" : "Połącz portfel"}
-                    </Button>
-                    
-                    {!isConnected && (
-                      <Alert severity="warning" sx={{ fontSize: "0.875rem" }}>
-                        Połącz portfel, aby móc wpłacić środki
-                      </Alert>
-                    )}
-                  </Stack>
-                ) : (
-                  <Alert severity="info">
-                    Kampania została zakończona
-                  </Alert>
-                )}
-                
-                <Box sx={{ mt: 3, pt: 2, borderTop: 1, borderColor: "divider" }}>
-                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
-                    Ostatnia wpłata: {new Date(campaign.lastDonation).toLocaleString("pl-PL")}
+              </Alert>
+            </div>
+
+            {/* Status Alerts */}
+            {!campaignData.isFlexible && (
+              <Alert 
+                severity="info" 
+                sx={{ 
+                  borderRadius: 3,
+                  bgcolor: '#f0f9ff',
+                  border: '1px solid #0ea5e9',
+                  '& .MuiAlert-icon': { color: '#16a34a' }
+                }}
+              >
+                <Typography variant="body1">
+                  <strong>Zbiórka z celem:</strong> Środki zostaną przekazane tylko gdy osiągniemy pełny cel. 
+                  W przeciwnym przypadku wszystkie wpłaty zostaną automatycznie zwrócone.
+                </Typography>
+              </Alert>
+            )}
+
+            {campaignData.closureInitiated && (
+              <Alert severity="warning" sx={{ borderRadius: 3 }}>
+                <Typography variant="body1">
+                  <strong>Kampania jest zamykana.</strong> Darczyńcy mają czas do {" "}
+                  {new Date(Number(campaignData.reclaimDeadline) * 1000).toLocaleDateString("pl-PL")} 
+                  {" "} na odzyskanie środków.
+                </Typography>
+              </Alert>
+            )}
+          </div>
+
+          {/* Prawa kolumna - Sidebar with all panels */}
+          <div className="space-y-6">
+            
+            {/* Progress Card - Główny panel wsparcia */}
+            <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-6">
+              {/* Amount Display */}
+              <Typography 
+                variant="h3" 
+                sx={{ 
+                  fontWeight: 700, 
+                  color: "#16a34a",
+                  mb: 1,
+                  fontSize: '2.5rem'
+                }}
+              >
+                {formatTokenAmount(campaignData.raised)} {displayTokenSymbol}
+              </Typography>
+              <Typography variant="body1" color="text.secondary" sx={{ mb: 1 }}>
+                zebrano z {formatTokenAmount(campaignData.target)} {displayTokenSymbol}
+              </Typography>
+              <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+                ({Math.round(progressPercentage)}%)
+              </Typography>
+              
+              {/* Progress Bar */}
+              <LinearProgress
+                variant="determinate"
+                value={Math.min(progressPercentage, 100)}
+                sx={{
+                  height: 16,
+                  borderRadius: 8,
+                  mb: 4,
+                  bgcolor: '#f3f4f6',
+                  "& .MuiLinearProgress-bar": {
+                    borderRadius: 8,
+                    bgcolor: '#16a34a',
+                  },
+                }}
+              />
+
+              <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
+                Brakuje {formatTokenAmount(BigInt(Math.max(0, amountLeft) * 1000000), 6)} {displayTokenSymbol}
+              </Typography>
+              
+              {/* Donate Button */}
+              {!isConnected ? (
+                <Box sx={{ textAlign: 'center', mb: 4 }}>
+                  <Typography variant="body1" sx={{ mb: 3, color: '#6b7280' }}>
+                    Połącz portfel aby wesprzeć
+                  </Typography>
+                  <appkit-button />
+                </Box>
+              ) : isActive && !campaignData.closureInitiated ? (
+                <Button
+                  variant="contained"
+                  size="large"
+                  fullWidth
+                  onClick={() => setDonateOpen(true)}
+                  sx={{
+                    py: 3,
+                    bgcolor: '#16a34a',
+                    '&:hover': { bgcolor: '#15803d' },
+                    fontWeight: 700,
+                    fontSize: "1.2rem",
+                    textTransform: 'none',
+                    borderRadius: 3,
+                    mb: 3
+                  }}
+                >
+                  ❤️ Wesprzyj
+                </Button>
+              ) : null}
+
+              {/* Stats */}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 4 }}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Wsparło
+                  </Typography>
+                  <Typography variant="h5" sx={{ fontWeight: 700, color: '#111827' }}>
+                    {donorsCount ? Number(donorsCount).toLocaleString('pl-PL') : 0}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    osób
                   </Typography>
                 </Box>
-              </CardContent>
-            </Card>
-
-            {/* Informacje o twórcy */}
-            <Card sx={{ mb: 3 }}>
-              <CardContent>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-                  Twórca kampanii
-                </Typography>
-                
-                <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
-                  <Avatar sx={{ width: 48, height: 48, bgcolor: "primary.main" }}>
-                    {campaign.creatorName.charAt(0)}
-                  </Avatar>
-                  <Box>
-                    <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                      {campaign.creatorName}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontFamily: "monospace" }}>
-                      {formatAddress(campaign.creator)}
-                    </Typography>
-                  </Box>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Pozostało
+                  </Typography>
+                  <Typography variant="h5" sx={{ fontWeight: 700, color: '#111827' }}>
+                    {daysLeft}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    dni
+                  </Typography>
                 </Box>
+              </Box>
+
+              {/* Share buttons */}
+              <Box sx={{ display: 'flex', gap: 2, mb: 4 }}>
+                <Button
+                  variant="outlined"
+                  fullWidth
+                  startIcon={<Share />}
+                  onClick={() => setShareOpen(true)}
+                  sx={{
+                    borderColor: '#d1d5db',
+                    color: '#6b7280',
+                    py: 2,
+                    fontWeight: 600,
+                    '&:hover': {
+                      borderColor: '#16a34a',
+                      color: '#16a34a'
+                    }
+                  }}
+                >
+                  📧 Udostępnij
+                </Button>
+                <Button
+                  variant="outlined"
+                  fullWidth
+                  startIcon={<Favorite />}
+                  sx={{
+                    borderColor: '#d1d5db',
+                    color: '#6b7280',
+                    py: 2,
+                    fontWeight: 600,
+                    '&:hover': {
+                      borderColor: '#dc2626',
+                      color: '#dc2626'
+                    }
+                  }}
+                >
+                  💖 Polub
+                </Button>
+              </Box>
+
+              {/* Creator actions */}
+              {isCreator && !campaignData.fundsWithdrawn && isConnected && (
+                <Button
+                  variant="contained"
+                  color="success"
+                  fullWidth
+                  onClick={handleWithdraw}
+                  startIcon={<AccountBalanceWallet />}
+                  disabled={!((campaignData.isFlexible || progressPercentage >= 100) && !isActive)}
+                  sx={{ 
+                    fontWeight: 600, 
+                    py: 2,
+                    mb: 2,
+                    bgcolor: '#059669',
+                    '&:hover': { bgcolor: '#047857' }
+                  }}
+                >
+                  Wypłać środki
+                </Button>
+              )}
+
+              {/* Refund button */}
+              {hasUserDonated && !campaignData.isFlexible && progressPercentage < 100 && !isActive && isConnected && (
+                <Button
+                  variant="outlined"
+                  color="error"
+                  fullWidth
+                  onClick={handleRefund}
+                  startIcon={<Cancel />}
+                  sx={{ fontWeight: 600, py: 2, mb: 2 }}
+                >
+                  Zwróć środki
+                </Button>
+              )}
+
+              {/* User donation info */}
+              {hasUserDonated && (
+                <Alert severity="success" sx={{ mb: 4, borderRadius: 2 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    ✅ Twoja wpłata: {formatTokenAmount(userDonation || 0n)} {displayTokenSymbol}
+                  </Typography>
+                </Alert>
+              )}
+
+              {/* Alternative Donation Options */}
+              <Box sx={{ pt: 4, borderTop: '1px solid #e5e7eb' }}>
+                <Typography variant="body1" color="text.secondary" sx={{ mb: 3, fontWeight: 600 }}>
+                  💳 Inne sposoby wpłaty
+                </Typography>
+                <Button
+                  variant="outlined"
+                  fullWidth
+                  sx={{
+                    py: 2,
+                    borderColor: '#16a34a',
+                    color: '#16a34a',
+                    fontWeight: 600,
+                    mb: 2,
+                    '&:hover': {
+                      borderColor: '#15803d',
+                      bgcolor: '#f0fdf4'
+                    }
+                  }}
+                >
+                  📱 SMS: POMOC na 72051
+                </Button>
                 
                 <Button
                   variant="outlined"
-                  size="small"
                   fullWidth
-                  startIcon={<Launch />}
-                  onClick={() => window.open(`https://etherscan.io/address/${campaign.creator}`, "_blank")}
+                  sx={{
+                    py: 2,
+                    borderColor: '#d1d5db',
+                    color: '#6b7280',
+                    fontWeight: 500,
+                    '&:hover': {
+                      borderColor: '#16a34a',
+                      color: '#16a34a'
+                    }
+                  }}
                 >
-                  Zobacz na Etherscan
+                  📄 Przekaż 1,5% podatku
                 </Button>
-              </CardContent>
-            </Card>
+              </Box>
+            </div>
 
-            {/* Top darczyńcy */}
-            <Card>
-              <CardContent>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, display: "flex", alignItems: "center", gap: 1 }}>
-                  <Group />
-                  Najlepsi darczyńcy
+            {/* Organization Info Card */}
+            <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-6">
+              <Typography variant="h6" sx={{ fontWeight: 700, mb: 3, color: '#111827' }}>
+                👤 Organizator zbiórki
+              </Typography>
+              
+              <Box sx={{ display: "flex", alignItems: "center", gap: 3, mb: 3 }}>
+                <Avatar 
+                  sx={{ 
+                    width: 60, 
+                    height: 60, 
+                    bgcolor: "#16a34a",
+                    fontSize: '1.5rem',
+                    fontWeight: 700
+                  }}
+                >
+                  {campaignData.creator.slice(2, 4).toUpperCase()}
+                </Avatar>
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 600, color: '#111827', mb: 0.5 }}>
+                    Fundacja Siepomaga
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.9rem' }}>
+                    {formatAddress(campaignData.creator)}
+                  </Typography>
+                </Box>
+              </Box>
+              
+              <Button
+                variant="outlined"
+                size="small"
+                fullWidth
+                startIcon={<Launch />}
+                onClick={() => window.open(`https://etherscan.io/address/${campaignData.creator}`, "_blank")}
+                sx={{
+                  borderColor: '#d1d5db',
+                  color: '#6b7280',
+                  py: 1.5,
+                  '&:hover': {
+                    borderColor: '#16a34a',
+                    color: '#16a34a'
+                  }
+                }}
+              >
+                Zobacz na Etherscan
+              </Button>
+            </div>
+
+            {/* User Balance Info */}
+            {isConnected && userBalance !== undefined && (
+              <div className="bg-blue-50/80 backdrop-blur-lg rounded-3xl shadow-xl border border-blue-200 p-6">
+                <Alert severity="info" sx={{ borderRadius: 2, bgcolor: 'transparent', border: 'none', p: 0 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: '#1565c0' }}>
+                    💰 Twoje saldo
+                  </Typography>
+                  <Typography variant="h5" sx={{ fontWeight: 700, color: '#111827' }}>
+                    {userBalanceFormatted.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} {displayTokenSymbol}
+                  </Typography>
+                </Alert>
+              </div>
+            )}
+
+            {/* Recent Donors */}
+            {donorsList && donorsList.length > 0 && (
+              <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-6">
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 3, color: '#111827', display: "flex", alignItems: "center", gap: 1 }}>
+                  <Group sx={{ color: '#16a34a' }} />
+                  Ostatnie wpłaty
                 </Typography>
                 
                 <List sx={{ p: 0 }}>
-                  {campaign.topDonors.map((donor, index) => (
-                    <ListItem key={index} sx={{ px: 0, py: 1 }}>
+                  {donorsList.slice(0, 5).map((donor, index) => (
+                    <ListItem key={index} sx={{ px: 0, py: 2 }}>
                       <ListItemAvatar>
-                        <Avatar sx={{ bgcolor: index === 0 ? "gold" : index === 1 ? "silver" : "#cd7f32", width: 32, height: 32 }}>
-                          <Typography variant="body2" sx={{ fontWeight: 600, color: "white" }}>
-                            {index + 1}
-                          </Typography>
+                        <Avatar 
+                          sx={{ 
+                            width: 40, 
+                            height: 40, 
+                            bgcolor: '#16a34a',
+                            fontSize: '0.875rem',
+                            fontWeight: 600
+                          }}
+                        >
+                          {(donor as string).slice(2, 4).toUpperCase()}
                         </Avatar>
                       </ListItemAvatar>
                       <ListItemText
                         primary={
-                          <Typography variant="body2">
-                            {donor.isAnonymous ? "Anonimowy darczyńca" : formatAddress(donor.address)}
+                          <Typography variant="body1" sx={{ fontWeight: 500, color: '#111827' }}>
+                            {formatAddress(donor as string)}
                           </Typography>
                         }
                         secondary={
-                          <Typography variant="body2" color="primary.main" sx={{ fontWeight: 600 }}>
-                            {(Number(donor.amount) / 1000000).toLocaleString()} USDC
+                          <Typography variant="body2" color="text.secondary">
+                            {index === 0 ? 'przed chwilą' : `${index + 1}h temu`}
                           </Typography>
                         }
+                      />
+                      <Chip
+                        label="❤️"
+                        size="small"
+                        sx={{
+                          bgcolor: '#fecaca',
+                          color: '#dc2626',
+                          fontSize: '0.75rem',
+                          height: 24
+                        }}
                       />
                     </ListItem>
                   ))}
                 </List>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
+                
+                {donorsList.length > 5 && (
+                  <Box sx={{ textAlign: 'center', mt: 2, pt: 2, borderTop: '1px solid #e5e7eb' }}>
+                    <Typography variant="body2" color="text.secondary">
+                      i {donorsList.length - 5} kolejnych osób
+                    </Typography>
+                  </Box>
+                )}
+              </div>
+            )}
+
+            {/* Technical Details Card */}
+            <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-6">
+              <Typography variant="h6" sx={{ fontWeight: 700, mb: 3, color: '#111827', display: "flex", alignItems: "center", gap: 1 }}>
+                🔗 Szczegóły techniczne
+              </Typography>
+              
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 1, fontSize: '0.875rem' }}>
+                  Token płatności:
+                </Typography>
+                <Typography variant="body2" sx={{ fontFamily: "monospace", fontSize: '0.8rem', wordBreak: "break-all", color: '#374151', bgcolor: '#f9fafb', p: 1, borderRadius: 1 }}>
+                  {campaignData.token}
+                </Typography>
+              </Box>
+
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 1, fontSize: '0.875rem' }}>
+                  Adres kontraktu:
+                </Typography>
+                <Typography variant="body2" sx={{ fontFamily: "monospace", fontSize: '0.8rem', wordBreak: "break-all", color: '#374151', bgcolor: '#f9fafb', p: 1, borderRadius: 1 }}>
+                  {CONTRACT_ADDRESS}
+                </Typography>
+              </Box>
+
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 1, fontSize: '0.875rem' }}>
+                  Sieć blockchain:
+                </Typography>
+                <Typography variant="body1" sx={{ color: '#374151' }}>
+                  Chain ID: {chainId || 'Nie połączono'}
+                </Typography>
+              </Box>
+
+              <Box>
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 1, fontSize: '0.875rem' }}>
+                  Status wypłaty:
+                </Typography>
+                <Typography variant="body1" sx={{ color: '#374151' }}>
+                  {campaignData.fundsWithdrawn ? "✅ Wypłacone" : "⏳ Oczekuje"}
+                </Typography>
+              </Box>
+            </div>
+          </div>
+        </div>
       </Container>
 
-      {/* Dialog wpłaty */}
-      <Dialog open={donateOpen} onClose={() => setDonateOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Wpłać środki na kampanię</DialogTitle>
-        <DialogContent>
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="body1" sx={{ mb: 1 }}>
-              {campaign.title}
+      {/* Donation Dialog */}
+      <Dialog 
+        open={donateOpen} 
+        onClose={() => setDonateOpen(false)} 
+        maxWidth="sm" 
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+            border: '2px solid #16a34a'
+          }
+        }}
+      >
+        <DialogTitle sx={{ pb: 1, bgcolor: '#f0fdf4' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <VolunteerActivism sx={{ color: '#16a34a' }} />
+            <Typography variant="h6" sx={{ fontWeight: 700, color: '#111827' }}>
+              💚 Wesprzyj: {displayTitle.length > 40 ? displayTitle.slice(0, 40) + '...' : displayTitle}
+            </Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="body1" sx={{ mb: 1, fontWeight: 600 }}>
+              {displayCategory}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Wpłacasz środki w USDC na adres kontraktu
+              Wpłacasz środki w {displayTokenSymbol} • Kampania #{campaignData.id}
             </Typography>
+            {userBalance !== undefined && (
+              <Typography variant="body2" color="text.secondary">
+                💰 Dostępne: {userBalanceFormatted.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} {displayTokenSymbol}
+              </Typography>
+            )}
           </Box>
           
           <TextField
             fullWidth
-            label="Kwota (USDC)"
+            label={`Kwota (${displayTokenSymbol})`}
             type="number"
             value={donateAmount}
-            onChange={(e) => setDonateAmount(e.target.value)}
-            sx={{ mb: 2 }}
-            inputProps={{ min: 1, step: 0.01 }}
+            onChange={(e) => {
+              setDonateAmount(e.target.value);
+              setNeedsApproval(false);
+            }}
+            sx={{ 
+              mb: 2,
+              '& .MuiOutlinedInput-root': {
+                '&.Mui-focused fieldset': {
+                  borderColor: '#16a34a',
+                },
+              },
+              '& .MuiInputLabel-root.Mui-focused': {
+                color: '#16a34a',
+              },
+            }}
+            inputProps={{ 
+              min: 0.01, 
+              step: 0.01,
+              max: userBalanceFormatted || undefined,
+            }}
+            error={donateAmount && userBalanceFormatted && Number(donateAmount) > userBalanceFormatted}
+            helperText={
+              donateAmount && userBalanceFormatted && Number(donateAmount) > userBalanceFormatted
+                ? "Kwota przekracza dostępne środki"
+                : ""
+            }
           />
+
+          {/* Quick donation amounts */}
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="body2" sx={{ mb: 2, color: '#6b7280', fontWeight: 600 }}>
+              Szybka wpłata:
+            </Typography>
+            <Grid container spacing={1}>
+              {[10, 50, 100, 500].map((amount) => (
+                <Grid item xs={6} key={amount}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    fullWidth
+                    onClick={() => setDonateAmount(amount.toString())}
+                    sx={{
+                      borderColor: '#16a34a',
+                      color: '#16a34a',
+                      '&:hover': {
+                        borderColor: '#15803d',
+                        bgcolor: '#f0fdf4'
+                      },
+                      fontSize: '0.875rem',
+                      py: 1,
+                      fontWeight: 600
+                    }}
+                  >
+                    {amount} {displayTokenSymbol}
+                  </Button>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
           
-          {!campaign.isFlexible && (
-            <Alert severity="info" sx={{ mb: 2 }}>
-              To jest zbiórka z celem. Środki zostaną zwrócone jeśli cel nie zostanie osiągnięty.
+          {needsApproval && (
+            <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                Musisz najpierw zatwierdzić wydatkowanie tokenów {displayTokenSymbol}.
+              </Typography>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={handleApprove}
+                disabled={isApproving}
+                sx={{
+                  borderColor: '#f59e0b',
+                  color: '#f59e0b',
+                  '&:hover': { borderColor: '#d97706' }
+                }}
+              >
+                {isApproving ? "Zatwierdzanie..." : `Zatwierdź ${donateAmount} ${displayTokenSymbol}`}
+              </Button>
+            </Alert>
+          )}
+          
+          {!campaignData.isFlexible && (
+            <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>
+              <Typography variant="body2">
+                To jest zbiórka z celem. Środki zostaną zwrócone jeśli cel nie zostanie osiągnięty.
+              </Typography>
+            </Alert>
+          )}
+
+          {donateError && (
+            <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+              <Typography variant="body2">
+                Błąd podczas wpłaty: {donateError.message}
+              </Typography>
             </Alert>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDonateOpen(false)}>Anuluj</Button>
+        <DialogActions sx={{ p: 3, pt: 1, bgcolor: '#f9fafb' }}>
+          <Button 
+            onClick={() => {
+              setDonateOpen(false);
+              setNeedsApproval(false);
+              setDonateAmount("");
+            }}
+            sx={{ color: '#6b7280' }}
+          >
+            Anuluj
+          </Button>
           <Button
             variant="contained"
-            onClick={handleDonate}
-            disabled={!donateAmount || loading}
+            onClick={needsApproval ? handleApprove : handleDonate}
+            disabled={
+              !donateAmount || 
+              (isDonating || isApproving) || 
+              Number(donateAmount) <= 0 ||
+              (userBalanceFormatted && Number(donateAmount) > userBalanceFormatted)
+            }
+            sx={{
+              bgcolor: '#dc2626',
+              '&:hover': { bgcolor: '#b91c1c' },
+              fontWeight: 600,
+              px: 4,
+              py: 1.5
+            }}
           >
-            {loading ? "Przetwarzanie..." : `Wpłać ${donateAmount} USDC`}
+            {isApproving ? "⏳ Zatwierdzanie..." : 
+             isDonating ? "⏳ Przetwarzanie..." : 
+             needsApproval ? `✅ Zatwierdź ${displayTokenSymbol}` :
+             `❤️ Wpłać ${donateAmount} ${displayTokenSymbol}`}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Dialog udostępniania */}
-      <Dialog open={shareOpen} onClose={() => setShareOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Udostępnij kampanię</DialogTitle>
+      {/* Share Dialog */}
+      <Dialog 
+        open={shareOpen} 
+        onClose={() => setShareOpen(false)} 
+        maxWidth="sm" 
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+          }
+        }}
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Share sx={{ color: '#16a34a' }} />
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>
+              🔗 Udostępnij kampanię
+            </Typography>
+          </Box>
+        </DialogTitle>
         <DialogContent>
           <Typography variant="body1" sx={{ mb: 2 }}>
-            Udostępnij link do tej kampanii swoim znajomym:
+            Pomóż rozpowszechnić tę kampanię udostępniając link:
           </Typography>
           
           <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
             <TextField
               fullWidth
-              value={window.location.href}
+              value={typeof window !== 'undefined' ? window.location.href : ''}
               InputProps={{ readOnly: true }}
               size="small"
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  bgcolor: '#f9fafb'
+                }
+              }}
             />
-            <IconButton onClick={handleShare} color={copiedLink ? "success" : "primary"}>
+            <IconButton 
+              onClick={handleShare} 
+              color={copiedLink ? "success" : "primary"}
+              sx={{ 
+                bgcolor: copiedLink ? '#dcfce7' : '#f0fdf4',
+                '&:hover': { bgcolor: copiedLink ? '#bbf7d0' : '#dcfce7' },
+                border: '1px solid #16a34a'
+              }}
+            >
               {copiedLink ? <CheckCircle /> : <ContentCopy />}
             </IconButton>
           </Box>
           
           {copiedLink && (
-            <Alert severity="success">Link został skopiowany do schowka!</Alert>
+            <Alert severity="success" sx={{ borderRadius: 2 }}>
+              ✅ Link został skopiowany do schowka!
+            </Alert>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShareOpen(false)}>Zamknij</Button>
+        <DialogActions sx={{ p: 3, pt: 1 }}>
+          <Button 
+            onClick={() => setShareOpen(false)}
+            variant="contained"
+            sx={{
+              bgcolor: '#16a34a',
+              '&:hover': { bgcolor: '#15803d' }
+            }}
+          >
+            Zamknij
+          </Button>
         </DialogActions>
       </Dialog>
 
