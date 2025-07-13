@@ -1,4 +1,4 @@
-// src/app/campaigns/[id]/page.tsx - KOMPLETNA NAPRAWIONA WERSJA
+// src/app/campaigns/[id]/page.tsx - INSPIROWANE DZIAŁAJĄCYM PROJEKTEM
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
@@ -6,8 +6,6 @@ import { useParams, useRouter } from "next/navigation";
 import {
   Box,
   Typography,
-  Card,
-  CardContent,
   LinearProgress,
   Button,
   Avatar,
@@ -20,37 +18,23 @@ import {
   TextField,
   DialogActions,
   Alert,
-  Stack,
   IconButton,
   List,
   ListItem,
   ListItemAvatar,
   ListItemText,
-  Paper,
-  Divider,
   useTheme,
   alpha,
   CircularProgress,
   Snackbar,
 } from "@mui/material";
 import {
-  Favorite,
   Share,
-  AccessTime,
-  Person,
-  AccountBalanceWallet,
   ArrowBack,
   Launch,
   ContentCopy,
   CheckCircle,
-  Cancel,
-  Group,
-  Warning,
-  LocalHospital,
   VolunteerActivism,
-  TrendingUp,
-  Schedule,
-  Visibility,
   Refresh,
 } from "@mui/icons-material";
 import Header from "../../../components/Header";
@@ -128,11 +112,16 @@ interface FundraiserData {
   fundsWithdrawn: boolean;
 }
 
-interface TransactionState {
-  hash?: string;
-  isConfirming: boolean;
-  isSuccess: boolean;
-  error?: string;
+interface DonationLog {
+  donor: string;
+  amount: number;
+  timestamp: number;
+  txHash: string;
+}
+
+interface Update {
+  content: string;
+  timestamp: number;
 }
 
 export default function CampaignPage() {
@@ -153,14 +142,17 @@ export default function CampaignPage() {
   const [error, setError] = useState<string | null>(null);
   const [needsApproval, setNeedsApproval] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'info' });
-  const [transactionState, setTransactionState] = useState<TransactionState>({
-    isConfirming: false,
-    isSuccess: false
-  });
+  const [donations, setDonations] = useState<DonationLog[]>([]);
+  const [uniqueDonorsCount, setUniqueDonorsCount] = useState(0);
+  const [updates, setUpdates] = useState<Update[]>([]);
+  const [newUpdateText, setNewUpdateText] = useState<string>('');
+  const [isOwner, setIsOwner] = useState(false);
+  const [lastRefreshTime, setLastRefreshTime] = useState(Date.now());
 
   const campaignId = params.id as string;
+  const idNum = Number(campaignId);
 
-  // ✅ NOWE: Sprawdź dostępne kampanie używając getAllFundraiserIds
+  // ✅ INSPIROWANE: Sprawdź dostępne kampanie używając getAllFundraiserIds
   const {
     data: allFundraiserIds,
     isLoading: idsLoading,
@@ -171,23 +163,17 @@ export default function CampaignPage() {
     functionName: "getAllFundraiserIds",
     query: {
       enabled: !!CONTRACT_ADDRESS,
-      staleTime: 30000,
+      staleTime: 0, // ✅ Zawsze świeże dane
+      refetchInterval: 10000,
     },
   });
 
-  // ✅ NOWE: Sprawdź czy ID kampanii istnieje w liście
+  // ✅ INSPIROWANE: Sprawdź czy ID kampanii istnieje w liście
   const isValidCampaignId = campaignId && !isNaN(Number(campaignId)) && Number(campaignId) >= 0;
   const campaignExists = allFundraiserIds && isValidCampaignId && 
     allFundraiserIds.some((id: bigint) => Number(id) === Number(campaignId));
 
-  console.log("=== DEBUG CAMPAIGN PAGE v2 ===");
-  console.log("Campaign ID:", campaignId);
-  console.log("Is valid ID:", isValidCampaignId);
-  console.log("All fundraiser IDs:", allFundraiserIds?.map(id => Number(id)));
-  console.log("Campaign exists:", campaignExists);
-  console.log("Contract Address:", CONTRACT_ADDRESS);
-
-  // ✅ GŁÓWNA FUNKCJA - getFundraiser z walidacją
+  // ✅ INSPIROWANE: GŁÓWNA FUNKCJA - getFundraiser z agresywnym odświeżaniem
   const {
     data: fundraiserData,
     error: fundraiserError,
@@ -197,32 +183,19 @@ export default function CampaignPage() {
     address: CONTRACT_ADDRESS,
     abi: POLIDAO_ABI,
     functionName: "getFundraiser",
-    args: [BigInt(campaignId || 0)],
+    args: [BigInt(idNum)],
     query: {
-      enabled: !!CONTRACT_ADDRESS && campaignExists, // ✅ Tylko gdy kampania istnieje
-      refetchInterval: 10000,
+      enabled: !!CONTRACT_ADDRESS && !!campaignId && !isNaN(idNum),
+      refetchInterval: 5000, // ✅ Co 5 sekund - jak w działającym projekcie
+      refetchIntervalInBackground: true,
+      refetchOnMount: true,
+      refetchOnWindowFocus: true,
+      staleTime: 0, // ✅ Zawsze pobieraj świeże dane
       retry: 3,
-      staleTime: 5000,
     },
   });
 
-  // ✅ DODATKOWE DANE - getFundraiserSummary
-  const {
-    data: fundraiserSummary,
-    refetch: refetchSummary,
-  } = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: POLIDAO_ABI,
-    functionName: "getFundraiserSummary",
-    args: [BigInt(campaignId || 0)],
-    query: {
-      enabled: !!CONTRACT_ADDRESS && campaignExists,
-      refetchInterval: 30000,
-      retry: 2,
-    },
-  });
-
-  // ✅ INNE FUNKCJE z walidacją
+  // ✅ INSPIROWANE: Liczba darczyńców z częstym odświeżaniem
   const {
     data: donorsCount,
     refetch: refetchDonorsCount,
@@ -230,10 +203,11 @@ export default function CampaignPage() {
     address: CONTRACT_ADDRESS,
     abi: POLIDAO_ABI,
     functionName: "getDonorsCount",
-    args: [BigInt(campaignId || 0)],
+    args: [BigInt(idNum)],
     query: {
-      enabled: !!CONTRACT_ADDRESS && campaignExists,
-      refetchInterval: 10000,
+      enabled: !!CONTRACT_ADDRESS && !!campaignId && !isNaN(idNum),
+      refetchInterval: 5000, // ✅ Co 5 sekund
+      staleTime: 0,
     },
   });
 
@@ -244,10 +218,11 @@ export default function CampaignPage() {
     address: CONTRACT_ADDRESS,
     abi: POLIDAO_ABI,
     functionName: "timeLeftOnFundraiser",
-    args: [BigInt(campaignId || 0)],
+    args: [BigInt(idNum)],
     query: {
-      enabled: !!CONTRACT_ADDRESS && campaignExists,
-      refetchInterval: 60000,
+      enabled: !!CONTRACT_ADDRESS && !!campaignId && !isNaN(idNum),
+      refetchInterval: 30000, // Co 30 sekund dla czasu
+      staleTime: 0,
     },
   });
 
@@ -258,10 +233,11 @@ export default function CampaignPage() {
     address: CONTRACT_ADDRESS,
     abi: POLIDAO_ABI,
     functionName: "donationOf",
-    args: [BigInt(campaignId || 0), address || "0x0000000000000000000000000000000000000000"],
+    args: [BigInt(idNum), address || "0x0000000000000000000000000000000000000000"],
     query: {
-      enabled: !!CONTRACT_ADDRESS && campaignExists && !!address,
-      refetchInterval: 10000,
+      enabled: !!CONTRACT_ADDRESS && !!campaignId && !isNaN(idNum) && !!address,
+      refetchInterval: 5000, // ✅ Co 5 sekund
+      staleTime: 0,
     },
   });
 
@@ -306,6 +282,7 @@ export default function CampaignPage() {
     query: {
       enabled: !!campaignData?.token && !!address,
       refetchInterval: 15000,
+      staleTime: 0,
     },
   });
 
@@ -323,6 +300,7 @@ export default function CampaignPage() {
     query: {
       enabled: !!campaignData?.token && !!address && !!CONTRACT_ADDRESS,
       refetchInterval: 15000,
+      staleTime: 0,
     },
   });
 
@@ -334,6 +312,7 @@ export default function CampaignPage() {
     functionName: "symbol",
     query: {
       enabled: !!campaignData?.token,
+      staleTime: 30000, // Symbol nie zmienia się często
     },
   });
 
@@ -345,19 +324,26 @@ export default function CampaignPage() {
     functionName: "decimals",
     query: {
       enabled: !!campaignData?.token,
+      staleTime: 30000, // Decimals nie zmienia się często
     },
   });
 
-  // ✅ OBSŁUGA BŁĘDÓW - sprawdzenie czy kampania istnieje
+  // ✅ INSPIROWANE: Debug listener dla zmian danych
   useEffect(() => {
-    // Jeśli nie ma campaign ID
+    if (fundraiserData) {
+      console.log("🔄 Dane kampanii odświeżone:", new Date().toLocaleTimeString());
+      setLastRefreshTime(Date.now());
+    }
+  }, [fundraiserData]);
+
+  // ✅ INSPIROWANE: Obsługa błędów
+  useEffect(() => {
     if (!isValidCampaignId) {
       setError("Nieprawidłowy ID kampanii");
       setLoading(false);
       return;
     }
 
-    // Jeśli ładowanie IDs zakończone i kampania nie istnieje
     if (!idsLoading && allFundraiserIds !== undefined) {
       if (!campaignExists) {
         const availableIds = allFundraiserIds.map((id: bigint) => Number(id)).join(', ');
@@ -367,7 +353,6 @@ export default function CampaignPage() {
       }
     }
 
-    // Jeśli są błędy kontraktu
     if (idsError) {
       setError(`Błąd połączenia z kontraktem: ${idsError.message}`);
       setLoading(false);
@@ -379,16 +364,13 @@ export default function CampaignPage() {
       setLoading(false);
       return;
     }
-
   }, [isValidCampaignId, campaignId, idsLoading, allFundraiserIds, campaignExists, idsError, fundraiserError]);
 
-  // ✅ SETUP FUNDRAISER DATA - używając dostępnych funkcji
+  // ✅ INSPIROWANE: Setup fundraiser data - używając dostępnych funkcji
   useEffect(() => {
     if (fundraiserData && Array.isArray(fundraiserData) && fundraiserData.length >= 10) {
       console.log("Setting up campaign data from fundraiserData:", fundraiserData);
       
-      // getFundraiser zwraca:
-      // [id, creator, token, target, raised, endTime, isFlexible, closureInitiated, reclaimDeadline, fundsWithdrawn]
       const [
         id, 
         creator, 
@@ -420,51 +402,134 @@ export default function CampaignPage() {
     }
   }, [fundraiserData, campaignId]);
 
-  // Manual refresh function
-  const refreshAllData = useCallback(async () => {
-    try {
-      await Promise.all([
-        refetchFundraiser(),
-        refetchSummary(),
-        refetchDonorsCount(),
-        refetchTimeLeft(),
-        refetchUserDonation(),
-        refetchUserBalance(),
-        refetchAllowance(),
-      ]);
-      
+  // Check ownership
+  useEffect(() => {
+    if (!campaignData || !address) {
+      setIsOwner(false);
+      return;
+    }
+    setIsOwner(campaignData.creator.toLowerCase() === address.toLowerCase());
+  }, [campaignData, address]);
+
+  // ✅ INSPIROWANE: Fetch donation logs - jak w działającym projekcie
+  useEffect(() => {
+    if (!campaignData) return;
+    if (typeof window === 'undefined') return;
+
+    const fetchDonationLogs = async () => {
+      try {
+        const ethersProvider = new BrowserProvider(
+          (window as any).ethereum,
+          chainId || 1
+        );
+        const contract = new Contract(
+          CONTRACT_ADDRESS,
+          POLIDAO_ABI,
+          ethersProvider
+        );
+        
+        // ✅ Używaj prawidłowej nazwy eventu z ABI: "DonationMade"
+        const filter = contract.filters.DonationMade?.(BigInt(idNum), null);
+        if (!filter) {
+          console.log("No DonationMade filter found");
+          return;
+        }
+
+        const rawLogs = await contract.queryFilter(filter);
+        console.log("Raw donation logs:", rawLogs);
+        
+        const parsed: DonationLog[] = rawLogs.map((log: any) => {
+          const { donor, amount } = log.args || {};
+          const decimals = tokenDecimals || 6;
+          
+          return {
+            donor: donor?.toLowerCase() || '',
+            amount: Number(amount || 0) / Math.pow(10, decimals),
+            timestamp: Date.now(), // Fallback timestamp
+            txHash: log.transactionHash || ''
+          };
+        });
+        
+        parsed.sort((a, b) => b.timestamp - a.timestamp);
+        setDonations(parsed);
+        setUniqueDonorsCount(new Set(parsed.map(d => d.donor)).size);
+        
+        console.log("Parsed donations:", parsed);
+      } catch (err) {
+        console.error('Error fetching donation logs:', err);
+        setDonations([]);
+        setUniqueDonorsCount(0);
+      }
+    };
+
+    fetchDonationLogs();
+    // ✅ INSPIROWANE: Odświeżaj logi co 15 sekund
+    const interval = setInterval(fetchDonationLogs, 15000);
+    return () => clearInterval(interval);
+  }, [campaignData, chainId, tokenDecimals, idNum]);
+
+  // ✅ INSPIROWANE: Auto-refresh po udanych transakcjach
+  useEffect(() => {
+    if (isDonationSuccess) {
       setSnackbar({
         open: true,
-        message: 'Dane zostały odświeżone!',
+        message: 'Wpłata została potwierdzona! Odświeżanie danych...',
         severity: 'success'
       });
-    } catch (error) {
-      console.error('Error refreshing data:', error);
+      
+      // Natychmiastowe odświeżenie po transakcji
+      setTimeout(() => {
+        refetchFundraiser();
+        refetchDonorsCount();
+        refetchUserDonation();
+        setDonateOpen(false);
+        setDonateAmount("");
+        setNeedsApproval(false);
+      }, 2000);
+    }
+  }, [isDonationSuccess, refetchFundraiser, refetchDonorsCount, refetchUserDonation]);
+
+  useEffect(() => {
+    if (isApprovalSuccess) {
       setSnackbar({
         open: true,
-        message: 'Błąd podczas odświeżania danych',
-        severity: 'error'
+        message: 'Zatwierdzenie zostało potwierdzone!',
+        severity: 'success'
       });
+      setTimeout(() => {
+        refetchAllowance();
+        setNeedsApproval(false);
+      }, 2000);
     }
-  }, [
-    refetchFundraiser, refetchSummary, refetchDonorsCount, 
-    refetchTimeLeft, refetchUserDonation,
-    refetchUserBalance, refetchAllowance
-  ]);
+  }, [isApprovalSuccess, refetchAllowance]);
 
   // Helper functions
   const formatAddress = (addr: string) => {
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
   };
 
+  // ✅ INSPIROWANE: formatTokenAmount jak w działającym projekcie
   const formatTokenAmount = (amount: bigint, decimals: number = 6) => {
-    return Number(formatUnits(amount, decimals)).toLocaleString("pl-PL", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+    const asString = formatUnits(amount, decimals);
+    const asNumber = Number(asString);
+    return asNumber.toFixed(2);
+  };
+
+  // Handle updates
+  const handleAddUpdate = () => {
+    const trimmed = newUpdateText.trim();
+    if (!trimmed) return;
+    setUpdates(prev => [{ content: trimmed, timestamp: Date.now() }, ...prev]);
+    setNewUpdateText('');
+    
+    setSnackbar({
+      open: true,
+      message: 'Aktualność została dodana!',
+      severity: 'success'
     });
   };
 
-  // Enhanced donation flow
+  // ✅ INSPIROWANE: Enhanced donation flow
   const handleDonate = async () => {
     if (!isConnected || !campaignData) {
       setSnackbar({
@@ -506,8 +571,6 @@ export default function CampaignPage() {
           severity: 'info'
         });
         
-        setTransactionState({ isConfirming: true, isSuccess: false });
-        
         await writeApproval({
           address: campaignData.token,
           abi: ERC20_ABI,
@@ -519,18 +582,15 @@ export default function CampaignPage() {
       }
 
       // If approval is sufficient, proceed with donation
-      setTransactionState({ isConfirming: true, isSuccess: false });
-      
       await writeContract({
         address: CONTRACT_ADDRESS,
         abi: POLIDAO_ABI,
         functionName: "donate",
-        args: [BigInt(campaignId), amount],
+        args: [BigInt(idNum), amount],
       });
 
     } catch (error: any) {
       console.error("Transaction failed:", error);
-      setTransactionState({ isConfirming: false, isSuccess: false, error: error.message });
       setSnackbar({
         open: true,
         message: `Wystąpił błąd: ${error.message || 'Nieznany błąd'}`,
@@ -551,9 +611,6 @@ export default function CampaignPage() {
               <Typography variant="h6" color="text.secondary">
                 Ładowanie kampanii #{campaignId}...
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                {idsLoading ? "Sprawdzanie dostępnych kampanii..." : "Pobieranie danych..."}
-              </Typography>
             </Box>
           </Box>
         </Container>
@@ -571,30 +628,11 @@ export default function CampaignPage() {
           <Alert severity="error" sx={{ mt: 4 }}>
             <Typography variant="h6">Błąd ładowania kampanii</Typography>
             <Typography>{error || "Nie udało się załadować danych kampanii"}</Typography>
-            <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
-              ID kampanii: {campaignId} | Kontrakt: {CONTRACT_ADDRESS?.slice(0, 10)}...
-            </Typography>
             {allFundraiserIds && allFundraiserIds.length > 0 && (
               <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                 Dostępne kampanie: {allFundraiserIds.map((id: bigint) => Number(id)).join(', ')}
               </Typography>
             )}
-            <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
-              <Button onClick={() => router.push('/')}>
-                Wróć na stronę główną
-              </Button>
-              <Button onClick={refreshAllData} variant="outlined">
-                Spróbuj ponownie
-              </Button>
-              {allFundraiserIds && allFundraiserIds.length > 0 && (
-                <Button 
-                  onClick={() => router.push(`/campaigns/${Number(allFundraiserIds[0])}`)}
-                  variant="contained"
-                >
-                  Zobacz kampanię #{Number(allFundraiserIds[0])}
-                </Button>
-              )}
-            </Box>
           </Alert>
         </Container>
         <Footer />
@@ -602,31 +640,47 @@ export default function CampaignPage() {
     );
   }
 
-  // Calculations and display data
+  // ✅ INSPIROWANE: Calculations and display data - jak w działającym projekcie
   const displayTokenSymbol = tokenSymbol || 'USDC';
   const decimals = tokenDecimals || 6;
-  const targetAmount = Number(formatUnits(campaignData.target, decimals));
-  const raisedAmount = Number(formatUnits(campaignData.raised, decimals));
-  const progressPercentage = targetAmount > 0 ? (raisedAmount / targetAmount) * 100 : 0;
+  const raised = Number(formatUnits(campaignData.raised, decimals));
+  const target = Number(formatUnits(campaignData.target, decimals));
+  const missing = (target - raised).toFixed(2);
+  const progressPercent = campaignData.target > 0n 
+    ? Number((campaignData.raised * 10000n) / campaignData.target) / 100 
+    : 0;
+  
   const timeLeftSeconds = timeLeft ? Number(timeLeft) : 0;
   const daysLeft = Math.max(0, Math.floor(timeLeftSeconds / (24 * 60 * 60)));
   const hoursLeft = Math.max(0, Math.floor((timeLeftSeconds % (24 * 60 * 60)) / 3600));
   const isActive = timeLeftSeconds > 0 && !campaignData.closureInitiated;
-  const amountLeft = Math.max(0, targetAmount - raisedAmount);
   const isCreator = address?.toLowerCase() === campaignData.creator.toLowerCase();
   const hasUserDonated = userDonation && userDonation > 0n;
   const userBalanceFormatted = userBalance ? Number(formatUnits(userBalance, decimals)) : 0;
 
   let displayTitle = `Kampania Blockchain #${campaignData.id}`;
   let displayDescription = "Decentralizowana zbiórka na platformie PoliDAO";
-  let displayCategory = "Blockchain Campaign";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       <Header />
       
-      {/* Breadcrumb Navigation */}
-      <Container maxWidth="xl" sx={{ pt: 3 }}>
+      {/* ✅ INSPIROWANE: Hero section z blur background jak w działającym projekcie */}
+      <div className="relative w-full h-[600px] -mt-56">
+        <div className="absolute inset-0 -z-10">
+          <Image
+            src={PLACEHOLDER_IMAGE}
+            alt="Tło rozmyte kampanii"
+            fill
+            className="object-cover object-top w-full h-full blur-lg scale-110"
+            priority
+          />
+          <div className="absolute inset-0 bg-black opacity-20" />
+        </div>
+      </div>
+
+      <main className="container mx-auto p-6 -mt-[350px] relative z-10">
+        {/* ✅ INSPIROWANE: Breadcrumb Navigation */}
         <Box sx={{ mb: 3, display: "flex", alignItems: "center", gap: 1 }}>
           <IconButton 
             onClick={() => router.push('/')} 
@@ -634,418 +688,397 @@ export default function CampaignPage() {
               bgcolor: "white", 
               boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
               border: '1px solid #e5e7eb',
-              '&:hover': { boxShadow: '0 4px 8px rgba(0,0,0,0.15)' }
             }}
           >
             <ArrowBack />
           </IconButton>
-          <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.875rem' }}>
+          <Typography variant="body2" color="text.secondary">
             <span style={{ color: '#16a34a', fontWeight: 500 }}>PoliDAO</span> / Kampanie / #{campaignData.id}
           </Typography>
           
-          {/* Refresh button */}
-          <IconButton 
-            onClick={refreshAllData}
-            disabled={loading}
-            sx={{ 
-              bgcolor: "white", 
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              border: '1px solid #e5e7eb',
-              ml: 'auto',
-              '&:hover': { boxShadow: '0 4px 8px rgba(0,0,0,0.15)' }
-            }}
-            title="Odśwież dane"
-          >
-            <Refresh />
-          </IconButton>
+          {/* ✅ INSPIROWANE: Real-time refresh indicator */}
+          <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              Ostatnie odświeżenie: {new Date(lastRefreshTime).toLocaleTimeString('pl-PL')}
+            </Typography>
+            <Box
+              sx={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                bgcolor: '#16a34a',
+                animation: 'pulse 2s infinite'
+              }}
+            />
+          </Box>
         </Box>
 
-        {/* Success indicator */}
-        <Alert severity="success" sx={{ mb: 2 }}>
-          <Typography variant="body2">
-            <strong>✅ Kampania załadowana pomyślnie!</strong> 
-            ID: {campaignId} | 
-            Kontrakt: {CONTRACT_ADDRESS?.slice(0, 10)}... | 
-            Typ: {campaignData.isFlexible ? 'Elastyczna' : 'Z celem'}
-          </Typography>
-        </Alert>
-      </Container>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
 
-      <Container maxWidth="xl" sx={{ pb: 6 }}>
-        <div className="grid lg:grid-cols-3 gap-8">
-          
-          {/* Lewa kolumna - Main Content */}
-          <div className="lg:col-span-2 space-y-8">
-            
-            {/* Hero Image Section */}
-            <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 overflow-hidden">
-              <Box sx={{ position: 'relative', height: 400 }}>
-                <Image
-                  src={PLACEHOLDER_IMAGE}
-                  alt={displayTitle}
-                  fill
-                  className="object-cover"
-                  priority
-                />
-                {/* Floating Status Badge */}
-                <Chip
-                  label={isActive ? "AKTYWNA!" : "ZAKOŃCZONA"}
-                  sx={{ 
-                    position: "absolute",
-                    top: 20,
-                    left: 20,
-                    bgcolor: isActive ? '#16a34a' : '#dc2626',
-                    color: 'white',
-                    fontWeight: 700,
-                    fontSize: '0.9rem',
-                    px: 2,
-                    py: 1,
-                    zIndex: 10
-                  }}
-                />
-              </Box>
+          {/* ✅ INSPIROWANE: LEWA KOLUMNA - mobile/tablet */}
+          <div className="space-y-6">
+
+            {/* Obraz kampanii */}
+            <div className="w-full relative rounded-md overflow-hidden shadow-sm h-[600px]">
+              <Image
+                src={PLACEHOLDER_IMAGE}
+                alt={displayTitle}
+                fill
+                className="object-cover object-center w-full h-full"
+                priority
+              />
+              {/* ✅ INSPIROWANE: Floating Status Badge */}
+              <Chip
+                label={isActive ? "AKTYWNA!" : "ZAKOŃCZONA"}
+                sx={{ 
+                  position: "absolute",
+                  top: 20,
+                  left: 20,
+                  bgcolor: isActive ? '#16a34a' : '#dc2626',
+                  color: 'white',
+                  fontWeight: 700,
+                  fontSize: '0.9rem',
+                  px: 2,
+                  py: 1,
+                  zIndex: 10
+                }}
+              />
             </div>
 
-            {/* Campaign Description */}
-            <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-8">
-              <Typography variant="h4" sx={{ fontWeight: 700, mb: 4, color: '#111827' }}>
-                {displayTitle}
-              </Typography>
-              
-              <Typography 
-                variant="body1" 
-                sx={{ 
-                  lineHeight: 1.7, 
-                  color: '#374151',
-                  fontSize: '1.1rem',
-                  mb: 4
-                }}
-              >
-                {displayDescription}
-              </Typography>
-              
-              {/* Campaign Details */}
-              <Box sx={{ p: 4, bgcolor: '#f0fdf4', borderRadius: 3, border: '1px solid #bbf7d0' }}>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 3, color: '#166534' }}>
-                  📋 Szczegóły kampanii
-                </Typography>
-                <Grid container spacing={3}>
-                  <Grid item xs={12} sm={6}>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 0.5 }}>
-                      Typ kampanii:
-                    </Typography>
-                    <Typography variant="body1" sx={{ color: '#374151' }}>
-                      {campaignData.isFlexible ? "🌊 Elastyczna" : "🎯 Z celem"}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 0.5 }}>
-                      Token płatności:
-                    </Typography>
-                    <Typography variant="body1" sx={{ color: '#374151' }}>
-                      {displayTokenSymbol}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 0.5 }}>
-                      Twórca:
-                    </Typography>
-                    <Typography variant="body1" sx={{ color: '#374151', fontFamily: 'monospace', fontSize: '0.9rem' }}>
-                      {formatAddress(campaignData.creator)}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 0.5 }}>
-                      Data zakończenia:
-                    </Typography>
-                    <Typography variant="body1" sx={{ color: '#374151' }}>
-                      {new Date(Number(campaignData.endTime) * 1000).toLocaleDateString("pl-PL")}
-                    </Typography>
-                  </Grid>
-                </Grid>
-              </Box>
+            {/* ✅ INSPIROWANE: Opis kampanii */}
+            <div className="bg-white rounded-md shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h2 className="text-2xl font-semibold text-[#1F4E79]">
+                  Opis kampanii
+                </h2>
+              </div>
+              <div className="px-6 py-4">
+                <p className="text-sm text-gray-700">{displayDescription}</p>
+                
+                {/* ✅ INSPIROWANE: Campaign Details */}
+                <div className="mt-4 space-y-2">
+                  <p className="text-xs text-gray-500">
+                    Twórca: {formatAddress(campaignData.creator)}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Token: {displayTokenSymbol}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Typ: {campaignData.isFlexible ? "🌊 Elastyczna" : "🎯 Z celem"}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Data zakończenia: {new Date(Number(campaignData.endTime) * 1000).toLocaleDateString("pl-PL")}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* ✅ INSPIROWANE: Aktualności */}
+            <div className="bg-white rounded-md shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h2 className="text-2xl font-semibold text-[#1F4E79]">
+                  Aktualności
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  Najnowsze informacje
+                </p>
+              </div>
+              <div className="px-6 py-4 max-h-[300px] overflow-auto space-y-4">
+                {updates.length === 0 && (
+                  <p className="text-xs text-gray-400">
+                    Brak aktualności. {isOwner && "Dodaj pierwszą aktualność poniżej."}
+                  </p>
+                )}
+                {updates.map((u, idx) => (
+                  <div
+                    key={idx}
+                    className="bg-gray-50 rounded-md p-3 border border-gray-100"
+                  >
+                    <p className="text-xs text-gray-700">{u.content}</p>
+                    <p className="mt-1 text-[10px] text-gray-400">
+                      {new Date(u.timestamp).toLocaleString('pl-PL')}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              {isOwner && (
+                <div className="border-t border-gray-100 px-6 py-4 space-y-2">
+                  <textarea
+                    rows={3}
+                    placeholder="Nowa aktualność..."
+                    value={newUpdateText}
+                    onChange={e => setNewUpdateText(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-100 rounded-md focus:outline-none focus:ring-1 focus:ring-[#1F4E79]"
+                  />
+                  <button
+                    onClick={handleAddUpdate}
+                    className="w-full py-2 text-base font-medium text-white bg-[#68CC89] hover:bg-[#5FBF7A] rounded-md"
+                  >
+                    Dodaj
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* ✅ INSPIROWANE: Historia wpłat */}
+            <div className="bg-white rounded-md shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h2 className="text-lg font-semibold text-[#1F4E79]">
+                  Historia wpłat
+                </h2>
+                <p className="text-xs text-gray-500">
+                  Ostatnie odświeżenie: {new Date(lastRefreshTime).toLocaleTimeString('pl-PL')}
+                </p>
+              </div>
+              {donations.length === 0 && (
+                <p className="px-6 py-4 text-xs text-gray-400">Brak wpłat.</p>
+              )}
+              {donations.length > 0 && (
+                <ul className="divide-y divide-gray-100 max-h-[400px] overflow-auto">
+                  {donations.map((d, idx) => (
+                    <li key={idx} className="flex justify-between px-6 py-3">
+                      <div>
+                        <p className="text-sm text-gray-700">
+                          {d.donor.slice(0, 6)}…{d.donor.slice(-4)}
+                        </p>
+                        <p className="text-[10px] text-gray-400">
+                          {new Date(d.timestamp).toLocaleString('pl-PL')}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end space-y-1">
+                        <p className="text-sm font-medium text-green-600">
+                          {d.amount.toFixed(2)} {displayTokenSymbol}
+                        </p>
+                        <a
+                          href={`https://sepolia.etherscan.io/tx/${d.txHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] text-blue-500 hover:underline"
+                        >
+                          Etherscan
+                        </a>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
 
-          {/* Prawa kolumna - Progress Card */}
-          <div className="space-y-6">
-            <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-6">
-              {/* Amount Display */}
-              <Typography 
-                variant="h3" 
-                sx={{ 
-                  fontWeight: 700, 
-                  color: "#16a34a",
-                  mb: 1,
-                  fontSize: '2.5rem'
-                }}
-              >
-                {formatTokenAmount(campaignData.raised, decimals)} {displayTokenSymbol}
-              </Typography>
-              <Typography variant="body1" color="text.secondary" sx={{ mb: 1 }}>
-                zebrano z {formatTokenAmount(campaignData.target, decimals)} {displayTokenSymbol}
-              </Typography>
-              <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-                ({Math.round(progressPercentage)}%)
-              </Typography>
+          {/* ✅ INSPIROWANE: PRAWA KOLUMNA - desktop donation panel */}
+          <div className="space-y-6 lg:sticky lg:top-[175px]">
+
+            {/* ✅ INSPIROWANE: Desktop donate panel */}
+            <div className="bg-white rounded-md shadow-sm overflow-hidden">
+              <div className="px-6 py-4">
+                <h1 className="text-2xl font-semibold text-[#1F4E79]">
+                  {displayTitle}
+                </h1>
+              </div>
               
-              {/* Progress Bar */}
-              <LinearProgress
-                variant="determinate"
-                value={Math.min(progressPercentage, 100)}
-                sx={{
-                  height: 16,
-                  borderRadius: 8,
-                  mb: 4,
-                  bgcolor: '#f3f4f6',
-                  "& .MuiLinearProgress-bar": {
-                    borderRadius: 8,
-                    bgcolor: '#16a34a',
-                  },
-                }}
-              />
-
-              {/* Stats */}
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 4 }}>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Wsparło
-                  </Typography>
-                  <Typography variant="h5" sx={{ fontWeight: 700, color: '#111827' }}>
-                    {donorsCount ? Number(donorsCount) : 0}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    osób
-                  </Typography>
-                </Box>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Pozostało
-                  </Typography>
-                  <Typography variant="h5" sx={{ fontWeight: 700, color: '#111827' }}>
-                    {daysLeft}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    dni
-                  </Typography>
-                </Box>
-              </Box>
-
-              {/* Donate Button */}
-              {!isConnected ? (
-                <Box sx={{ textAlign: 'center', mb: 4 }}>
-                  <Typography variant="body1" sx={{ mb: 3, color: '#6b7280' }}>
-                    Połącz portfel aby wesprzeć
-                  </Typography>
-                  <appkit-button />
-                </Box>
-              ) : isActive && !campaignData.closureInitiated ? (
-                <Button
-                  variant="contained"
-                  size="large"
-                  fullWidth
-                  onClick={() => setDonateOpen(true)}
-                  disabled={isDonating || isDonationConfirming || isApproving || isApprovalConfirming}
-                  sx={{
-                    py: 3,
-                    bgcolor: '#16a34a',
-                    '&:hover': { bgcolor: '#15803d' },
-                    fontWeight: 700,
-                    fontSize: "1.2rem",
-                    textTransform: 'none',
-                    borderRadius: 3,
-                    mb: 3
-                  }}
-                >
-                  {isDonating || isDonationConfirming ? (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <CircularProgress size={20} color="inherit" />
-                      Przetwarzanie...
-                    </Box>
-                  ) : isApproving || isApprovalConfirming ? (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <CircularProgress size={20} color="inherit" />
-                      Zatwierdzanie...
-                    </Box>
-                  ) : (
-                    "❤️ Wesprzyj"
+              {/* ✅ INSPIROWANE: Progress section z dynamicznymi danymi */}
+              <div className="px-6 pb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-lg font-medium text-green-600">
+                    {raised.toLocaleString('pl-PL')} {displayTokenSymbol}
+                  </p>
+                  {fundraiserLoading && (
+                    <div className="flex items-center gap-1">
+                      <CircularProgress size={12} />
+                      <span className="text-xs text-gray-500">Odświeżanie...</span>
+                    </div>
                   )}
-                </Button>
-              ) : null}
+                </div>
+                
+                <p className="text-base font-normal text-gray-500 mb-2">
+                  ({progressPercent.toFixed(2)}%) z {target.toLocaleString('pl-PL')} {displayTokenSymbol}
+                </p>
+                
+                {/* ✅ INSPIROWANE: Animated progress bar */}
+                <div className="mt-2 w-full bg-gray-100 rounded-full h-3">
+                  <div
+                    className="h-3 rounded-full bg-green-600 transition-all duration-1000 ease-out"
+                    style={{ width: `${Math.min(progressPercent, 100)}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-gray-500">
+                  Brakuje {missing} {displayTokenSymbol}
+                </p>
+              </div>
+              
+              {/* ✅ INSPIROWANE: Stats section */}
+              <div className="px-6 py-3 bg-gray-50 border-y border-gray-100">
+                <div className="flex justify-between text-center">
+                  <div>
+                    <p className="text-lg font-bold text-gray-800">
+                      {donorsCount ? Number(donorsCount) : 0}
+                    </p>
+                    <p className="text-xs text-gray-500">Wsparło osób</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-gray-800">
+                      {daysLeft}
+                    </p>
+                    <p className="text-xs text-gray-500">Dni pozostało</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-gray-800">
+                      {hoursLeft}h
+                    </p>
+                    <p className="text-xs text-gray-500">Godzin</p>
+                  </div>
+                </div>
+              </div>
 
-              {/* User donation info */}
-              {hasUserDonated && (
-                <Alert severity="success" sx={{ mb: 4, borderRadius: 2 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    ✅ Twoja wpłata: {formatTokenAmount(userDonation || 0n, decimals)} {displayTokenSymbol}
-                  </Typography>
-                </Alert>
-              )}
+              {/* ✅ INSPIROWANE: Donation input */}
+              <div className="px-6 mb-4 mt-4">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder={`Kwota w ${displayTokenSymbol}`}
+                  value={donateAmount}
+                  onChange={e => setDonateAmount(e.target.value)}
+                  className="w-full px-3 py-3 border border-gray-200 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#16a34a] focus:border-transparent"
+                />
+                {userBalance !== undefined && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    💰 Dostępne: {userBalanceFormatted.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} {displayTokenSymbol}
+                  </p>
+                )}
+              </div>
 
-              {/* Share button */}
-              <Button
-                variant="outlined"
-                fullWidth
-                startIcon={<Share />}
-                onClick={() => setShareOpen(true)}
-                sx={{
-                  borderColor: '#d1d5db',
-                  color: '#6b7280',
-                  py: 2,
-                  fontWeight: 600,
-                  '&:hover': {
-                    borderColor: '#16a34a',
-                    color: '#16a34a'
-                  }
-                }}
-              >
-                📧 Udostępnij kampanię
-              </Button>
+              {/* ✅ INSPIROWANE: Donation button */}
+              <div className="px-6 py-4">
+                {!isConnected ? (
+                  <div className="text-center">
+                    <p className="mb-3 text-gray-600">Połącz portfel aby wesprzeć</p>
+                    <appkit-button />
+                  </div>
+                ) : isActive && !campaignData.closureInitiated ? (
+                  <button
+                    onClick={() => setDonateOpen(true)}
+                    disabled={isDonating || isDonationConfirming || isApproving || isApprovalConfirming}
+                    className="w-full py-3 text-lg font-semibold text-white bg-[#16a34a] hover:bg-[#15803d] rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                  >
+                    {isDonating || isDonationConfirming ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <CircularProgress size={20} sx={{ color: 'white' }} />
+                        Przetwarzanie...
+                      </div>
+                    ) : isApproving || isApprovalConfirming ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <CircularProgress size={20} sx={{ color: 'white' }} />
+                        Zatwierdzanie...
+                      </div>
+                    ) : (
+                      "❤️ Wesprzyj teraz"
+                    )}
+                  </button>
+                ) : (
+                  <div className="text-center py-4">
+                    <p className="text-gray-500">
+                      {!isActive ? "Kampania zakończona" : "Kampania jest zamykana"}
+                    </p>
+                  </div>
+                )}
+                
+                {/* ✅ INSPIROWANE: User donation info */}
+                {hasUserDonated && (
+                  <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-md">
+                    <p className="text-sm font-medium text-green-800">
+                      ✅ Twoja wpłata: {formatTokenAmount(userDonation || 0n, decimals)} {displayTokenSymbol}
+                    </p>
+                  </div>
+                )}
+
+                <p className="mt-2 text-center text-xs text-gray-500">
+                  Wsparło {uniqueDonorsCount.toLocaleString('pl-PL')} osób
+                </p>
+              </div>
+
+              {/* ✅ INSPIROWANE: Action buttons jak w działającym projekcie */}
+              <div className="px-6 py-3 flex justify-between border-t border-gray-100">
+                <button className="flex flex-col items-center text-blue-500 hover:text-blue-700 transition-colors">
+                  <span className="text-xl mb-1">🐷</span>
+                  <span className="text-xs">Skarbonka</span>
+                </button>
+                <button className="flex flex-col items-center text-blue-500 hover:text-blue-700 transition-colors">
+                  <span className="text-xl mb-1">📣</span>
+                  <span className="text-xs">Promuj</span>
+                </button>
+                <button 
+                  onClick={() => setShareOpen(true)}
+                  className="flex flex-col items-center text-blue-500 hover:text-blue-700 transition-colors"
+                >
+                  <span className="text-xl mb-1">📤</span>
+                  <span className="text-xs">Udostępnij</span>
+                </button>
+              </div>
+
+              {/* ✅ INSPIROWANE: Quick info sections */}
+              <div className="border-t border-gray-100">
+                <div className="px-6 py-2 text-xs text-gray-500 space-y-1">
+                  <p><strong>Typ kampanii:</strong> {campaignData.isFlexible ? "Elastyczna" : "Z celem"}</p>
+                  <p><strong>Status wypłaty:</strong> {campaignData.fundsWithdrawn ? "Wypłacone" : "Oczekuje"}</p>
+                  <p><strong>Ostatnie odświeżenie:</strong> {new Date(lastRefreshTime).toLocaleTimeString('pl-PL')}</p>
+                </div>
+              </div>
             </div>
 
-            {/* Available Campaigns Navigation */}
+            {/* ✅ INSPIROWANE: Available Campaigns Navigation */}
             {allFundraiserIds && allFundraiserIds.length > 1 && (
-              <div className="bg-blue-50/80 backdrop-blur-lg rounded-3xl shadow-xl border border-blue-200 p-6">
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: '#1565c0' }}>
+              <div className="bg-blue-50 rounded-md shadow-sm border border-blue-200 p-4">
+                <h3 className="text-sm font-semibold text-blue-800 mb-3">
                   🗂️ Inne kampanie
-                </Typography>
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {allFundraiserIds.slice(0, 10).map((id: bigint) => {
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {allFundraiserIds.slice(0, 8).map((id: bigint) => {
                     const campaignNum = Number(id);
                     const isCurrent = campaignNum === Number(campaignId);
                     return (
-                      <Button
+                      <button
                         key={campaignNum}
-                        size="small"
-                        variant={isCurrent ? "contained" : "outlined"}
                         onClick={() => !isCurrent && router.push(`/campaigns/${campaignNum}`)}
                         disabled={isCurrent}
-                        sx={{
-                          minWidth: '50px',
-                          bgcolor: isCurrent ? '#1565c0' : 'transparent',
-                          borderColor: '#1565c0',
-                          color: isCurrent ? 'white' : '#1565c0',
-                          '&:hover': {
-                            bgcolor: isCurrent ? '#1565c0' : alpha('#1565c0', 0.1)
-                          }
-                        }}
+                        className={`px-3 py-1 text-xs rounded-md border transition-colors ${
+                          isCurrent 
+                            ? 'bg-blue-600 text-white border-blue-600' 
+                            : 'bg-white text-blue-600 border-blue-300 hover:bg-blue-50'
+                        }`}
                       >
                         #{campaignNum}
-                      </Button>
+                      </button>
                     );
                   })}
-                  {allFundraiserIds.length > 10 && (
-                    <Typography variant="caption" sx={{ color: '#6b7280', alignSelf: 'center', ml: 1 }}>
-                      +{allFundraiserIds.length - 10} więcej
-                    </Typography>
-                  )}
-                </Box>
+                </div>
               </div>
             )}
-
-            {/* User Balance Info */}
-            {isConnected && userBalance !== undefined && (
-              <div className="bg-green-50/80 backdrop-blur-lg rounded-3xl shadow-xl border border-green-200 p-6">
-                <Alert severity="info" sx={{ borderRadius: 2, bgcolor: 'transparent', border: 'none', p: 0 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: '#16a34a' }}>
-                    💰 Twoje saldo
-                  </Typography>
-                  <Typography variant="h5" sx={{ fontWeight: 700, color: '#111827' }}>
-                    {userBalanceFormatted.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} {displayTokenSymbol}
-                  </Typography>
-                </Alert>
-              </div>
-            )}
-
-            {/* Technical Details Card */}
-            <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-6">
-              <Typography variant="h6" sx={{ fontWeight: 700, mb: 3, color: '#111827', display: "flex", alignItems: "center", gap: 1 }}>
-                🔗 Szczegóły techniczne
-              </Typography>
-              
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 1, fontSize: '0.875rem' }}>
-                  Token płatności:
-                </Typography>
-                <Typography variant="body2" sx={{ fontFamily: "monospace", fontSize: '0.8rem', wordBreak: "break-all", color: '#374151', bgcolor: '#f9fafb', p: 1, borderRadius: 1 }}>
-                  {campaignData.token}
-                </Typography>
-              </Box>
-
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 1, fontSize: '0.875rem' }}>
-                  Adres kontraktu:
-                </Typography>
-                <Typography variant="body2" sx={{ fontFamily: "monospace", fontSize: '0.8rem', wordBreak: "break-all", color: '#374151', bgcolor: '#f9fafb', p: 1, borderRadius: 1 }}>
-                  {CONTRACT_ADDRESS}
-                </Typography>
-              </Box>
-
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 1, fontSize: '0.875rem' }}>
-                  Status wypłaty:
-                </Typography>
-                <Typography variant="body1" sx={{ color: '#374151' }}>
-                  {campaignData.fundsWithdrawn ? "✅ Wypłacone" : "⏳ Oczekuje"}
-                </Typography>
-              </Box>
-
-              <Button
-                variant="outlined"
-                size="small"
-                fullWidth
-                startIcon={<Launch />}
-                onClick={() => window.open(`https://sepolia.etherscan.io/address/${CONTRACT_ADDRESS}`, "_blank")}
-                sx={{
-                  borderColor: '#d1d5db',
-                  color: '#6b7280',
-                  py: 1.5,
-                  '&:hover': {
-                    borderColor: '#16a34a',
-                    color: '#16a34a'
-                  }
-                }}
-              >
-                Zobacz kontrakt na Etherscan
-              </Button>
-            </div>
           </div>
         </div>
-      </Container>
+      </main>
 
-      {/* Donation Dialog */}
+      {/* ✅ INSPIROWANE: Donation Dialog - prosty jak w działającym projekcie */}
       <Dialog 
         open={donateOpen} 
         onClose={() => setDonateOpen(false)} 
         maxWidth="sm" 
         fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: 3,
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-            border: '2px solid #16a34a'
-          }
-        }}
       >
-        <DialogTitle sx={{ pb: 1, bgcolor: '#f0fdf4' }}>
+        <DialogTitle>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <VolunteerActivism sx={{ color: '#16a34a' }} />
-            <Typography variant="h6" sx={{ fontWeight: 700, color: '#111827' }}>
-              💚 Wesprzyj kampanię #{campaignData.id}
-            </Typography>
+            Wesprzyj kampanię #{campaignData.id}
           </Box>
         </DialogTitle>
-        <DialogContent sx={{ pt: 3 }}>
+        <DialogContent>
           <Box sx={{ mb: 3 }}>
-            <Typography variant="body1" sx={{ mb: 1, fontWeight: 600 }}>
-              {displayCategory}
-            </Typography>
             <Typography variant="body2" color="text.secondary">
-              Wpłacasz środki w {displayTokenSymbol} • Kampania #{campaignData.id}
+              Wpłacasz środki w {displayTokenSymbol}
             </Typography>
             {userBalance !== undefined && (
               <Typography variant="body2" color="text.secondary">
-                💰 Dostępne: {userBalanceFormatted.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} {displayTokenSymbol}
+                💰 Dostępne: {userBalanceFormatted.toLocaleString('pl-PL')} {displayTokenSymbol}
               </Typography>
             )}
           </Box>
@@ -1059,35 +1092,13 @@ export default function CampaignPage() {
               setDonateAmount(e.target.value);
               setNeedsApproval(false);
             }}
-            sx={{ 
-              mb: 2,
-              '& .MuiOutlinedInput-root': {
-                '&.Mui-focused fieldset': {
-                  borderColor: '#16a34a',
-                },
-              },
-              '& .MuiInputLabel-root.Mui-focused': {
-                color: '#16a34a',
-              },
-            }}
-            inputProps={{ 
-              min: 0.01, 
-              step: 0.01,
-              max: userBalanceFormatted || undefined,
-            }}
-            error={donateAmount && userBalanceFormatted && Number(donateAmount) > userBalanceFormatted}
-            helperText={
-              donateAmount && userBalanceFormatted && Number(donateAmount) > userBalanceFormatted
-                ? "Kwota przekracza dostępne środki"
-                : ""
-            }
+            sx={{ mb: 2 }}
+            inputProps={{ min: 0.01, step: 0.01 }}
           />
 
-          {/* Quick donation amounts */}
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="body2" sx={{ mb: 2, color: '#6b7280', fontWeight: 600 }}>
-              Szybka wpłata:
-            </Typography>
+          {/* Quick amounts */}
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body2" sx={{ mb: 1 }}>Szybka wpłata:</Typography>
             <Grid container spacing={1}>
               {[10, 50, 100, 500].map((amount) => (
                 <Grid item xs={6} key={amount}>
@@ -1096,17 +1107,6 @@ export default function CampaignPage() {
                     size="small"
                     fullWidth
                     onClick={() => setDonateAmount(amount.toString())}
-                    sx={{
-                      borderColor: '#16a34a',
-                      color: '#16a34a',
-                      '&:hover': {
-                        borderColor: '#15803d',
-                        bgcolor: '#f0fdf4'
-                      },
-                      fontSize: '0.875rem',
-                      py: 1,
-                      fontWeight: 600
-                    }}
                   >
                     {amount} {displayTokenSymbol}
                   </Button>
@@ -1116,105 +1116,47 @@ export default function CampaignPage() {
           </Box>
           
           {needsApproval && (
-            <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
-              <Typography variant="body2" sx={{ mb: 1 }}>
-                Musisz najpierw zatwierdzić wydatkowanie tokenów {displayTokenSymbol}.
-              </Typography>
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              Musisz najpierw zatwierdzić wydatkowanie tokenów {displayTokenSymbol}.
             </Alert>
           )}
           
           {!campaignData.isFlexible && (
-            <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>
-              <Typography variant="body2">
-                To jest zbiórka z celem. Środki zostaną zwrócone jeśli cel nie zostanie osiągnięty.
-              </Typography>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              To jest zbiórka z celem. Środki zostaną zwrócone jeśli cel nie zostanie osiągnięty.
             </Alert>
           )}
-
         </DialogContent>
-        <DialogActions sx={{ p: 3, pt: 1, bgcolor: '#f9fafb' }}>
-          <Button 
-            onClick={() => {
-              setDonateOpen(false);
-              setNeedsApproval(false);
-              setDonateAmount("");
-            }}
-            sx={{ color: '#6b7280' }}
-            disabled={isDonating || isDonationConfirming || isApproving || isApprovalConfirming}
-          >
-            Anuluj
-          </Button>
+        <DialogActions>
+          <Button onClick={() => setDonateOpen(false)}>Anuluj</Button>
           <Button
             variant="contained"
             onClick={handleDonate}
-            disabled={
-              !donateAmount || 
-              (isDonating || isDonationConfirming || isApproving || isApprovalConfirming) || 
-              Number(donateAmount) <= 0 ||
-              (userBalanceFormatted && Number(donateAmount) > userBalanceFormatted)
-            }
-            sx={{
-              bgcolor: '#16a34a',
-              '&:hover': { bgcolor: '#15803d' },
-              fontWeight: 600,
-              px: 4,
-              py: 1.5
-            }}
+            disabled={!donateAmount || Number(donateAmount) <= 0}
+            sx={{ bgcolor: '#16a34a', '&:hover': { bgcolor: '#15803d' } }}
           >
-            {isApproving || isApprovalConfirming ? (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <CircularProgress size={16} color="inherit" />
-                Zatwierdzanie...
-              </Box>
-            ) : isDonating || isDonationConfirming ? (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <CircularProgress size={16} color="inherit" />
-                Wpłacanie...
-              </Box>
-            ) : (
-              `❤️ Wpłać ${donateAmount} ${displayTokenSymbol}`
-            )}
+            {isApproving || isApprovalConfirming ? 'Zatwierdzanie...' : 
+             isDonating || isDonationConfirming ? 'Wpłacanie...' : 
+             `Wpłać ${donateAmount} ${displayTokenSymbol}`}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Share Dialog */}
-      <Dialog 
-        open={shareOpen} 
-        onClose={() => setShareOpen(false)} 
-        maxWidth="sm" 
-        fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: 3,
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
-          }
-        }}
-      >
+      <Dialog open={shareOpen} onClose={() => setShareOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Share sx={{ color: '#16a34a' }} />
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>
-              🔗 Udostępnij kampanię
-            </Typography>
+            Udostępnij kampanię
           </Box>
         </DialogTitle>
         <DialogContent>
-          <Typography variant="body1" sx={{ mb: 2 }}>
-            Pomóż rozpowszechnić tę kampanię udostępniając link:
-          </Typography>
-          
           <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
             <TextField
               fullWidth
               value={typeof window !== 'undefined' ? window.location.href : ''}
               InputProps={{ readOnly: true }}
               size="small"
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  bgcolor: '#f9fafb'
-                }
-              }}
             />
             <IconButton 
               onClick={() => {
@@ -1230,31 +1172,19 @@ export default function CampaignPage() {
                 }
               }} 
               color={copiedLink ? "success" : "primary"}
-              sx={{ 
-                bgcolor: copiedLink ? '#dcfce7' : '#f0fdf4',
-                '&:hover': { bgcolor: copiedLink ? '#bbf7d0' : '#dcfce7' },
-                border: '1px solid #16a34a'
-              }}
             >
               {copiedLink ? <CheckCircle /> : <ContentCopy />}
             </IconButton>
           </Box>
           
           {copiedLink && (
-            <Alert severity="success" sx={{ borderRadius: 2 }}>
+            <Alert severity="success">
               ✅ Link został skopiowany do schowka!
             </Alert>
           )}
         </DialogContent>
-        <DialogActions sx={{ p: 3, pt: 1 }}>
-          <Button 
-            onClick={() => setShareOpen(false)}
-            variant="contained"
-            sx={{
-              bgcolor: '#16a34a',
-              '&:hover': { bgcolor: '#15803d' }
-            }}
-          >
+        <DialogActions>
+          <Button onClick={() => setShareOpen(false)} variant="contained">
             Zamknij
           </Button>
         </DialogActions>
@@ -1263,7 +1193,7 @@ export default function CampaignPage() {
       {/* Snackbar for notifications */}
       <Snackbar
         open={snackbar.open}
-        autoHideDuration={6000}
+        autoHideDuration={4000}
         onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
