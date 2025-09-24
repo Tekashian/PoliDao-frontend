@@ -2,9 +2,13 @@
 
 import { POLIDAO_ABI } from './poliDaoAbi'
 
-// Adres kontraktu PoliDao (zastępuje wcześniejszy Crowdfund)
-export const POLIDAO_CONTRACT_ADDRESS =
-  '0x408589993d926C71292764843eeF0D77160BfD39' as const
+// Nowy adres zunifikowanego (unified storage) kontraktu PoliDao (proxy/core)
+// Można nadpisać przez zmienną środowiskową NEXT_PUBLIC_POLIDAO_ADDRESS aby łatwiej
+// przełączać środowiska bez zmian w kodzie.
+export const POLIDAO_CONTRACT_ADDRESS = (
+  process.env.NEXT_PUBLIC_POLIDAO_ADDRESS ||
+  '0xe0Bdda351177EAe152E00Ba20E16BF017aCe4574'
+) as `0x${string}`
 
 // Adres kontraktu USDC na Sepolii (jeśli potrzebny)
 export const USDC_CONTRACT_ADDRESS =
