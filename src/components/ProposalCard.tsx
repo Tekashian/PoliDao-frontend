@@ -44,12 +44,7 @@ export default function ProposalCard() {
     args: selectedProposal !== null && address ? [BigInt(selectedProposal), address] : undefined,
   });
 
-  const { data: proposalSummary } = useReadContract({
-    address: polidaoContractConfig.address,
-    abi: POLIDAO_ABI,
-    functionName: "getProposalSummary",
-    args: selectedProposal !== null ? [BigInt(selectedProposal)] : undefined,
-  });
+  // proposalSummary usunięte – korzystamy z selectedProposalData (hook + getProposal)
 
   // Automatyczne wybieranie pierwszej aktywnej propozycji
   useEffect(() => {
@@ -157,7 +152,7 @@ export default function ProposalCard() {
     return Number((votes * 100n) / total);
   };
 
-  const totalVotes = proposalSummary ? proposalSummary.yesVotes + proposalSummary.noVotes : 0n;
+  const totalVotes = selectedProposalData ? selectedProposalData.yesVotes + selectedProposalData.noVotes : 0n;
   const timeLeft = selectedProposalData ? formatTimeLeft(selectedProposalData.endTime) : "";
   const isActive = timeLeft !== "Zakończone";
 
@@ -425,7 +420,7 @@ export default function ProposalCard() {
               )}
 
               {/* Wyniki głosowania */}
-              {showResults && proposalSummary && (
+              {showResults && selectedProposalData && (
                 <div className="space-y-6">
                   <div className="text-center">
                     <h3 className="text-2xl font-bold text-gray-800 mb-2">Wyniki głosowania</h3>
@@ -439,13 +434,13 @@ export default function ProposalCard() {
                         <div className="text-4xl text-green-500">✓</div>
                         <div className="font-bold text-xl text-green-700">TAK</div>
                         <div className="space-y-1">
-                          <div className="text-3xl font-bold text-green-600">{Number(proposalSummary.yesVotes)}</div>
-                          <div className="text-lg text-green-600">{getVotePercentage(proposalSummary.yesVotes, totalVotes).toFixed(1)}%</div>
+                          <div className="text-3xl font-bold text-green-600">{Number(selectedProposalData.yesVotes)}</div>
+                          <div className="text-lg text-green-600">{getVotePercentage(selectedProposalData.yesVotes, totalVotes).toFixed(1)}%</div>
                         </div>
                         <div className="w-full bg-green-200 rounded-full h-3">
                           <div 
                             className="bg-green-500 h-3 rounded-full transition-all duration-1000 ease-out"
-                            style={{ width: `${getVotePercentage(proposalSummary.yesVotes, totalVotes)}%` }}
+                            style={{ width: `${getVotePercentage(selectedProposalData.yesVotes, totalVotes)}%` }}
                           ></div>
                         </div>
                       </div>
@@ -457,13 +452,13 @@ export default function ProposalCard() {
                         <div className="text-4xl text-red-500">✗</div>
                         <div className="font-bold text-xl text-red-700">NIE</div>
                         <div className="space-y-1">
-                          <div className="text-3xl font-bold text-red-600">{Number(proposalSummary.noVotes)}</div>
-                          <div className="text-lg text-red-600">{getVotePercentage(proposalSummary.noVotes, totalVotes).toFixed(1)}%</div>
+                          <div className="text-3xl font-bold text-red-600">{Number(selectedProposalData.noVotes)}</div>
+                          <div className="text-lg text-red-600">{getVotePercentage(selectedProposalData.noVotes, totalVotes).toFixed(1)}%</div>
                         </div>
                         <div className="w-full bg-red-200 rounded-full h-3">
                           <div 
                             className="bg-red-500 h-3 rounded-full transition-all duration-1000 ease-out"
-                            style={{ width: `${getVotePercentage(proposalSummary.noVotes, totalVotes)}%` }}
+                            style={{ width: `${getVotePercentage(selectedProposalData.noVotes, totalVotes)}%` }}
                           ></div>
                         </div>
                       </div>

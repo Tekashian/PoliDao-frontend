@@ -41,12 +41,7 @@ export default function VoteCardPage() {
     args: selectedProposal !== null && address ? [BigInt(selectedProposal), address] : undefined,
   });
 
-  const { data: proposalSummary } = useReadContract({
-    address: polidaoContractConfig.address,
-    abi: POLIDAO_ABI,
-    functionName: "getProposalSummary",
-    args: selectedProposal !== null ? [BigInt(selectedProposal)] : undefined,
-  });
+  // proposalSummary zastąpione przez selectedProposalData / proposalDetails
 
   // Automatyczne wybieranie pierwszej aktywnej propozycji
   useEffect(() => {
@@ -154,7 +149,7 @@ export default function VoteCardPage() {
     return Number((votes * 100n) / total);
   };
 
-  const totalVotes = proposalSummary ? proposalSummary.yesVotes + proposalSummary.noVotes : 0n;
+  const totalVotes = selectedProposalData ? (selectedProposalData.yesVotes + selectedProposalData.noVotes) : 0n;
   const timeLeft = selectedProposalData ? formatTimeLeft(selectedProposalData.endTime) : "";
   const isActive = timeLeft !== "Zakończone";
 
@@ -393,7 +388,7 @@ export default function VoteCardPage() {
           )}
 
           {/* Wyniki głosowania */}
-          {showResults && proposalSummary && (
+          {showResults && selectedProposalData && (
             <div className="space-y-6">
               <div className="text-center">
                 <h3 className="text-2xl font-bold text-gray-800 mb-2">Wyniki głosowania</h3>
@@ -406,12 +401,12 @@ export default function VoteCardPage() {
                   {/* Statystyki numeryczne */}
                   <div className="grid grid-cols-2 gap-4 mb-4">
                     <div className="text-center">
-                      <div className="text-3xl font-bold text-green-600">{Number(proposalSummary.yesVotes)}</div>
-                      <div className="text-sm text-green-600 font-medium">TAK ({getVotePercentage(proposalSummary.yesVotes, totalVotes).toFixed(1)}%)</div>
+                      <div className="text-3xl font-bold text-green-600">{Number(selectedProposalData.yesVotes)}</div>
+                      <div className="text-sm text-green-600 font-medium">TAK ({getVotePercentage(selectedProposalData.yesVotes, totalVotes).toFixed(1)}%)</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-3xl font-bold text-red-600">{Number(proposalSummary.noVotes)}</div>
-                      <div className="text-sm text-red-600 font-medium">NIE ({getVotePercentage(proposalSummary.noVotes, totalVotes).toFixed(1)}%)</div>
+                      <div className="text-3xl font-bold text-red-600">{Number(selectedProposalData.noVotes)}</div>
+                      <div className="text-sm text-red-600 font-medium">NIE ({getVotePercentage(selectedProposalData.noVotes, totalVotes).toFixed(1)}%)</div>
                     </div>
                   </div>
                   
@@ -419,17 +414,17 @@ export default function VoteCardPage() {
                   <div className="w-full h-8 bg-gray-200 rounded-full overflow-hidden flex">
                     <div 
                       className="h-full bg-green-500 transition-all duration-1000 ease-out flex items-center justify-center"
-                      style={{ width: `${getVotePercentage(proposalSummary.yesVotes, totalVotes)}%` }}
+                      style={{ width: `${getVotePercentage(selectedProposalData.yesVotes, totalVotes)}%` }}
                     >
-                      {getVotePercentage(proposalSummary.yesVotes, totalVotes) > 15 && (
+                      {getVotePercentage(selectedProposalData.yesVotes, totalVotes) > 15 && (
                         <span className="text-white font-bold text-sm">✓ TAK</span>
                       )}
                     </div>
                     <div 
                       className="h-full bg-red-500 transition-all duration-1000 ease-out flex items-center justify-center"
-                      style={{ width: `${getVotePercentage(proposalSummary.noVotes, totalVotes)}%` }}
+                      style={{ width: `${getVotePercentage(selectedProposalData.noVotes, totalVotes)}%` }}
                     >
-                      {getVotePercentage(proposalSummary.noVotes, totalVotes) > 15 && (
+                      {getVotePercentage(selectedProposalData.noVotes, totalVotes) > 15 && (
                         <span className="text-white font-bold text-sm">✗ NIE</span>
                       )}
                     </div>

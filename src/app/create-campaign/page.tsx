@@ -1,16 +1,12 @@
 // src/app/create-campaign/page.tsx
 "use client";
 
-import React, { useState } from 'react';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { parseUnits } from 'viem';
+import React, { useState, useEffect } from 'react';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, usePublicClient } from 'wagmi';
+import { parseUnits, decodeEventLog } from 'viem';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
-import { POLIDAO_ABI } from '../../blockchain/poliDaoAbi';
-
-// Adresy kontraktów z pliku contracts.ts
-const POLIDAO_CONTRACT_ADDRESS = "0xec0d7574E6f4A269Eea62011Af02b85D86d4c171" as `0x${string}`;
-const USDC_CONTRACT_ADDRESS = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}`;
+import { polidaoContractConfig, USDC_CONTRACT_ADDRESS } from '../../blockchain/contracts';
 
 // USDC ma 6 miejsc po przecinku
 const USDC_DECIMALS = 6;
@@ -18,7 +14,7 @@ const USDC_DECIMALS = 6;
 interface FormData {
   title: string;
   description: string;
-  beneficiary: string;
+  beneficiary: string; // who benefits (person / organization / initiative)
   campaignType: 'target' | 'flexible';
   targetAmount: string;
   duration: string;
@@ -26,6 +22,7 @@ interface FormData {
   contactInfo: string;
   agreeTerms: boolean;
   agreeDataProcessing: boolean;
+  location: string;
 }
 
 export default function CreateCampaignPage() {
@@ -34,6 +31,23 @@ export default function CreateCampaignPage() {
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
+  const { data: pausedData } = useReadContract({
+    address: polidaoContractConfig.address,
+    abi: polidaoContractConfig.abi,
+    functionName: 'paused'
+  });
+  const { data: isWhitelisted } = useReadContract({
+    address: polidaoContractConfig.address,
+    abi: polidaoContractConfig.abi,
+    functionName: 'isTokenWhitelisted',
+    args: [USDC_CONTRACT_ADDRESS]
+  });
+  const publicClient = usePublicClient();
+
+  const paused = Boolean(pausedData);
+
+  const [createdId, setCreatedId] = useState<bigint | null>(null);
+  const [friendlyError, setFriendlyError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<FormData>({
     title: '',
@@ -45,7 +59,8 @@ export default function CreateCampaignPage() {
     category: 'medical',
     contactInfo: '',
     agreeTerms: false,
-    agreeDataProcessing: false
+    agreeDataProcessing: false,
+    location: ''
   });
 
   const [currentStep, setCurrentStep] = useState(1);
@@ -67,7 +82,8 @@ export default function CreateCampaignPage() {
       if (formData.title.length < 10) newErrors.title = 'Tytuł musi mieć co najmniej 10 znaków';
       if (!formData.description.trim()) newErrors.description = 'Opis jest wymagany';
       if (formData.description.length < 50) newErrors.description = 'Opis musi mieć co najmniej 50 znaków';
-      if (!formData.beneficiary.trim()) newErrors.beneficiary = 'Informacja o beneficjencie jest wymagana';
+      if (!formData.beneficiary.trim()) newErrors.beneficiary = 'Wybierz kto jest beneficjentem';
+      if (formData.location.length > 80) newErrors.location = 'Lokalizacja maks 80 znaków';
     }
 
     if (step === 2) {
@@ -100,36 +116,174 @@ export default function CreateCampaignPage() {
   };
 
   const handleBack = () => {
-    setCurrentStep(prev => prev - 1);
+    setCurrentStep(prev => Math.max(1, prev - 1));
+  };
+
+  const mapError = (raw: string): string => {
+    const lower = raw.toLowerCase();
+    if (lower.includes('invalidenddate')) return 'Nieprawidłowa data zakończenia';
+    if (lower.includes('goalamountrequired')) return 'Musisz podać cel kwotowy dla tego typu zbiórki';
+    if (lower.includes('goalamounttoolarge')) return 'Kwota celu jest zbyt wysoka';
+    if (lower.includes('titletoolong')) return 'Tytuł jest za długi';
+    if (lower.includes('descriptiontoolong')) return 'Opis jest za długi';
+    if (lower.includes('invalidtitle')) return 'Tytuł nie spełnia wymagań';
+    if (lower.includes('invalidamount')) return 'Nieprawidłowa kwota';
+    if (lower.includes('tokennotwhitelisted')) return 'Wybrany token nie jest dozwolony';
+    return 'Nieudana transakcja – sprawdź dane lub spróbuj ponownie';
+  };
+
+  const mapCategoryToFundraiserType = (cat: string): number => {
+    switch (cat) {
+      case 'medical': return 1; // przykładowe mapowanie – można dostosować do on-chain enum
+      case 'education': return 2;
+      case 'social': return 3;
+      case 'animals': return 4;
+      case 'environment': return 5;
+      case 'technology': return 6;
+      case 'culture': return 7;
+      case 'sports': return 8;
+      default: return 0; // other / default
+    }
   };
 
   const handleSubmit = async () => {
     if (!validateStep(3) || !isConnected) return;
 
     try {
-      // Konwertuj kwotę docelową na jednostki USDC (6 miejsc po przecinku)
-      const targetInUSDC = formData.campaignType === 'target' 
-        ? parseUnits(formData.targetAmount, USDC_DECIMALS)
-        : BigInt(0);
+      const now = Math.floor(Date.now() / 1000);
+      const endDate = BigInt(now + parseInt(formData.duration) * 24 * 60 * 60);
+      // 1. Budujemy metadata JSON które wyślemy do /api/metadata -> otrzymamy cid
+      const metadataPayload = {
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        category: formData.category,
+        beneficiaryType: formData.beneficiary,
+        contactInfo: formData.contactInfo,
+        location: formData.location,
+        campaignType: formData.campaignType,
+      };
 
-      // Konwertuj dni na sekundy
-      const durationInSeconds = BigInt(parseInt(formData.duration) * 24 * 60 * 60);
+      let metadataHash = '';
+      try {
+        const res = await fetch('/api/metadata', { method: 'POST', body: JSON.stringify(metadataPayload), headers: { 'Content-Type': 'application/json' } });
+        if (res.ok) {
+          const j = await res.json();
+            metadataHash = j.cid ? `ipfs://${j.cid}` : '';
+        }
+      } catch (e) {
+        // brak bloker – fallback pusty hash
+      }
+      const goalAmount = formData.campaignType === 'target' ? parseUnits(formData.targetAmount || '0', USDC_DECIMALS) : BigInt(0);
+      // fundraiserType: uproszczenie (0 = klasyczna / społeczna). Możesz rozwinąć mapowanie kategorii.
+  const fundraiserType = mapCategoryToFundraiserType(formData.category);
+      const images: string[] = [];// Możliwe przyszłe uploady
+      const videos: string[] = [];
+      const location = formData.location || '';
+
+      // 1. Pre-symulacja (diagnostyka revertu zanim wydamy gas)
+      try {
+        if (publicClient) {
+          await publicClient.simulateContract({
+            ...polidaoContractConfig,
+            functionName: 'createFundraiser',
+            args: [{
+              title: formData.title.trim(),
+              description: formData.description.trim(),
+              endDate,
+              fundraiserType,
+              token: USDC_CONTRACT_ADDRESS,
+              goalAmount,
+              metadataHash,
+              initialImages: images,
+              initialVideos: videos,
+              location,
+              isFlexible: formData.campaignType === 'flexible'
+            }]
+          });
+        }
+      } catch (simErr: any) {
+        console.error('Simulation revert', simErr);
+        setFriendlyError(mapError(simErr?.shortMessage || simErr?.message || 'Błąd symulacji'));
+        return; // nie wysyłamy prawdziwej transakcji jeśli symulacja się wywaliła
+      }
 
       await writeContract({
-        address: POLIDAO_CONTRACT_ADDRESS,
-        abi: POLIDAO_ABI,
+        address: polidaoContractConfig.address,
+        abi: polidaoContractConfig.abi,
         functionName: 'createFundraiser',
         args: [
-          USDC_CONTRACT_ADDRESS, // Zawsze USDC
-          targetInUSDC,
-          durationInSeconds,
-          formData.campaignType === 'flexible'
+          {
+            title: formData.title.trim(),
+            description: formData.description.trim(),
+            endDate,
+            fundraiserType,
+            token: USDC_CONTRACT_ADDRESS,
+            goalAmount,
+            metadataHash,
+            initialImages: images,
+            initialVideos: videos,
+            location,
+            isFlexible: formData.campaignType === 'flexible'
+          }
         ],
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating campaign:', error);
+      setFriendlyError(mapError(error?.message || ''));
     }
   };
+
+  // Gdy transakcja potwierdzona – dekodujemy log FundraiserCreated aby uzyskać ID.
+  useEffect(() => {
+    const run = async () => {
+      if (!isSuccess || createdId || !hash || !publicClient) return;
+      try {
+        const receipt = await publicClient.getTransactionReceipt({ hash });
+        // Próbujemy znaleźć log eventu FundraiserCreated
+        for (const log of receipt.logs) {
+          try {
+            const decoded = decodeEventLog({
+              abi: polidaoContractConfig.abi,
+              data: log.data,
+              // clone topics to mutable tuple form for viem typings
+              topics: [...log.topics] as [`0x${string}`, ...`0x${string}`[]],
+            });
+            if (decoded.eventName === 'FundraiserCreated') {
+              const id = decoded.args?.fundraiserId as bigint | undefined;
+              if (id && id > 0n) {
+                setCreatedId(id);
+                return;
+              }
+            }
+          } catch {/* ignore non-matching logs */}
+        }
+        // Fallback: fundraiserCounter - 1 (zakładamy sekwencyjne inkrementowanie)
+        try {
+          const counter = await publicClient.readContract({
+            address: polidaoContractConfig.address,
+            abi: polidaoContractConfig.abi,
+            functionName: 'fundraiserCounter'
+          });
+          if (typeof counter === 'bigint' && counter > 0n) {
+            setCreatedId(counter); // jeżeli kontrakt zwraca już nowy counter jako ID nowej zbiórki
+          }
+        } catch {/* ignore fallback errors */}
+      } catch (e) {
+        // brak ID – użytkownik może przejść do konta żeby ją odnaleźć
+      }
+    };
+    run();
+  }, [isSuccess, createdId, hash, publicClient]);
+
+  // Auto-redirect po uzyskaniu createdId (placeholder – gdy będzie dekodowanie logów z viem publicClient)
+  useEffect(() => {
+    if (createdId) {
+      const t = setTimeout(() => {
+        window.location.href = `/campaigns/${createdId.toString()}`;
+      }, 2500);
+      return () => clearTimeout(t);
+    }
+  }, [createdId]);
 
   if (!isConnected) {
     return (
@@ -168,6 +322,14 @@ export default function CreateCampaignPage() {
               Twoja zbiórka została pomyślnie utworzona i jest już dostępna na platformie.
             </p>
             <div className="space-y-3">
+              {createdId && (
+                <button
+                  onClick={() => window.location.href = `/campaigns/${createdId.toString()}`}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300"
+                >
+                  Przejdź do zbiórki #{createdId.toString()}
+                </button>
+              )}
               <button 
                 onClick={() => window.location.href = '/my-account'}
                 className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300"
@@ -274,7 +436,7 @@ export default function CreateCampaignPage() {
 
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Kto potrzebuje pomocy? *
+                      Kto jest beneficjentem zbiórki? *
                     </label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                       <label className="flex items-center p-4 border-2 rounded-xl cursor-pointer hover:bg-gray-50 transition-all">
@@ -286,7 +448,7 @@ export default function CreateCampaignPage() {
                           onChange={(e) => handleInputChange('beneficiary', e.target.value)}
                           className="mr-3 text-green-600 w-5 h-5"
                         />
-                        <span className="font-semibold text-lg">Ja</span>
+                        <span className="font-semibold text-lg">Osoba prywatna</span>
                       </label>
                       <label className="flex items-center p-4 border-2 rounded-xl cursor-pointer hover:bg-gray-50 transition-all">
                         <input
@@ -297,9 +459,26 @@ export default function CreateCampaignPage() {
                           onChange={(e) => handleInputChange('beneficiary', e.target.value)}
                           className="mr-3 text-green-600 w-5 h-5"
                         />
-                        <span className="font-semibold text-lg">Inna osoba</span>
+                        <span className="font-semibold text-lg">Fundacja / Inicjatywa</span>
                       </label>
                     </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Lokalizacja (miasto / kraj) (opcjonalnie)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.location}
+                      onChange={(e) => handleInputChange('location', e.target.value)}
+                      placeholder="Np. Warszawa, Polska"
+                      className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all text-lg font-medium ${
+                        errors.location ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                      }`}
+                    />
+                    {errors.location && (
+                      <p className="mt-2 text-sm text-red-600 font-medium">{errors.location}</p>
+                    )}
+                  </div>
                     {errors.beneficiary && (
                       <p className="mt-2 text-sm text-red-600 font-medium">{errors.beneficiary}</p>
                     )}
@@ -552,9 +731,15 @@ export default function CreateCampaignPage() {
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Beneficjent:</span>
                       <span className="font-bold">
-                        {formData.beneficiary === 'myself' ? 'Ja' : 'Inna osoba'}
+                        {formData.beneficiary === 'myself' ? 'Osoba prywatna' : 'Fundacja / Inicjatywa'}
                       </span>
                     </div>
+                    {formData.location && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 font-medium">Lokalizacja:</span>
+                        <span className="font-bold">{formData.location}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -610,26 +795,35 @@ export default function CreateCampaignPage() {
                 <div className="mt-8">
                   <button
                     onClick={handleSubmit}
-                    disabled={isPending || isConfirming || !formData.agreeTerms || !formData.agreeDataProcessing}
+                    disabled={paused || isPending || isConfirming || !formData.agreeTerms || !formData.agreeDataProcessing || (isWhitelisted === false)}
                     className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-5 px-8 rounded-xl transition-all duration-300 transform hover:scale-[1.02] disabled:hover:scale-100 text-xl shadow-lg"
                   >
-                    {isPending || isConfirming ? (
-                      <div className="flex items-center justify-center">
-                        <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin mr-3"></div>
-                        {isPending ? 'Wysyłanie transakcji...' : 'Potwierdzanie...'}
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-center">
-                        <span className="mr-3">🚀</span>
-                        Opublikuj zbiórkę w USDC
-                      </div>
-                    )}
+                    {paused
+                      ? 'Kontrakt wstrzymany'
+                      : isWhitelisted === false
+                        ? 'Token USDC nie jest whitelisted'
+                        : (isPending || isConfirming)
+                          ? (
+                            <div className="flex items-center justify-center">
+                              <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin mr-3"></div>
+                              {isPending ? '1/2 Wysyłanie...' : '2/2 Potwierdzanie...'}
+                            </div>
+                          )
+                          : (
+                            <div className="flex items-center justify-center">
+                              <span className="mr-3">🚀</span>
+                              Opublikuj zbiórkę w USDC
+                            </div>
+                          )}
                   </button>
+                  {isWhitelisted === false && (
+                    <p className="mt-2 text-sm text-red-600 font-medium">Wybrany token nie jest dopuszczony przez kontrakt.</p>
+                  )}
 
-                  {error && (
+                  {(friendlyError || error) && (
                     <div className="mt-4 p-4 bg-red-50 border-2 border-red-200 rounded-xl">
                       <p className="text-red-700 text-sm font-medium">
-                        <strong>Błąd:</strong> {error.message}
+                        <strong>Błąd:</strong> {friendlyError || error?.message}
                       </p>
                     </div>
                   )}

@@ -5,7 +5,8 @@ import React, { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
-import { useGetAllFundraisers, useGetAllProposals } from '../../hooks/usePoliDao';
+import { useGetAllProposals } from '../../hooks/usePoliDao';
+import { useFundraisersModular } from '../../hooks/useFundraisersModular';
 
 interface Fundraiser {
   id: bigint;
@@ -32,10 +33,10 @@ export default function AccountPage() {
 
   // Używaj istniejących hooków
   const { 
-    campaigns, 
+    fundraisers: campaigns, 
     isLoading: campaignsLoading, 
     error: campaignsError 
-  } = useGetAllFundraisers();
+  } = useFundraisersModular();
 
   const { 
     proposals, 
@@ -253,10 +254,10 @@ export default function AccountPage() {
                   {userFundraisers.length > 0 ? (
                     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                       {userFundraisers.map((fundraiser) => {
-                        const timeLeft = getTimeLeft(fundraiser.endTime);
+                        const timeLeft = getTimeLeft(fundraiser.endDate ?? 0n);
                         const progress = fundraiser.isFlexible 
                           ? 0 
-                          : (Number(fundraiser.raised) / Number(fundraiser.target)) * 100;
+                          : (Number(fundraiser.raisedAmount ?? 0n) / Math.max(Number(fundraiser.goalAmount ?? 0n), 1)) * 100;
 
                         return (
                           <div key={fundraiser.id.toString()} className="bg-white/60 rounded-2xl p-6 border border-gray-200 hover:shadow-lg transition-all duration-300">
@@ -277,7 +278,7 @@ export default function AccountPage() {
                               <div>
                                 <p className="text-sm text-gray-600">Zebrano:</p>
                                 <p className="text-lg font-semibold text-gray-900">
-                                  {formatTokenAmount(fundraiser.raised, fundraiser.token)}
+                                  {formatTokenAmount(fundraiser.raisedAmount ?? 0n, fundraiser.token)}
                                 </p>
                               </div>
 
@@ -285,7 +286,7 @@ export default function AccountPage() {
                                 <div>
                                   <p className="text-sm text-gray-600">Cel:</p>
                                   <p className="text-lg font-semibold text-gray-900">
-                                    {formatTokenAmount(fundraiser.target, fundraiser.token)}
+                                    {formatTokenAmount(fundraiser.goalAmount ?? 0n, fundraiser.token)}
                                   </p>
                                   <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
                                     <div 

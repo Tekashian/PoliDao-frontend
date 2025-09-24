@@ -35,7 +35,8 @@ import Hero3D from "../components/Hero3D";
 import VoteCardPage from "../components/VoteCardPage";
 import CampaignCard from "../components/CampaignCard";
 import { useAccount } from 'wagmi';
-import { useGetAllFundraisers, useGetAllProposals, type Campaign, type Proposal } from '../hooks/usePoliDao';
+import { useGetAllProposals, type Proposal } from '../hooks/usePoliDao';
+import { useFundraisersModular, type ModularFundraiser } from '../hooks/useFundraisersModular';
 
 // Material-UI Proposal Card z nawigacją - ZAKTUALIZOWANE
 function MUIProposalCard({ proposal }: { proposal: Proposal }) {
@@ -564,12 +565,12 @@ export default function HomePage() {
   
   // Używaj nowych hooków
   const { 
-    campaigns, 
+    fundraisers, 
     isLoading: campaignsLoading, 
     error: campaignsError, 
-    refetchCampaigns, 
-    campaignCount 
-  } = useGetAllFundraisers();
+    refetch: refetchCampaigns, 
+    count: campaignCount 
+  } = useFundraisersModular();
 
   const { 
     proposals, 
@@ -584,7 +585,8 @@ export default function HomePage() {
   const { isConnected } = useAccount();
 
   // Filtruj kampanie na podstawie wybranego filtru
-  const filteredCampaigns = campaigns ? campaigns.filter((campaign: Campaign) => {
+  const campaigns = fundraisers; // alias dla istniejącej logiki poniżej
+  const filteredCampaigns = campaigns ? campaigns.filter((campaign: ModularFundraiser) => {
     if (campaignFilter === "target") return !campaign.isFlexible;
     if (campaignFilter === "flexible") return campaign.isFlexible;
     return true; // "all"
@@ -631,9 +633,9 @@ export default function HomePage() {
     
     const now = Math.floor(Date.now() / 1000);
     
-    return [...campaigns].sort((a, b) => {
-      const timeLeftA = Number(a.endTime) - now;
-      const timeLeftB = Number(b.endTime) - now;
+    return [...campaigns].sort((a: any, b: any) => {
+      const timeLeftA = Number(a.endDate ?? 0) - now;
+      const timeLeftB = Number(b.endDate ?? 0) - now;
       const isActiveA = timeLeftA > 0;
       const isActiveB = timeLeftB > 0;
       
@@ -646,17 +648,17 @@ export default function HomePage() {
         // 1. Kampanie z celem - sortuj według % postępu (najbliższe celu)
         // 2. Elastyczne - sortuj według zebranej kwoty
         if (!a.isFlexible && !b.isFlexible) {
-          const progressA = Number(a.raised) / Number(a.target);
-          const progressB = Number(b.raised) / Number(b.target);
+          const progressA = Number(a.raisedAmount ?? 0) / Math.max(Number(a.goalAmount ?? 0), 1);
+          const progressB = Number(b.raisedAmount ?? 0) / Math.max(Number(b.goalAmount ?? 0), 1);
           return progressB - progressA; // Największy postęp pierwszy
         } else if (a.isFlexible && b.isFlexible) {
-          return Number(b.raised) - Number(a.raised); // Więcej zebranych środków
+          return Number(b.raisedAmount ?? 0) - Number(a.raisedAmount ?? 0); // Więcej zebranych środków
         } else {
           return a.isFlexible ? 1 : -1; // Kampanie z celem pierwszeństwo
         }
       } else {
         // Dla zakończonych: sortuj według zebranej kwoty
-        return Number(b.raised) - Number(a.raised);
+        return Number(b.raisedAmount ?? 0) - Number(a.raisedAmount ?? 0);
       }
     }).slice(0, 8); // Maksymalnie 8 kampanii w karuzeli
   };
@@ -702,26 +704,30 @@ export default function HomePage() {
             title="Najgorętsze kampanie i zbiórki"
             icon={<TrendingUp sx={{ fontSize: 28 }} />}
             items={carouselCampaigns}
-            renderItem={(campaign: Campaign) => {
-              // Mapowanie z typu Campaign z usePoliDao na typ wymagany przez CampaignCard
+            renderItem={(campaign: ModularFundraiser) => {
+              // Mapowanie z ModularFundraiser (Core + Storage) na propsy CampaignCard
               const mappedCampaign = {
                 campaignId: campaign.id.toString(),
-                targetAmount: BigInt(campaign.target),
-                raisedAmount: BigInt(campaign.raised),
+                targetAmount: campaign.goalAmount ?? 0n,
+                raisedAmount: campaign.raisedAmount ?? 0n,
                 creator: campaign.creator,
                 token: campaign.token,
-                endTime: BigInt(campaign.endTime),
-                isFlexible: campaign.isFlexible
+                endTime: campaign.endDate ?? 0n,
+                isFlexible: campaign.isFlexible,
               };
-              
+
               const metadata = {
-                title: campaign.isFlexible 
-                  ? `Elastyczna kampania #${campaign.id}` 
-                  : `Zbiórka z celem #${campaign.id}`,
-                description: `Kampania utworzona przez ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
-                image: "/images/zbiorka.png"
+                title: campaign.title && campaign.title.length > 0
+                  ? campaign.title
+                  : campaign.isFlexible
+                    ? `Elastyczna kampania #${campaign.id}`
+                    : `Zbiórka z celem #${campaign.id}`,
+                description: campaign.description && campaign.description.length > 0
+                  ? campaign.description.slice(0, 140)
+                  : `Kampania utworzona przez ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
+                image: "/images/zbiorka.png",
               };
-              
+
               return (
                 <CampaignCard
                   key={campaign.id.toString()}
@@ -930,23 +936,25 @@ export default function HomePage() {
                         
                         {/* ✅ ZAKTUALIZOWANE: Używa CampaignCard zamiast EnhancedCampaignCard */}
                         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                          {filteredCampaigns.map((campaign: Campaign) => {
+                          {filteredCampaigns.map((campaign: any) => {
                             // Mapowanie z typu Campaign z usePoliDao na typ wymagany przez CampaignCard
                             const mappedCampaign = {
                               campaignId: campaign.id.toString(),
-                              targetAmount: BigInt(campaign.target),
-                              raisedAmount: BigInt(campaign.raised),
+                              targetAmount: BigInt(campaign.goalAmount ?? campaign.goalAmount ?? 0n),
+                              raisedAmount: BigInt(campaign.raisedAmount ?? 0n),
                               creator: campaign.creator,
                               token: campaign.token,
-                              endTime: BigInt(campaign.endTime),
+                              endTime: BigInt(campaign.endTime ?? campaign.endDate ?? 0n),
                               isFlexible: campaign.isFlexible
                             };
                             
                             const metadata = {
-                              title: campaign.isFlexible 
-                                ? `Elastyczna kampania #${campaign.id}` 
-                                : `Zbiórka z celem #${campaign.id}`,
-                              description: `Kampania utworzona przez ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
+                              title: campaign.title && campaign.title.length > 0
+                                ? campaign.title
+                                : campaign.isFlexible ? `Elastyczna kampania #${campaign.id}` : `Zbiórka #${campaign.id}`,
+                              description: campaign.description && campaign.description.length > 0
+                                ? campaign.description.slice(0, 140)
+                                : `Kampania utworzona przez ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
                               image: "/images/zbiorka.png"
                             };
                             

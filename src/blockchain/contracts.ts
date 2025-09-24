@@ -5,10 +5,23 @@ import { POLIDAO_ABI } from './poliDaoAbi'
 // Nowy adres zunifikowanego (unified storage) kontraktu PoliDao (proxy/core)
 // Można nadpisać przez zmienną środowiskową NEXT_PUBLIC_POLIDAO_ADDRESS aby łatwiej
 // przełączać środowiska bez zmian w kodzie.
-export const POLIDAO_CONTRACT_ADDRESS = (
-  process.env.NEXT_PUBLIC_POLIDAO_ADDRESS ||
-  '0xe0Bdda351177EAe152E00Ba20E16BF017aCe4574'
+// UWAGA: w .env używasz nazwy NEXT_PUBLIC_POLIDAO_CONTRACT_ADDRESS
+// Kod wcześniej oczekiwał NEXT_PUBLIC_POLIDAO_ADDRESS więc zawsze brał fallback
+// co skutkowało wywołaniem starego kontraktu bez funkcji createFundraiser(struct)
+// => błąd "Function not found" na explorerze.
+// Obsługujemy teraz obie nazwy + ostrzeżenie jeśli używany jest fallback.
+const _envAddress = (process.env.NEXT_PUBLIC_POLIDAO_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_POLIDAO_ADDRESS || '').trim()
+
+export const POLIDAO_CONTRACT_ADDRESS = (_envAddress !== ''
+  ? _envAddress
+  : '0xe0Bdda351177EAe152E00Ba20E16BF017aCe4574'
 ) as `0x${string}`
+
+if (typeof window !== 'undefined') {
+  if (!_envAddress) {
+    console.warn('[PoliDAO] Używany adres domyślny', POLIDAO_CONTRACT_ADDRESS, '– ustaw NEXT_PUBLIC_POLIDAO_CONTRACT_ADDRESS w .env aby wskazać nowy wdrożony kontrakt.')
+  }
+}
 
 // Adres kontraktu USDC na Sepolii (jeśli potrzebny)
 export const USDC_CONTRACT_ADDRESS =
