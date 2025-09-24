@@ -29,116 +29,95 @@ export interface Proposal {
   proposalId?: number;
 }
 
-// Hook do pobierania wszystkich fundraiserów - NAPRAWIONY
+// Hook do pobierania wszystkich fundraiserów - NOWA WERSJA ENUMERACYJNA
+// Wzorzec: fundraiserCounter -> generujemy ID sekwencyjnie (zakładamy 1..counter) -> batch fundraisers + creator + token
 export function useGetAllFundraisers() {
-  // Najpierw pobierz wszystkie ID fundraiserów
-  const { data: fundraiserIds, isLoading: idsLoading, error: idsError, refetch: refetchIds } = useReadContract({
+  const { data: counterData, isLoading: counterLoading, error: counterError, refetch: refetchCounter } = useReadContract({
     address: polidaoContractConfig.address,
     abi: polidaoContractConfig.abi,
-    functionName: 'getAllFundraiserIds',
+    functionName: 'fundraiserCounter',
     chainId: sepolia.id,
   });
 
-  console.log('🔍 Fundraiser IDs from contract:', fundraiserIds);
+  const total = Number(counterData ?? 0);
+  // Przyjmujemy, że ID zaczynają się od 1 (jeżeli kontrakt używa 0-based można zmienić na 0..total-1)
+  const ids: bigint[] = total > 0 ? Array.from({ length: total }, (_, i) => BigInt(i + 1)) : [];
 
-  // Sprawdź czy mamy prawidłowe ID
-  const validIds = Array.isArray(fundraiserIds) ? fundraiserIds : [];
-
-  // Przygotuj kontrakty dla wszystkich fundraiserów - tylko gdy mamy ID
-  const fundraiserCalls = validIds.length > 0 ? validIds.map((id: bigint) => ({
-    address: polidaoContractConfig.address,
-    abi: polidaoContractConfig.abi,
-    functionName: 'getFundraiserSummary',
-    args: [id],
-    chainId: sepolia.id,
-  })) : [];
-
-  console.log('🔍 Prepared calls:', fundraiserCalls.length);
-
-  // Pobierz szczegóły wszystkich fundraiserów jednocześnie używając useReadContracts
-  const { data: contractsData, isLoading: dataLoading, error: dataError, refetch: refetchData } = useReadContracts({
-    contracts: fundraiserCalls,
-    query: {
-      enabled: fundraiserCalls.length > 0, // Tylko gdy mamy wywołania do wykonania
+  // Każdy fundraiser: 3 wywołania (fundraisers, fundraiserCreators, fundraiserTokens)
+  const contracts = ids.flatMap((id) => ([
+    {
+      address: polidaoContractConfig.address,
+      abi: polidaoContractConfig.abi,
+      functionName: 'fundraisers',
+      args: [id],
+      chainId: sepolia.id,
     },
+    {
+      address: polidaoContractConfig.address,
+      abi: polidaoContractConfig.abi,
+      functionName: 'fundraiserCreators',
+      args: [id],
+      chainId: sepolia.id,
+    },
+    {
+      address: polidaoContractConfig.address,
+      abi: polidaoContractConfig.abi,
+      functionName: 'fundraiserTokens',
+      args: [id],
+      chainId: sepolia.id,
+    },
+  ]));
+
+  const { data: multiData, isLoading: multiLoading, error: multiError, refetch: refetchMulti } = useReadContracts({
+    contracts,
+    query: { enabled: contracts.length > 0 },
   });
 
-  console.log('🔍 Contracts data:', contractsData);
+  const campaigns: Campaign[] = [];
+  if (multiData && Array.isArray(multiData) && contracts.length > 0) {
+    for (let i = 0; i < ids.length; i++) {
+      const base = i * 3;
+      const fundRes = multiData[base];
+      const creatorRes = multiData[base + 1];
+      const tokenRes = multiData[base + 2];
 
-  // Przetwórz dane na format Campaign
-  const campaigns: Campaign[] = contractsData && Array.isArray(contractsData) ? contractsData.map((res, idx) => {
-    if (!res || !res.result || res.error) {
-      console.error(`❌ Error fetching fundraiser ${validIds[idx]}:`, res?.error);
-      return null;
-    }
+      if (fundRes?.error || creatorRes?.error || tokenRes?.error) continue;
+      const packed = fundRes?.result as any | undefined; // struct IPoliDaoStructs.PackedFundraiserData
+      if (!packed) continue;
 
-    try {
-      // getFundraiserSummary zwraca strukturę FundraiserSummary
-      const summary = res.result;
-      
-      console.log(`🔍 Processing summary for ID ${validIds[idx]}:`, summary);
-
-      // Sprawdź czy to struktura (object) z polami
-      if (summary && typeof summary === 'object' && 'id' in summary) {
-        console.log('✅ Processing as struct object');
-        return {
-          id: summary.id,
-          creator: summary.creator as `0x${string}`,
-          token: summary.token as `0x${string}`,
-          target: summary.target,
-          raised: summary.raised,
-          endTime: summary.endTime,
-          isFlexible: summary.isFlexible,
-          closureInitiated: summary.closureInitiated,
-          campaignId: idx,
-        } as Campaign;
+      try {
+        const campaign: Campaign = {
+          id: packed.id ?? ids[i],
+          creator: (creatorRes?.result as `0x${string}`) ?? '0x0000000000000000000000000000000000000000',
+          token: (tokenRes?.result as `0x${string}`) ?? '0x0000000000000000000000000000000000000000',
+          target: packed.goalAmount ?? BigInt(0),
+          raised: packed.raisedAmount ?? BigInt(0),
+          endTime: packed.endDate ?? BigInt(0),
+          isFlexible: Boolean(packed.isFlexible),
+          closureInitiated: false, // pole legacy – brak w nowym packu, do ewentualnego rozwinięcia
+          campaignId: i,
+        };
+        campaigns.push(campaign);
+      } catch {
+        // pomijamy uszkodzony wpis
       }
-
-      // Jeśli zwraca tuple (array) - fallback
-      if (Array.isArray(summary) && summary.length >= 8) {
-        console.log('✅ Processing as tuple array');
-        const [id, creator, token, target, raised, endTime, isFlexible, closureInitiated] = summary;
-        return {
-          id,
-          creator: creator as `0x${string}`,
-          token: token as `0x${string}`,
-          target,
-          raised,
-          endTime,
-          isFlexible,
-          closureInitiated,
-          campaignId: idx,
-        } as Campaign;
-      }
-
-      console.error(`❌ Unexpected summary format for fundraiser ${validIds[idx]}:`, summary);
-      return null;
-    } catch (error) {
-      console.error(`❌ Error processing fundraiser ${validIds[idx]}:`, error);
-      return null;
     }
-  }).filter((campaign): campaign is Campaign => campaign !== null) : [];
-
-  console.log('📊 Final processed campaigns:', campaigns);
+  }
 
   return {
     campaigns,
-    isLoading: idsLoading || dataLoading,
-    error: idsError || dataError,
-    refetchCampaigns: () => {
-      console.log('🔄 Refetching campaigns...');
-      refetchIds();
-      if (fundraiserCalls.length > 0) {
-        refetchData();
-      }
-    },
     campaignCount: campaigns.length,
+    isLoading: counterLoading || multiLoading,
+    error: counterError || multiError,
+    refetchCampaigns: () => {
+      refetchCounter();
+      if (contracts.length > 0) refetchMulti();
+    },
   };
 }
 
-// Hook do pobierania wszystkich propozycji - NAPRAWIONY
+// Hook do pobierania wszystkich propozycji – teraz używa getAllProposalIds + getProposal
 export function useGetAllProposals() {
-  // Pobierz wszystkie ID propozycji
   const { data: proposalIds, isLoading: idsLoading, error: idsError, refetch: refetchIds } = useReadContract({
     address: polidaoContractConfig.address,
     abi: polidaoContractConfig.abi,
@@ -146,94 +125,51 @@ export function useGetAllProposals() {
     chainId: sepolia.id,
   });
 
-  console.log('🔍 Proposal IDs from contract:', proposalIds);
-
-  const validIds = Array.isArray(proposalIds) ? proposalIds : [];
-
-  // Przygotuj kontrakty dla wszystkich propozycji - tylko gdy mamy ID
-  const proposalCalls = validIds.length > 0 ? validIds.map((id: bigint) => ({
+  const ids: bigint[] = Array.isArray(proposalIds) ? proposalIds : [];
+  const proposalCalls = ids.flatMap((id) => ([{
     address: polidaoContractConfig.address,
     abi: polidaoContractConfig.abi,
-    functionName: 'getProposalSummary',
+    functionName: 'getProposal',
     args: [id],
     chainId: sepolia.id,
-  })) : [];
+  }]));
 
-  console.log('🔍 Prepared proposal calls:', proposalCalls.length);
-
-  // Pobierz szczegóły wszystkich propozycji jednocześnie używając useReadContracts
-  const { data: contractsData, isLoading: dataLoading, error: dataError, refetch: refetchData } = useReadContracts({
+  const { data: multiData, isLoading: multiLoading, error: multiError, refetch: refetchMulti } = useReadContracts({
     contracts: proposalCalls,
-    query: {
-      enabled: proposalCalls.length > 0, // Tylko gdy mamy wywołania do wykonania
-    },
+    query: { enabled: proposalCalls.length > 0 },
   });
 
-  console.log('🔍 Proposal contracts data:', contractsData);
-
-  // Przetwórz dane na format Proposal
-  const proposals: Proposal[] = contractsData && Array.isArray(contractsData) ? contractsData.map((res, idx) => {
-    if (!res || !res.result || res.error) {
-      console.error(`❌ Error fetching proposal ${validIds[idx]}:`, res?.error);
-      return null;
-    }
-
-    try {
-      // getProposalSummary zwraca strukturę ProposalSummary
-      const summary = res.result;
-      
-      console.log(`🔍 Processing proposal summary for ID ${validIds[idx]}:`, summary);
-
-      // Sprawdź czy to struktura (object) z polami
-      if (summary && typeof summary === 'object' && 'id' in summary) {
-        console.log('✅ Processing proposal as struct object');
-        return {
-          id: summary.id,
-          question: summary.question,
-          yesVotes: summary.yesVotes,
-          noVotes: summary.noVotes,
-          endTime: summary.endTime,
-          creator: summary.creator as `0x${string}`,
-          proposalId: idx,
-        } as Proposal;
+  const proposals: Proposal[] = [];
+  if (multiData && Array.isArray(multiData)) {
+    for (let i = 0; i < ids.length; i++) {
+      const res = multiData[i];
+      if (res?.error || !res.result) continue;
+      const p = res.result as any;
+      try {
+        const proposal: Proposal = {
+          id: p.id ?? ids[i],
+          question: p.question ?? '',
+          yesVotes: p.yesVotes ?? BigInt(0),
+          noVotes: p.noVotes ?? BigInt(0),
+          endTime: p.endTime ?? BigInt(0),
+          creator: (p.creator as `0x${string}`) ?? '0x0000000000000000000000000000000000000000',
+          proposalId: i,
+        };
+        proposals.push(proposal);
+      } catch {
+        // pomijamy uszkodzony wpis
       }
-
-      // Jeśli zwraca tuple (array) - fallback
-      if (Array.isArray(summary) && summary.length >= 6) {
-        console.log('✅ Processing proposal as tuple array');
-        const [id, question, yesVotes, noVotes, endTime, creator] = summary;
-        return {
-          id,
-          question,
-          yesVotes,
-          noVotes,
-          endTime,
-          creator: creator as `0x${string}`,
-          proposalId: idx,
-        } as Proposal;
-      }
-
-      console.error(`❌ Unexpected proposal summary format for proposal ${validIds[idx]}:`, summary);
-      return null;
-    } catch (error) {
-      console.error(`❌ Error processing proposal ${validIds[idx]}:`, error);
-      return null;
     }
-  }).filter((proposal): proposal is Proposal => proposal !== null) : [];
-
-  console.log('🗳️ Final processed proposals:', proposals);
+  }
 
   return {
     proposals,
-    isLoading: idsLoading || dataLoading,
-    error: idsError || dataError,
-    refetchProposals: () => {
-      console.log('🔄 Refetching proposals...');
-      refetchIds();
-      if (proposalCalls.length > 0) {
-        refetchData();
-      }
-    },
     proposalCount: proposals.length,
+    isLoading: idsLoading || multiLoading,
+    error: idsError || multiError,
+    refetchProposals: () => {
+      refetchIds();
+      if (proposalCalls.length > 0) refetchMulti();
+    },
   };
 }
