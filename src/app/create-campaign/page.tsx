@@ -6,7 +6,10 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadCont
 import { parseUnits, decodeEventLog } from 'viem';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
-import { polidaoContractConfig, USDC_CONTRACT_ADDRESS } from '../../blockchain/contracts';
+import { USDC_CONTRACT_ADDRESS } from '../../blockchain/contracts';
+import POLIDAO_ADDRESSES from '../../blockchain/addresses';
+import { POLIDAO_ABI } from '../../blockchain/poliDaoAbi';
+import { decodeErrorResult } from 'viem';
 
 // USDC ma 6 miejsc po przecinku
 const USDC_DECIMALS = 6;
@@ -31,23 +34,27 @@ export default function CreateCampaignPage() {
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
+  // NOTE: Na razie zakładamy że walidacje whitelist/paused pozostają w monolicie; jeśli przeniesione do innego modułu trzeba zaktualizować.
   const { data: pausedData } = useReadContract({
-    address: polidaoContractConfig.address,
-    abi: polidaoContractConfig.abi,
+    address: POLIDAO_ADDRESSES.core,
+    abi: POLIDAO_ABI,
     functionName: 'paused'
-  });
+  } as any);
   const { data: isWhitelisted } = useReadContract({
-    address: polidaoContractConfig.address,
-    abi: polidaoContractConfig.abi,
+    address: POLIDAO_ADDRESSES.core,
+    abi: POLIDAO_ABI,
     functionName: 'isTokenWhitelisted',
     args: [USDC_CONTRACT_ADDRESS]
-  });
+  } as any);
   const publicClient = usePublicClient();
 
   const paused = Boolean(pausedData);
 
   const [createdId, setCreatedId] = useState<bigint | null>(null);
   const [friendlyError, setFriendlyError] = useState<string | null>(null);
+
+  // NEW: status twórcy zbiórek
+  const [creatorStatus, setCreatorStatus] = useState<'loading' | 'ok' | 'notAllowed' | 'unknown'>('loading');
 
   const [formData, setFormData] = useState<FormData>({
     title: '',
@@ -129,54 +136,27 @@ export default function CreateCampaignPage() {
     if (lower.includes('invalidtitle')) return 'Tytuł nie spełnia wymagań';
     if (lower.includes('invalidamount')) return 'Nieprawidłowa kwota';
     if (lower.includes('tokennotwhitelisted')) return 'Wybrany token nie jest dozwolony';
+    if (lower.includes('invalid creator')) return 'Twoje konto nie ma uprawnień do tworzenia zbiórek (Invalid creator). Skontaktuj się z administracją lub zakończ proces weryfikacji.';
     return 'Nieudana transakcja – sprawdź dane lub spróbuj ponownie';
   };
 
-  const mapCategoryToFundraiserType = (cat: string): number => {
-    switch (cat) {
-      case 'medical': return 1; // przykładowe mapowanie – można dostosować do on-chain enum
-      case 'education': return 2;
-      case 'social': return 3;
-      case 'animals': return 4;
-      case 'environment': return 5;
-      case 'technology': return 6;
-      case 'culture': return 7;
-      case 'sports': return 8;
-      default: return 0; // other / default
-    }
-  };
+  // Tymczasowo unifikujemy fundraiserType do 0 aby uniknąć potencjalnych revertów na nieznanych enumeracjach.
+  const mapCategoryToFundraiserType = (_cat: string): number => 0;
 
   const handleSubmit = async () => {
+    if (creatorStatus === 'notAllowed') {
+      setFriendlyError('Twoje konto nie jest uprawnione do tworzenia zbiórek.');
+      return;
+    }
     if (!validateStep(3) || !isConnected) return;
 
     try {
       const now = Math.floor(Date.now() / 1000);
       const endDate = BigInt(now + parseInt(formData.duration) * 24 * 60 * 60);
-      // 1. Budujemy metadata JSON które wyślemy do /api/metadata -> otrzymamy cid
-      const metadataPayload = {
-        title: formData.title.trim(),
-        description: formData.description.trim(),
-        category: formData.category,
-        beneficiaryType: formData.beneficiary,
-        contactInfo: formData.contactInfo,
-        location: formData.location,
-        campaignType: formData.campaignType,
-      };
-
-      let metadataHash = '';
-      try {
-        const res = await fetch('/api/metadata', { method: 'POST', body: JSON.stringify(metadataPayload), headers: { 'Content-Type': 'application/json' } });
-        if (res.ok) {
-          const j = await res.json();
-            metadataHash = j.cid ? `ipfs://${j.cid}` : '';
-        }
-      } catch (e) {
-        // brak bloker – fallback pusty hash
-      }
+      const metadataHash = '';
       const goalAmount = formData.campaignType === 'target' ? parseUnits(formData.targetAmount || '0', USDC_DECIMALS) : BigInt(0);
-      // fundraiserType: uproszczenie (0 = klasyczna / społeczna). Możesz rozwinąć mapowanie kategorii.
-  const fundraiserType = mapCategoryToFundraiserType(formData.category);
-      const images: string[] = [];// Możliwe przyszłe uploady
+      const fundraiserType = mapCategoryToFundraiserType(formData.category);
+      const images: string[] = [];
       const videos: string[] = [];
       const location = formData.location || '';
 
@@ -184,8 +164,10 @@ export default function CreateCampaignPage() {
       try {
         if (publicClient) {
           await publicClient.simulateContract({
-            ...polidaoContractConfig,
+            address: POLIDAO_ADDRESSES.core,
+            abi: POLIDAO_ABI as any,
             functionName: 'createFundraiser',
+            account: address as `0x${string}`, // użyj aktualnego nadawcy, jak w poprzednim projekcie
             args: [{
               title: formData.title.trim(),
               description: formData.description.trim(),
@@ -193,9 +175,9 @@ export default function CreateCampaignPage() {
               fundraiserType,
               token: USDC_CONTRACT_ADDRESS,
               goalAmount,
-              metadataHash,
               initialImages: images,
               initialVideos: videos,
+              metadataHash,
               location,
               isFlexible: formData.campaignType === 'flexible'
             }]
@@ -203,29 +185,36 @@ export default function CreateCampaignPage() {
         }
       } catch (simErr: any) {
         console.error('Simulation revert', simErr);
-        setFriendlyError(mapError(simErr?.shortMessage || simErr?.message || 'Błąd symulacji'));
-        return; // nie wysyłamy prawdziwej transakcji jeśli symulacja się wywaliła
+        try {
+          if (simErr?.data) {
+            const decoded = decodeErrorResult({ abi: POLIDAO_ABI as any, data: simErr.data });
+            setFriendlyError(mapError(decoded.errorName || simErr?.shortMessage || simErr?.message || 'Błąd symulacji'));
+          } else {
+            setFriendlyError(mapError(simErr?.shortMessage || simErr?.message || 'Błąd symulacji'));
+          }
+        } catch {
+          setFriendlyError(mapError(simErr?.shortMessage || simErr?.message || 'Błąd symulacji'));
+        }
+        return; // nie wysyłaj transakcji jeśli symulacja się wywaliła (np. Invalid creator)
       }
 
       await writeContract({
-        address: polidaoContractConfig.address,
-        abi: polidaoContractConfig.abi,
+        address: POLIDAO_ADDRESSES.core,
+        abi: POLIDAO_ABI as any,
         functionName: 'createFundraiser',
-        args: [
-          {
-            title: formData.title.trim(),
-            description: formData.description.trim(),
-            endDate,
-            fundraiserType,
-            token: USDC_CONTRACT_ADDRESS,
-            goalAmount,
-            metadataHash,
-            initialImages: images,
-            initialVideos: videos,
-            location,
-            isFlexible: formData.campaignType === 'flexible'
-          }
-        ],
+        args: [{
+          title: formData.title.trim(),
+          description: formData.description.trim(),
+          endDate,
+          fundraiserType,
+          token: USDC_CONTRACT_ADDRESS,
+          goalAmount,
+          initialImages: images,
+          initialVideos: videos,
+          metadataHash,
+          location,
+          isFlexible: formData.campaignType === 'flexible'
+        }]
       });
     } catch (error: any) {
       console.error('Error creating campaign:', error);
@@ -242,14 +231,13 @@ export default function CreateCampaignPage() {
         // Próbujemy znaleźć log eventu FundraiserCreated
         for (const log of receipt.logs) {
           try {
-            const decoded = decodeEventLog({
-              abi: polidaoContractConfig.abi,
+            const decoded: any = decodeEventLog({
+              abi: POLIDAO_ABI as any,
               data: log.data,
-              // clone topics to mutable tuple form for viem typings
               topics: [...log.topics] as [`0x${string}`, ...`0x${string}`[]],
             });
-            if (decoded.eventName === 'FundraiserCreated') {
-              const id = decoded.args?.fundraiserId as bigint | undefined;
+            if (decoded?.eventName === 'FundraiserCreated') {
+              const id = decoded?.args?.fundraiserId as bigint | undefined;
               if (id && id > 0n) {
                 setCreatedId(id);
                 return;
@@ -260,9 +248,10 @@ export default function CreateCampaignPage() {
         // Fallback: fundraiserCounter - 1 (zakładamy sekwencyjne inkrementowanie)
         try {
           const counter = await publicClient.readContract({
-            address: polidaoContractConfig.address,
-            abi: polidaoContractConfig.abi,
-            functionName: 'fundraiserCounter'
+            address: POLIDAO_ADDRESSES.core,
+            abi: POLIDAO_ABI as any,
+            functionName: 'fundraiserCounter',
+            args: []
           });
           if (typeof counter === 'bigint' && counter > 0n) {
             setCreatedId(counter); // jeżeli kontrakt zwraca już nowy counter jako ID nowej zbiórki
@@ -284,6 +273,45 @@ export default function CreateCampaignPage() {
       return () => clearTimeout(t);
     }
   }, [createdId]);
+
+  // NEW: sprawdzanie czy adres jest uprawniony do tworzenia (probing potencjalnych nazw)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!address || !publicClient) {
+        setCreatorStatus('unknown');
+        return;
+      }
+      setCreatorStatus('loading');
+      const candidateFns = [
+        'isCreatorWhitelisted',
+        'isFundraiserCreator',
+        'isUserWhitelisted',
+        'creatorWhitelist',
+        'approvedCreators'
+      ];
+      for (const fn of candidateFns) {
+        try {
+          const res: any = await publicClient.readContract({
+            address: POLIDAO_ADDRESSES.core,
+            abi: POLIDAO_ABI as any,
+            functionName: fn as any,
+            args: [address]
+          });
+          if (cancelled) return;
+            if (typeof res === 'boolean') {
+              setCreatorStatus(res ? 'ok' : 'notAllowed');
+              return;
+            }
+        } catch {
+          // ignorujemy jeśli funkcji nie ma / revert
+        }
+      }
+      // jeśli żadna funkcja nie pasowała – pozostawiamy unknown (nie blokujemy)
+      if (!cancelled) setCreatorStatus('unknown');
+    })();
+    return () => { cancelled = true; };
+  }, [address, publicClient]);
 
   if (!isConnected) {
     return (
@@ -795,7 +823,16 @@ export default function CreateCampaignPage() {
                 <div className="mt-8">
                   <button
                     onClick={handleSubmit}
-                    disabled={paused || isPending || isConfirming || !formData.agreeTerms || !formData.agreeDataProcessing || (isWhitelisted === false)}
+                    disabled={
+                      paused ||
+                      isPending ||
+                      isConfirming ||
+                      !formData.agreeTerms ||
+                      !formData.agreeDataProcessing ||
+                      (isWhitelisted === false) ||
+                      creatorStatus === 'notAllowed' ||
+                      creatorStatus === 'loading'
+                    }
                     className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-5 px-8 rounded-xl transition-all duration-300 transform hover:scale-[1.02] disabled:hover:scale-100 text-xl shadow-lg"
                   >
                     {paused
@@ -816,6 +853,22 @@ export default function CreateCampaignPage() {
                             </div>
                           )}
                   </button>
+                  {creatorStatus === 'notAllowed' && (
+                    <p className="mt-2 text-sm text-red-600 font-medium">
+                      Twoje konto nie ma uprawnień do tworzenia zbiórek. Uzupełnij weryfikację lub skontaktuj się z administracją.
+                    </p>
+                  )}
+                  {creatorStatus === 'loading' && (
+                    <p className="mt-2 text-sm text-gray-600 font-medium">
+                      Sprawdzanie uprawnień twórcy...
+                    </p>
+                  )}
+                  {creatorStatus === 'unknown' && (
+                    <p className="mt-2 text-xs text-gray-500 font-medium">
+                      Nie udało się potwierdzić uprawnień twórcy (funkcja whitelist nieznaleziona). Próba utworzenia może się nie powieść jeśli kontrakt wymaga weryfikacji.
+                    </p>
+                  )}
+
                   {isWhitelisted === false && (
                     <p className="mt-2 text-sm text-red-600 font-medium">Wybrany token nie jest dopuszczony przez kontrakt.</p>
                   )}
