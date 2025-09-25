@@ -1,8 +1,14 @@
 @import "tailwindcss";
 
+/* Base design tokens */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #f8fafc;             /* light background */
+  --text: #0f172a;           /* slate-900 */
+  --muted: #475569;          /* slate-600 */
+  --card-bg: #ffffff;        /* white */
+  --border: #e5e7eb;         /* gray-200 */
+  --primary: #2563eb;        /* blue-600 */
+  --accent: #16a34a;         /* green-600 */
 }
 
 @theme inline {
@@ -19,18 +25,82 @@
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Darker navy theme */
+html[data-theme="navy"] {
+  --bg: #0B1220;             /* deep navy */
+  --text: #E6ECF3;           /* very light slate */
+  --muted: #A7B2C4;          /* muted light */
+  --card-bg: #131B2E;        /* navy card */
+  --border: #23304A;         /* subtle border */
+  --primary: #3A79FF;        /* vivid blue on navy */
+  --accent: #4FD1C5;         /* teal accent */
 }
 
-/* src/app/globals.css */
+body {
+  background: var(--bg);
+  color: var(--text);
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+/* Global application base */
 html, body, #__next {
+  height: 100%;
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
+}
+
+/* Links */
+a {
+  color: var(--primary);
+}
+a:hover {
+  opacity: 0.9;
+}
+
+/* Cards & separators default */
+hr {
+  border-color: var(--border);
+}
+
+/* Helpful overrides for common Tailwind utilities used in the app */
+html[data-theme="navy"] .bg-white { background-color: var(--card-bg) !important; }
+html[data-theme="navy"] .bg-gray-50 { background-color: #0e1628 !important; }
+html[data-theme="navy"] .text-gray-900,
+html[data-theme="navy"] .text-gray-800 { color: var(--text) !important; }
+html[data-theme="navy"] .text-gray-700,
+html[data-theme="navy"] .text-gray-600 { color: var(--muted) !important; }
+html[data-theme="navy"] .border-gray-200 { border-color: var(--border) !important; }
+html[data-theme="navy"] .bg-gray-100 { background-color: #122038 !important; }
+html[data-theme="navy"] .bg-blue-50 { background-color: #0e1c34 !important; }
+html[data-theme="navy"] .bg-green-50 { background-color: #0d1e1c !important; }
+html[data-theme="navy"] .bg-purple-50 { background-color: #181633 !important; }
+html[data-theme="navy"] .bg-indigo-50 { background-color: #121a35 !important; }
+
+/* Buttons that rely on text color inheritance */
+html[data-theme="navy"] button {
+  color: inherit;
+}
+
+/* Subtle elevation for cards in navy */
+html[data-theme="navy"] .shadow-lg,
+html[data-theme="navy"] .shadow-xl,
+html[data-theme="navy"] .shadow-sm {
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* Gradient-heavy sections fallback: add a navy wash */
+html[data-theme="navy"] .bg-gradient-to-br {
+  background-image: none !important;
+  background-color: #0B1220 !important;
+}
+
+/* MUI baseline (where applicable) */
+html[data-theme="navy"] .MuiPaper-root {
+  background-color: var(--card-bg);
+  color: var(--text);
+  border-color: var(--border);
 }
 
 /* 3D-Hero Banner */
@@ -56,10 +126,6 @@ html, body, #__next {
   pointer-events: none;
   opacity: 1; /* pełna nieprzezroczystość */
 }
-
-
-
-
 
 .layer-back  { transform: translateZ(-200px) scale(1.2); z-index: 10; }
 .layer-mid   { transform: translateZ(   0px) scale(1);   z-index: 20; }

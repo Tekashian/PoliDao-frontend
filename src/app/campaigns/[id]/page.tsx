@@ -1,14 +1,12 @@
 // src/app/campaigns/[id]/page.tsx - INSPIROWANE DZIAŁAJĄCYM PROJEKTEM
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   Box,
   Typography,
-  LinearProgress,
   Button,
-  Avatar,
   Chip,
   Grid,
   Container,
@@ -19,23 +17,16 @@ import {
   DialogActions,
   Alert,
   IconButton,
-  List,
-  ListItem,
-  ListItemAvatar,
-  ListItemText,
   useTheme,
-  alpha,
   CircularProgress,
   Snackbar,
 } from "@mui/material";
 import {
   Share,
   ArrowBack,
-  Launch,
   ContentCopy,
   CheckCircle,
   VolunteerActivism,
-  Refresh,
 } from "@mui/icons-material";
 import Header from "../../../components/Header";
 import Footer from "../../../components/Footer";
@@ -43,12 +34,15 @@ import Image from 'next/image';
 
 // Reown AppKit hooks
 import { useAppKitAccount, useAppKitNetwork } from "@reown/appkit/react";
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useReadContracts } from "wagmi";
 import { formatUnits, parseUnits } from "viem";
 import { BrowserProvider, Contract } from 'ethers';
 
 // Contract ABIs
 import { POLIDAO_ABI } from "../../../blockchain/poliDaoAbi";
+import { sepolia } from '@reown/appkit/networks';
+import POLIDAO_ADDRESSES from '../../../blockchain/addresses';
+import { poliDaoCoreAbi } from '../../../blockchain/coreAbi';
 
 // ERC20 ABI inline
 const ERC20_ABI = [
@@ -124,6 +118,8 @@ interface Update {
   timestamp: number;
 }
 
+const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
+
 export default function CampaignPage() {
   const params = useParams();
   const router = useRouter();
@@ -151,101 +147,162 @@ export default function CampaignPage() {
 
   const campaignId = params.id as string;
   const idNum = Number(campaignId);
+  const invalid = !campaignId || Number.isNaN(idNum) || idNum < 0;
 
-  // ✅ INSPIROWANE: Sprawdź dostępne kampanie używając getAllFundraiserIds
-  const {
-    data: allFundraiserIds,
-    isLoading: idsLoading,
-    error: idsError,
-  } = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: POLIDAO_ABI,
-    functionName: "getAllFundraiserIds",
-    query: {
-      enabled: !!CONTRACT_ADDRESS,
-      staleTime: 0, // ✅ Zawsze świeże dane
-      refetchInterval: 10000,
-    },
+  // Probe both id and id-1 to handle 1-based vs 0-based IDs using Core ABI
+  const calls = useMemo(() => {
+    if (invalid) return [];
+    const primary = {
+      address: POLIDAO_ADDRESSES.core,
+      abi: poliDaoCoreAbi,
+      functionName: 'getFundraiserDetails',
+      args: [BigInt(idNum)],
+      chainId: sepolia.id,
+    } as const;
+    const alt = idNum > 0 ? {
+      address: POLIDAO_ADDRESSES.core,
+      abi: poliDaoCoreAbi,
+      functionName: 'getFundraiserDetails',
+      args: [BigInt(idNum - 1)],
+      chainId: sepolia.id,
+    } as const : null;
+    return alt ? [primary, alt] : [primary];
+  }, [idNum, invalid]);
+
+  const { data, isLoading, error: contractError } = useReadContracts({
+    contracts: calls,
+    query: { enabled: calls.length > 0 }
   });
 
-  // ✅ INSPIROWANE: Sprawdź czy ID kampanii istnieje w liście
-  const isValidCampaignId = campaignId && !isNaN(Number(campaignId)) && Number(campaignId) >= 0;
-  const campaignExists = allFundraiserIds && isValidCampaignId && 
-    allFundraiserIds.some((id: bigint) => Number(id) === Number(campaignId));
+  // Choose first valid response (creator != zero) and normalize
+  const parsed = useMemo(() => {
+    if (!data || !Array.isArray(data)) return null;
+    for (let i = 0; i < data.length; i++) {
+      const res = data[i];
+      if (!res || res.error || !res.result) continue;
+      const raw: any = res.result;
+      const creator = (raw.creator ?? raw[9] ?? ZERO_ADDR) as string;
+      if (creator && creator.toLowerCase() !== ZERO_ADDR) {
+        const endDate = (raw.endDate ?? raw[3] ?? 0n) as bigint;
+        const fundraiserType = Number(raw.fundraiserType ?? raw[4] ?? 0);
+        const token = (raw.token ?? raw[6] ?? ZERO_ADDR) as `0x${string}`;
+        const goalAmount = (raw.goalAmount ?? raw[7] ?? 0n) as bigint;
+        const raisedAmount = (raw.raisedAmount ?? raw[8] ?? 0n) as bigint;
+        const status = Number(raw.status ?? raw[5] ?? 0);
+        const realId = i === 0 ? idNum : Math.max(idNum - 1, 0);
+        return {
+          id: realId,
+          creator: creator as `0x${string}`,
+          token,
+          goalAmount,
+          raisedAmount,
+          endDate,
+          isFlexible: goalAmount === 0n || fundraiserType === 1,
+          status
+        };
+      }
+    }
+    return null;
+  }, [data, idNum]);
 
-  // ✅ INSPIROWANE: GŁÓWNA FUNKCJA - getFundraiser z agresywnym odświeżaniem
-  const {
-    data: fundraiserData,
-    error: fundraiserError,
-    isLoading: fundraiserLoading,
-    refetch: refetchFundraiser,
-  } = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: POLIDAO_ABI,
-    functionName: "getFundraiser",
-    args: [BigInt(idNum)],
-    query: {
-      enabled: !!CONTRACT_ADDRESS && !!campaignId && !isNaN(idNum),
-      refetchInterval: 5000, // ✅ Co 5 sekund - jak w działającym projekcie
-      refetchIntervalInBackground: true,
-      refetchOnMount: true,
-      refetchOnWindowFocus: true,
-      staleTime: 0, // ✅ Zawsze pobieraj świeże dane
-      retry: 3,
-    },
-  });
+  // Set up campaign data from Core
+  useEffect(() => {
+    if (invalid) {
+      setError("Nieprawidłowy ID kampanii");
+      setLoading(false);
+      return;
+    }
+    if (isLoading) {
+      setLoading(true);
+      return;
+    }
+    if (contractError) {
+      setError(`Błąd pobierania danych kampanii: ${contractError.message}`);
+      setLoading(false);
+      return;
+    }
+    if (!parsed) {
+      setError("Nie udało się znaleźć zbiórki dla podanego ID");
+      setLoading(false);
+      return;
+    }
 
-  // ✅ INSPIROWANE: Liczba darczyńców z częstym odświeżaniem
-  const {
-    data: donorsCount,
-    refetch: refetchDonorsCount,
-  } = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: POLIDAO_ABI,
-    functionName: "getDonorsCount",
-    args: [BigInt(idNum)],
-    query: {
-      enabled: !!CONTRACT_ADDRESS && !!campaignId && !isNaN(idNum),
-      refetchInterval: 5000, // ✅ Co 5 sekund
-      staleTime: 0,
-    },
-  });
+    setCampaignData({
+      id: parsed.id.toString(),
+      creator: parsed.creator,
+      token: parsed.token,
+      target: parsed.goalAmount,
+      raised: parsed.raisedAmount,
+      endTime: parsed.endDate,
+      isFlexible: parsed.isFlexible,
+      // Brak tych pól w Core ABI – ustawiamy bezpieczne wartości domyślne
+      closureInitiated: false,
+      reclaimDeadline: 0n,
+      fundsWithdrawn: parsed.status === 2,
+    });
+    setError(null);
+    setLoading(false);
+    setLastRefreshTime(Date.now());
+  }, [invalid, isLoading, contractError, parsed]);
 
-  const {
-    data: timeLeft,
-    refetch: refetchTimeLeft,
-  } = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: POLIDAO_ABI,
-    functionName: "timeLeftOnFundraiser",
-    args: [BigInt(idNum)],
-    query: {
-      enabled: !!CONTRACT_ADDRESS && !!campaignId && !isNaN(idNum),
-      refetchInterval: 30000, // Co 30 sekund dla czasu
-      staleTime: 0,
-    },
-  });
+  // Check ownership
+  useEffect(() => {
+    if (!campaignData || !address) {
+      setIsOwner(false);
+      return;
+    }
+    setIsOwner(campaignData.creator.toLowerCase() === address.toLowerCase());
+  }, [campaignData, address]);
 
-  const {
-    data: userDonation,
-    refetch: refetchUserDonation,
-  } = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: POLIDAO_ABI,
-    functionName: "donationOf",
-    args: [BigInt(idNum), address || "0x0000000000000000000000000000000000000000"],
-    query: {
-      enabled: !!CONTRACT_ADDRESS && !!campaignId && !isNaN(idNum) && !!address,
-      refetchInterval: 5000, // ✅ Co 5 sekund
-      staleTime: 0,
-    },
-  });
+  // Fetch donation logs (optional – depends on legacy contract emitting DonationMade)
+  useEffect(() => {
+    if (!campaignData) return;
+    if (typeof window === 'undefined') return;
+
+    const fetchDonationLogs = async () => {
+      try {
+        const ethersProvider = new BrowserProvider(
+          (window as any).ethereum,
+          chainId || 1
+        );
+        const contract = new Contract(
+          CONTRACT_ADDRESS,
+          POLIDAO_ABI,
+          ethersProvider
+        );
+        const filter = (contract as any).filters?.DonationMade?.(BigInt(idNum), null);
+        if (!filter) return;
+
+        const rawLogs = await contract.queryFilter(filter);
+        const decimals = 6;
+        const parsedLogs: DonationLog[] = rawLogs.map((log: any) => {
+          const { donor, amount, timestamp } = log.args || {};
+          return {
+            donor: donor?.toLowerCase() || '',
+            amount: Number(amount || 0) / Math.pow(10, decimals),
+            timestamp: Number(timestamp || 0) > 10 ? Number(timestamp) * 1000 : Date.now(),
+            txHash: log.transactionHash || ''
+          };
+        }).sort((a: any, b: any) => b.timestamp - a.timestamp);
+
+        setDonations(parsedLogs);
+        setUniqueDonorsCount(new Set(parsedLogs.map(d => d.donor)).size);
+      } catch (err) {
+        console.warn('Brak logów DonationMade lub błąd:', err);
+        setDonations([]);
+        setUniqueDonorsCount(0);
+      }
+    };
+
+    fetchDonationLogs();
+    const interval = setInterval(fetchDonationLogs, 15000);
+    return () => clearInterval(interval);
+  }, [campaignData, chainId, idNum]);
 
   // Contract write hooks
   const { 
     writeContract, 
     isPending: isDonating, 
-    error: donateError,
     data: donateHash 
   } = useWriteContract();
   
@@ -281,8 +338,6 @@ export default function CampaignPage() {
     args: [address || "0x0000000000000000000000000000000000000000"],
     query: {
       enabled: !!campaignData?.token && !!address,
-      refetchInterval: 15000,
-      staleTime: 0,
     },
   });
 
@@ -299,8 +354,6 @@ export default function CampaignPage() {
     ],
     query: {
       enabled: !!campaignData?.token && !!address && !!CONTRACT_ADDRESS,
-      refetchInterval: 15000,
-      staleTime: 0,
     },
   });
 
@@ -312,7 +365,6 @@ export default function CampaignPage() {
     functionName: "symbol",
     query: {
       enabled: !!campaignData?.token,
-      staleTime: 30000, // Symbol nie zmienia się często
     },
   });
 
@@ -324,283 +376,85 @@ export default function CampaignPage() {
     functionName: "decimals",
     query: {
       enabled: !!campaignData?.token,
-      staleTime: 30000, // Decimals nie zmienia się często
     },
   });
-
-  // ✅ INSPIROWANE: Debug listener dla zmian danych
-  useEffect(() => {
-    if (fundraiserData) {
-      console.log("🔄 Dane kampanii odświeżone:", new Date().toLocaleTimeString());
-      setLastRefreshTime(Date.now());
-    }
-  }, [fundraiserData]);
-
-  // ✅ INSPIROWANE: Obsługa błędów
-  useEffect(() => {
-    if (!isValidCampaignId) {
-      setError("Nieprawidłowy ID kampanii");
-      setLoading(false);
-      return;
-    }
-
-    if (!idsLoading && allFundraiserIds !== undefined) {
-      if (!campaignExists) {
-        const availableIds = allFundraiserIds.map((id: bigint) => Number(id)).join(', ');
-        setError(`Kampania #${campaignId} nie istnieje. Dostępne kampanie: [${availableIds}]`);
-        setLoading(false);
-        return;
-      }
-    }
-
-    if (idsError) {
-      setError(`Błąd połączenia z kontraktem: ${idsError.message}`);
-      setLoading(false);
-      return;
-    }
-
-    if (fundraiserError) {
-      setError(`Błąd pobierania danych kampanii: ${fundraiserError.message}`);
-      setLoading(false);
-      return;
-    }
-  }, [isValidCampaignId, campaignId, idsLoading, allFundraiserIds, campaignExists, idsError, fundraiserError]);
-
-  // ✅ INSPIROWANE: Setup fundraiser data - używając dostępnych funkcji
-  useEffect(() => {
-    if (fundraiserData && Array.isArray(fundraiserData) && fundraiserData.length >= 10) {
-      console.log("Setting up campaign data from fundraiserData:", fundraiserData);
-      
-      const [
-        id, 
-        creator, 
-        token, 
-        target, 
-        raised, 
-        endTime, 
-        isFlexible, 
-        closureInitiated, 
-        reclaimDeadline, 
-        fundsWithdrawn
-      ] = fundraiserData;
-      
-      setCampaignData({
-        id: campaignId,
-        creator: creator as `0x${string}`,
-        token: token as `0x${string}`,
-        target: target as bigint,
-        raised: raised as bigint,
-        endTime: endTime as bigint,
-        isFlexible: isFlexible as boolean,
-        closureInitiated: closureInitiated as boolean,
-        reclaimDeadline: reclaimDeadline as bigint,
-        fundsWithdrawn: fundsWithdrawn as boolean,
-      });
-      
-      setLoading(false);
-      setError(null);
-    }
-  }, [fundraiserData, campaignId]);
-
-  // Check ownership
-  useEffect(() => {
-    if (!campaignData || !address) {
-      setIsOwner(false);
-      return;
-    }
-    setIsOwner(campaignData.creator.toLowerCase() === address.toLowerCase());
-  }, [campaignData, address]);
-
-  // ✅ INSPIROWANE: Fetch donation logs - jak w działającym projekcie
-  useEffect(() => {
-    if (!campaignData) return;
-    if (typeof window === 'undefined') return;
-
-    const fetchDonationLogs = async () => {
-      try {
-        const ethersProvider = new BrowserProvider(
-          (window as any).ethereum,
-          chainId || 1
-        );
-        const contract = new Contract(
-          CONTRACT_ADDRESS,
-          POLIDAO_ABI,
-          ethersProvider
-        );
-        
-        // ✅ Używaj prawidłowej nazwy eventu z ABI: "DonationMade"
-        const filter = contract.filters.DonationMade?.(BigInt(idNum), null);
-        if (!filter) {
-          console.log("No DonationMade filter found");
-          return;
-        }
-
-        const rawLogs = await contract.queryFilter(filter);
-        console.log("Raw donation logs:", rawLogs);
-        
-        const parsed: DonationLog[] = rawLogs.map((log: any) => {
-          const { donor, amount } = log.args || {};
-          const decimals = tokenDecimals || 6;
-          
-          return {
-            donor: donor?.toLowerCase() || '',
-            amount: Number(amount || 0) / Math.pow(10, decimals),
-            timestamp: Date.now(), // Fallback timestamp
-            txHash: log.transactionHash || ''
-          };
-        });
-        
-        parsed.sort((a, b) => b.timestamp - a.timestamp);
-        setDonations(parsed);
-        setUniqueDonorsCount(new Set(parsed.map(d => d.donor)).size);
-        
-        console.log("Parsed donations:", parsed);
-      } catch (err) {
-        console.error('Error fetching donation logs:', err);
-        setDonations([]);
-        setUniqueDonorsCount(0);
-      }
-    };
-
-    fetchDonationLogs();
-    // ✅ INSPIROWANE: Odświeżaj logi co 15 sekund
-    const interval = setInterval(fetchDonationLogs, 15000);
-    return () => clearInterval(interval);
-  }, [campaignData, chainId, tokenDecimals, idNum]);
-
-  // ✅ INSPIROWANE: Auto-refresh po udanych transakcjach
-  useEffect(() => {
-    if (isDonationSuccess) {
-      setSnackbar({
-        open: true,
-        message: 'Wpłata została potwierdzona! Odświeżanie danych...',
-        severity: 'success'
-      });
-      
-      // Natychmiastowe odświeżenie po transakcji
-      setTimeout(() => {
-        refetchFundraiser();
-        refetchDonorsCount();
-        refetchUserDonation();
-        setDonateOpen(false);
-        setDonateAmount("");
-        setNeedsApproval(false);
-      }, 2000);
-    }
-  }, [isDonationSuccess, refetchFundraiser, refetchDonorsCount, refetchUserDonation]);
-
-  useEffect(() => {
-    if (isApprovalSuccess) {
-      setSnackbar({
-        open: true,
-        message: 'Zatwierdzenie zostało potwierdzone!',
-        severity: 'success'
-      });
-      setTimeout(() => {
-        refetchAllowance();
-        setNeedsApproval(false);
-      }, 2000);
-    }
-  }, [isApprovalSuccess, refetchAllowance]);
-
-  // Helper functions
-  const formatAddress = (addr: string) => {
-    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-  };
-
-  // ✅ INSPIROWANE: formatTokenAmount jak w działającym projekcie
-  const formatTokenAmount = (amount: bigint, decimals: number = 6) => {
-    const asString = formatUnits(amount, decimals);
-    const asNumber = Number(asString);
-    return asNumber.toFixed(2);
-  };
 
   // Handle updates
   const handleAddUpdate = () => {
     const trimmed = newUpdateText.trim();
     if (!trimmed) return;
-    setUpdates(prev => [{ content: trimmed, timestamp: Date.now() }, ...prev]);
+    setUpdates(prev => [{ content: trimmed, timestamp: Date.now() }, ...prev ]);
     setNewUpdateText('');
-    
-    setSnackbar({
-      open: true,
-      message: 'Aktualność została dodana!',
-      severity: 'success'
-    });
+    setSnackbar({ open: true, message: 'Aktualność została dodana!', severity: 'success' });
   };
 
-  // ✅ INSPIROWANE: Enhanced donation flow
+  // Enhanced donation flow (legacy donate – may not exist in Core)
   const handleDonate = async () => {
     if (!isConnected || !campaignData) {
-      setSnackbar({
-        open: true,
-        message: 'Najpierw połącz portfel!',
-        severity: 'error'
-      });
+      setSnackbar({ open: true, message: 'Najpierw połącz portfel!', severity: 'error' });
       return;
     }
-
     if (!donateAmount || isNaN(Number(donateAmount)) || Number(donateAmount) <= 0) {
-      setSnackbar({
-        open: true,
-        message: 'Wprowadź poprawną kwotę!',
-        severity: 'error'
-      });
+      setSnackbar({ open: true, message: 'Wprowadź poprawną kwotę!', severity: 'error' });
       return;
     }
 
     try {
       const decimals = tokenDecimals || 6;
       const amount = parseUnits(donateAmount, decimals);
-      
       if (userBalance && amount > userBalance) {
-        setSnackbar({
-          open: true,
-          message: 'Niewystarczający balans tokenów!',
-          severity: 'error'
-        });
+        setSnackbar({ open: true, message: 'Niewystarczający balans tokenów!', severity: 'error' });
         return;
       }
 
-      // Check if approval is needed
       if (!allowance || amount > allowance) {
         setNeedsApproval(true);
-        setSnackbar({
-          open: true,
-          message: 'Najpierw zatwierdź wydatkowanie tokenów',
-          severity: 'info'
-        });
-        
+        setSnackbar({ open: true, message: 'Najpierw zatwierdź wydatkowanie tokenów', severity: 'info' });
         await writeApproval({
           address: campaignData.token,
           abi: ERC20_ABI,
           functionName: "approve",
           args: [CONTRACT_ADDRESS, amount],
         });
-        
         return;
       }
 
-      // If approval is sufficient, proceed with donation
       await writeContract({
         address: CONTRACT_ADDRESS,
         abi: POLIDAO_ABI,
         functionName: "donate",
-        args: [BigInt(idNum), amount],
+        args: [BigInt(Number(campaignData.id)), amount],
       });
-
     } catch (error: any) {
       console.error("Transaction failed:", error);
-      setSnackbar({
-        open: true,
-        message: `Wystąpił błąd: ${error.message || 'Nieznany błąd'}`,
-        severity: 'error'
-      });
+      setSnackbar({ open: true, message: `Wystąpił błąd: ${error.message || 'Nieznany błąd'}`, severity: 'error' });
     }
   };
 
-  // Show loading state
-  if (loading || idsLoading || fundraiserLoading) {
+  useEffect(() => {
+    if (isDonationSuccess) {
+      setSnackbar({ open: true, message: 'Wpłata została potwierdzona! Odświeżanie danych...', severity: 'success' });
+      setTimeout(() => {
+        setDonateOpen(false);
+        setDonateAmount("");
+        setNeedsApproval(false);
+        setLastRefreshTime(Date.now());
+      }, 1500);
+    }
+  }, [isDonationSuccess]);
+
+  useEffect(() => {
+    if (isApprovalSuccess) {
+      setSnackbar({ open: true, message: 'Zatwierdzenie zostało potwierdzone!', severity: 'success' });
+      setTimeout(() => {
+        refetchAllowance();
+        setNeedsApproval(false);
+      }, 1000);
+    }
+  }, [isApprovalSuccess, refetchAllowance]);
+
+  // Show loading state – only core read
+  if (loading || isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
         <Header />
@@ -628,11 +482,6 @@ export default function CampaignPage() {
           <Alert severity="error" sx={{ mt: 4 }}>
             <Typography variant="h6">Błąd ładowania kampanii</Typography>
             <Typography>{error || "Nie udało się załadować danych kampanii"}</Typography>
-            {allFundraiserIds && allFundraiserIds.length > 0 && (
-              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                Dostępne kampanie: {allFundraiserIds.map((id: bigint) => Number(id)).join(', ')}
-              </Typography>
-            )}
           </Alert>
         </Container>
         <Footer />
@@ -640,7 +489,7 @@ export default function CampaignPage() {
     );
   }
 
-  // ✅ INSPIROWANE: Calculations and display data - jak w działającym projekcie
+  // Calculations and display data
   const displayTokenSymbol = tokenSymbol || 'USDC';
   const decimals = tokenDecimals || 6;
   const raised = Number(formatUnits(campaignData.raised, decimals));
@@ -649,14 +498,13 @@ export default function CampaignPage() {
   const progressPercent = campaignData.target > 0n 
     ? Number((campaignData.raised * 10000n) / campaignData.target) / 100 
     : 0;
-  
-  const timeLeftSeconds = timeLeft ? Number(timeLeft) : 0;
+
+  // Compute time left locally using endTime
+  const nowSec = Math.floor(Date.now() / 1000);
+  const timeLeftSeconds = Math.max(0, Number(campaignData.endTime) - nowSec);
   const daysLeft = Math.max(0, Math.floor(timeLeftSeconds / (24 * 60 * 60)));
   const hoursLeft = Math.max(0, Math.floor((timeLeftSeconds % (24 * 60 * 60)) / 3600));
   const isActive = timeLeftSeconds > 0 && !campaignData.closureInitiated;
-  const isCreator = address?.toLowerCase() === campaignData.creator.toLowerCase();
-  const hasUserDonated = userDonation && userDonation > 0n;
-  const userBalanceFormatted = userBalance ? Number(formatUnits(userBalance, decimals)) : 0;
 
   let displayTitle = `Kampania Blockchain #${campaignData.id}`;
   let displayDescription = "Decentralizowana zbiórka na platformie PoliDAO";
@@ -665,7 +513,7 @@ export default function CampaignPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       <Header />
       
-      {/* ✅ INSPIROWANE: Hero section z blur background jak w działającym projekcie */}
+      {/* Hero with blur */}
       <div className="relative w-full h-[600px] -mt-56">
         <div className="absolute inset-0 -z-10">
           <Image
@@ -680,45 +528,29 @@ export default function CampaignPage() {
       </div>
 
       <main className="container mx-auto p-6 -mt-[350px] relative z-10">
-        {/* ✅ INSPIROWANE: Breadcrumb Navigation */}
+        {/* Breadcrumb */}
         <Box sx={{ mb: 3, display: "flex", alignItems: "center", gap: 1 }}>
           <IconButton 
             onClick={() => router.push('/')} 
-            sx={{ 
-              bgcolor: "white", 
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              border: '1px solid #e5e7eb',
-            }}
+            sx={{ bgcolor: "white", boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}
           >
             <ArrowBack />
           </IconButton>
           <Typography variant="body2" color="text.secondary">
             <span style={{ color: '#16a34a', fontWeight: 500 }}>PoliDAO</span> / Kampanie / #{campaignData.id}
           </Typography>
-          
-          {/* ✅ INSPIROWANE: Real-time refresh indicator */}
           <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
             <Typography variant="caption" color="text.secondary">
               Ostatnie odświeżenie: {new Date(lastRefreshTime).toLocaleTimeString('pl-PL')}
             </Typography>
-            <Box
-              sx={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                bgcolor: '#16a34a',
-                animation: 'pulse 2s infinite'
-              }}
-            />
+            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#16a34a' }} />
           </Box>
         </Box>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
 
-          {/* ✅ INSPIROWANE: LEWA KOLUMNA - mobile/tablet */}
+          {/* Left column */}
           <div className="space-y-6">
-
-            {/* Obraz kampanii */}
             <div className="w-full relative rounded-md overflow-hidden shadow-sm h-[600px]">
               <Image
                 src={PLACEHOLDER_IMAGE}
@@ -727,61 +559,35 @@ export default function CampaignPage() {
                 className="object-cover object-center w-full h-full"
                 priority
               />
-              {/* ✅ INSPIROWANE: Floating Status Badge */}
               <Chip
                 label={isActive ? "AKTYWNA!" : "ZAKOŃCZONA"}
                 sx={{ 
-                  position: "absolute",
-                  top: 20,
-                  left: 20,
+                  position: "absolute", top: 20, left: 20,
                   bgcolor: isActive ? '#16a34a' : '#dc2626',
-                  color: 'white',
-                  fontWeight: 700,
-                  fontSize: '0.9rem',
-                  px: 2,
-                  py: 1,
-                  zIndex: 10
+                  color: 'white', fontWeight: 700, fontSize: '0.9rem', px: 2, py: 1, zIndex: 10
                 }}
               />
             </div>
 
-            {/* ✅ INSPIROWANE: Opis kampanii */}
             <div className="bg-white rounded-md shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100">
-                <h2 className="text-2xl font-semibold text-[#1F4E79]">
-                  Opis kampanii
-                </h2>
+                <h2 className="text-2xl font-semibold text-[#1F4E79]">Opis kampanii</h2>
               </div>
               <div className="px-6 py-4">
                 <p className="text-sm text-gray-700">{displayDescription}</p>
-                
-                {/* ✅ INSPIROWANE: Campaign Details */}
                 <div className="mt-4 space-y-2">
-                  <p className="text-xs text-gray-500">
-                    Twórca: {formatAddress(campaignData.creator)}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    Token: {displayTokenSymbol}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    Typ: {campaignData.isFlexible ? "🌊 Elastyczna" : "🎯 Z celem"}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    Data zakończenia: {new Date(Number(campaignData.endTime) * 1000).toLocaleDateString("pl-PL")}
-                  </p>
+                  <p className="text-xs text-gray-500">Twórca: {`${campaignData.creator.slice(0,6)}...${campaignData.creator.slice(-4)}`}</p>
+                  <p className="text-xs text-gray-500">Token: {displayTokenSymbol}</p>
+                  <p className="text-xs text-gray-500">Typ: {campaignData.isFlexible ? "🌊 Elastyczna" : "🎯 Z celem"}</p>
+                  <p className="text-xs text-gray-500">Data zakończenia: {new Date(Number(campaignData.endTime) * 1000).toLocaleDateString("pl-PL")}</p>
                 </div>
               </div>
             </div>
 
-            {/* ✅ INSPIROWANE: Aktualności */}
             <div className="bg-white rounded-md shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100">
-                <h2 className="text-2xl font-semibold text-[#1F4E79]">
-                  Aktualności
-                </h2>
-                <p className="mt-1 text-xs text-gray-500">
-                  Najnowsze informacje
-                </p>
+                <h2 className="text-2xl font-semibold text-[#1F4E79]">Aktualności</h2>
+                <p className="mt-1 text-xs text-gray-500">Najnowsze informacje</p>
               </div>
               <div className="px-6 py-4 max-h-[300px] overflow-auto space-y-4">
                 {updates.length === 0 && (
@@ -790,10 +596,7 @@ export default function CampaignPage() {
                   </p>
                 )}
                 {updates.map((u, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-gray-50 rounded-md p-3 border border-gray-100"
-                  >
+                  <div key={idx} className="bg-gray-50 rounded-md p-3 border border-gray-100">
                     <p className="text-xs text-gray-700">{u.content}</p>
                     <p className="mt-1 text-[10px] text-gray-400">
                       {new Date(u.timestamp).toLocaleString('pl-PL')}
@@ -820,15 +623,10 @@ export default function CampaignPage() {
               )}
             </div>
 
-            {/* ✅ INSPIROWANE: Historia wpłat */}
             <div className="bg-white rounded-md shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100">
-                <h2 className="text-lg font-semibold text-[#1F4E79]">
-                  Historia wpłat
-                </h2>
-                <p className="text-xs text-gray-500">
-                  Ostatnie odświeżenie: {new Date(lastRefreshTime).toLocaleTimeString('pl-PL')}
-                </p>
+                <h2 className="text-lg font-semibold text-[#1F4E79]">Historia wpłat</h2>
+                <p className="text-xs text-gray-500">Ostatnie odświeżenie: {new Date(lastRefreshTime).toLocaleTimeString('pl-PL')}</p>
               </div>
               {donations.length === 0 && (
                 <p className="px-6 py-4 text-xs text-gray-400">Brak wpłat.</p>
@@ -849,14 +647,16 @@ export default function CampaignPage() {
                         <p className="text-sm font-medium text-green-600">
                           {d.amount.toFixed(2)} {displayTokenSymbol}
                         </p>
-                        <a
-                          href={`https://sepolia.etherscan.io/tx/${d.txHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[10px] text-blue-500 hover:underline"
-                        >
-                          Etherscan
-                        </a>
+                        {d.txHash && (
+                          <a
+                            href={`https://sepolia.etherscan.io/tx/${d.txHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] text-blue-500 hover:underline"
+                          >
+                            Etherscan
+                          </a>
+                        )}
                       </div>
                     </li>
                   ))}
@@ -865,36 +665,22 @@ export default function CampaignPage() {
             </div>
           </div>
 
-          {/* ✅ INSPIROWANE: PRAWA KOLUMNA - desktop donation panel */}
+          {/* Right column */}
           <div className="space-y-6 lg:sticky lg:top-[175px]">
-
-            {/* ✅ INSPIROWANE: Desktop donate panel */}
             <div className="bg-white rounded-md shadow-sm overflow-hidden">
               <div className="px-6 py-4">
-                <h1 className="text-2xl font-semibold text-[#1F4E79]">
-                  {displayTitle}
-                </h1>
+                <h1 className="text-2xl font-semibold text-[#1F4E79]">{displayTitle}</h1>
               </div>
-              
-              {/* ✅ INSPIROWANE: Progress section z dynamicznymi danymi */}
+
               <div className="px-6 pb-4">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-lg font-medium text-green-600">
                     {raised.toLocaleString('pl-PL')} {displayTokenSymbol}
                   </p>
-                  {fundraiserLoading && (
-                    <div className="flex items-center gap-1">
-                      <CircularProgress size={12} />
-                      <span className="text-xs text-gray-500">Odświeżanie...</span>
-                    </div>
-                  )}
                 </div>
-                
                 <p className="text-base font-normal text-gray-500 mb-2">
                   ({progressPercent.toFixed(2)}%) z {target.toLocaleString('pl-PL')} {displayTokenSymbol}
                 </p>
-                
-                {/* ✅ INSPIROWANE: Animated progress bar */}
                 <div className="mt-2 w-full bg-gray-100 rounded-full h-3">
                   <div
                     className="h-3 rounded-full bg-green-600 transition-all duration-1000 ease-out"
@@ -905,13 +691,12 @@ export default function CampaignPage() {
                   Brakuje {missing} {displayTokenSymbol}
                 </p>
               </div>
-              
-              {/* ✅ INSPIROWANE: Stats section */}
+
               <div className="px-6 py-3 bg-gray-50 border-y border-gray-100">
                 <div className="flex justify-between text-center">
                   <div>
                     <p className="text-lg font-bold text-gray-800">
-                      {donorsCount ? Number(donorsCount) : 0}
+                      {uniqueDonorsCount}
                     </p>
                     <p className="text-xs text-gray-500">Wsparło osób</p>
                   </div>
@@ -930,7 +715,6 @@ export default function CampaignPage() {
                 </div>
               </div>
 
-              {/* ✅ INSPIROWANE: Donation input */}
               <div className="px-6 mb-4 mt-4">
                 <input
                   type="number"
@@ -943,19 +727,18 @@ export default function CampaignPage() {
                 />
                 {userBalance !== undefined && (
                   <p className="mt-1 text-xs text-gray-500">
-                    💰 Dostępne: {userBalanceFormatted.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} {displayTokenSymbol}
+                    💰 Dostępne: {(userBalance ? Number(formatUnits(userBalance as any, decimals)) : 0).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} {displayTokenSymbol}
                   </p>
                 )}
               </div>
 
-              {/* ✅ INSPIROWANE: Donation button */}
               <div className="px-6 py-4">
                 {!isConnected ? (
                   <div className="text-center">
                     <p className="mb-3 text-gray-600">Połącz portfel aby wesprzeć</p>
                     <appkit-button />
                   </div>
-                ) : isActive && !campaignData.closureInitiated ? (
+                ) : isActive ? (
                   <button
                     onClick={() => setDonateOpen(true)}
                     disabled={isDonating || isDonationConfirming || isApproving || isApprovalConfirming}
@@ -977,18 +760,7 @@ export default function CampaignPage() {
                   </button>
                 ) : (
                   <div className="text-center py-4">
-                    <p className="text-gray-500">
-                      {!isActive ? "Kampania zakończona" : "Kampania jest zamykana"}
-                    </p>
-                  </div>
-                )}
-                
-                {/* ✅ INSPIROWANE: User donation info */}
-                {hasUserDonated && (
-                  <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-md">
-                    <p className="text-sm font-medium text-green-800">
-                      ✅ Twoja wpłata: {formatTokenAmount(userDonation || 0n, decimals)} {displayTokenSymbol}
-                    </p>
+                    <p className="text-gray-500">Kampania zakończona</p>
                   </div>
                 )}
 
@@ -997,7 +769,6 @@ export default function CampaignPage() {
                 </p>
               </div>
 
-              {/* ✅ INSPIROWANE: Action buttons jak w działającym projekcie */}
               <div className="px-6 py-3 flex justify-between border-t border-gray-100">
                 <button className="flex flex-col items-center text-blue-500 hover:text-blue-700 transition-colors">
                   <span className="text-xl mb-1">🐷</span>
@@ -1016,7 +787,6 @@ export default function CampaignPage() {
                 </button>
               </div>
 
-              {/* ✅ INSPIROWANE: Quick info sections */}
               <div className="border-t border-gray-100">
                 <div className="px-6 py-2 text-xs text-gray-500 space-y-1">
                   <p><strong>Typ kampanii:</strong> {campaignData.isFlexible ? "Elastyczna" : "Z celem"}</p>
@@ -1025,40 +795,11 @@ export default function CampaignPage() {
                 </div>
               </div>
             </div>
-
-            {/* ✅ INSPIROWANE: Available Campaigns Navigation */}
-            {allFundraiserIds && allFundraiserIds.length > 1 && (
-              <div className="bg-blue-50 rounded-md shadow-sm border border-blue-200 p-4">
-                <h3 className="text-sm font-semibold text-blue-800 mb-3">
-                  🗂️ Inne kampanie
-                </h3>
-                <div className="flex flex-wrap gap-2">
-                  {allFundraiserIds.slice(0, 8).map((id: bigint) => {
-                    const campaignNum = Number(id);
-                    const isCurrent = campaignNum === Number(campaignId);
-                    return (
-                      <button
-                        key={campaignNum}
-                        onClick={() => !isCurrent && router.push(`/campaigns/${campaignNum}`)}
-                        disabled={isCurrent}
-                        className={`px-3 py-1 text-xs rounded-md border transition-colors ${
-                          isCurrent 
-                            ? 'bg-blue-600 text-white border-blue-600' 
-                            : 'bg-white text-blue-600 border-blue-300 hover:bg-blue-50'
-                        }`}
-                      >
-                        #{campaignNum}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </main>
 
-      {/* ✅ INSPIROWANE: Donation Dialog - prosty jak w działającym projekcie */}
+      {/* Donation Dialog */}
       <Dialog 
         open={donateOpen} 
         onClose={() => setDonateOpen(false)} 
@@ -1076,11 +817,6 @@ export default function CampaignPage() {
             <Typography variant="body2" color="text.secondary">
               Wpłacasz środki w {displayTokenSymbol}
             </Typography>
-            {userBalance !== undefined && (
-              <Typography variant="body2" color="text.secondary">
-                💰 Dostępne: {userBalanceFormatted.toLocaleString('pl-PL')} {displayTokenSymbol}
-              </Typography>
-            )}
           </Box>
           
           <TextField
@@ -1096,7 +832,6 @@ export default function CampaignPage() {
             inputProps={{ min: 0.01, step: 0.01 }}
           />
 
-          {/* Quick amounts */}
           <Box sx={{ mb: 2 }}>
             <Typography variant="body2" sx={{ mb: 1 }}>Szybka wpłata:</Typography>
             <Grid container spacing={1}>
@@ -1123,7 +858,7 @@ export default function CampaignPage() {
           
           {!campaignData.isFlexible && (
             <Alert severity="info" sx={{ mb: 2 }}>
-              To jest zbiórka z celem. Środki zostaną zwrócone jeśli cel nie zostanie osiągnięty.
+              To jest zbiórka z celem. Środki mogą zostać zwrócone jeśli cel nie zostanie osiągnięty.
             </Alert>
           )}
         </DialogContent>
@@ -1164,11 +899,7 @@ export default function CampaignPage() {
                   navigator.clipboard.writeText(window.location.href);
                   setCopiedLink(true);
                   setTimeout(() => setCopiedLink(false), 2000);
-                  setSnackbar({
-                    open: true,
-                    message: 'Link został skopiowany!',
-                    severity: 'success'
-                  });
+                  setSnackbar({ open: true, message: 'Link został skopiowany!', severity: 'success' });
                 }
               }} 
               color={copiedLink ? "success" : "primary"}
@@ -1190,7 +921,7 @@ export default function CampaignPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Snackbar for notifications */}
+      {/* Snackbar */}
       <Snackbar
         open={snackbar.open}
         autoHideDuration={4000}
