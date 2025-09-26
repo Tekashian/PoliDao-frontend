@@ -88,4 +88,25 @@ export const USDC_ABI = [
     stateMutability: 'nonpayable',
     type: 'function',
   },
+  // Events (subskrypcja na wpłaty i allowance zmiany)
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'from', type: 'address' },
+      { indexed: true, name: 'to', type: 'address' },
+      { indexed: false, name: 'value', type: 'uint256' },
+    ],
+    name: 'Transfer',
+    type: 'event',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'owner', type: 'address' },
+      { indexed: true, name: 'spender', type: 'address' },
+      { indexed: false, name: 'value', type: 'uint256' },
+    ],
+    name: 'Approval',
+    type: 'event',
+  },
 ] as const;

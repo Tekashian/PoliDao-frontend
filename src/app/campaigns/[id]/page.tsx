@@ -104,6 +104,9 @@ interface FundraiserData {
   closureInitiated: boolean;
   reclaimDeadline: bigint;
   fundsWithdrawn: boolean;
+  // pobrane z Core ABI: getFundraiserDetails
+  title?: string;
+  description?: string;
 }
 
 interface DonationLog {
@@ -189,6 +192,9 @@ export default function CampaignPage() {
         const goalAmount = (raw.goalAmount ?? raw[7] ?? 0n) as bigint;
         const raisedAmount = (raw.raisedAmount ?? raw[8] ?? 0n) as bigint;
         const status = Number(raw.status ?? raw[5] ?? 0);
+        // nowo: tytuł i opis z Core ABI (po nazwach lub indeksach)
+        const title = (raw.title ?? raw[0] ?? '') as string;
+        const description = (raw.description ?? raw[1] ?? '') as string;
         const realId = i === 0 ? idNum : Math.max(idNum - 1, 0);
         return {
           id: realId,
@@ -198,7 +204,9 @@ export default function CampaignPage() {
           raisedAmount,
           endDate,
           isFlexible: goalAmount === 0n || fundraiserType === 1,
-          status
+          status,
+          title,
+          description,
         };
       }
     }
@@ -239,6 +247,9 @@ export default function CampaignPage() {
       closureInitiated: false,
       reclaimDeadline: 0n,
       fundsWithdrawn: parsed.status === 2,
+      // nowo: tytuł i opis pobrane z poliDaoCoreAbi.getFundraiserDetails
+      title: parsed.title,
+      description: parsed.description,
     });
     setError(null);
     setLoading(false);
@@ -506,8 +517,13 @@ export default function CampaignPage() {
   const hoursLeft = Math.max(0, Math.floor((timeLeftSeconds % (24 * 60 * 60)) / 3600));
   const isActive = timeLeftSeconds > 0 && !campaignData.closureInitiated;
 
-  let displayTitle = `Kampania Blockchain #${campaignData.id}`;
-  let displayDescription = "Decentralizowana zbiórka na platformie PoliDAO";
+  // tytuł/opis z unified storage (Core), fallback do wartości domyślnych
+  const displayTitle = campaignData.title && campaignData.title.trim().length > 0
+    ? campaignData.title
+    : `Kampania Blockchain #${campaignData.id}`;
+  const displayDescription = campaignData.description && campaignData.description.trim().length > 0
+    ? campaignData.description
+    : "Decentralizowana zbiórka na platformie PoliDAO";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
