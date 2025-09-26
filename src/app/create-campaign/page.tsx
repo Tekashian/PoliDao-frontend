@@ -140,8 +140,8 @@ export default function CreateCampaignPage() {
     return 'Nieudana transakcja – sprawdź dane lub spróbuj ponownie';
   };
 
-  // Tymczasowo unifikujemy fundraiserType do 0 aby uniknąć potencjalnych revertów na nieznanych enumeracjach.
-  const mapCategoryToFundraiserType = (_cat: string): number => 0;
+  // FIX: fundraiserType zależy od typu kampanii: 0 = WITH_GOAL, 1 = WITHOUT_GOAL (dla elastycznych)
+  const mapFundraiserType = (campaignType: 'target' | 'flexible'): number => (campaignType === 'target' ? 0 : 1);
 
   const handleSubmit = async () => {
     if (creatorStatus === 'notAllowed') {
@@ -155,7 +155,7 @@ export default function CreateCampaignPage() {
       const endDate = BigInt(now + parseInt(formData.duration) * 24 * 60 * 60);
       const metadataHash = '';
       const goalAmount = formData.campaignType === 'target' ? parseUnits(formData.targetAmount || '0', USDC_DECIMALS) : BigInt(0);
-      const fundraiserType = mapCategoryToFundraiserType(formData.category);
+      const fundraiserType = mapFundraiserType(formData.campaignType);
       const images: string[] = [];
       const videos: string[] = [];
       const location = formData.location || '';
@@ -167,7 +167,7 @@ export default function CreateCampaignPage() {
             address: POLIDAO_ADDRESSES.core,
             abi: POLIDAO_ABI as any,
             functionName: 'createFundraiser',
-            account: address as `0x${string}`, // użyj aktualnego nadawcy, jak w poprzednim projekcie
+            account: address as `0x${string}`,
             args: [{
               title: formData.title.trim(),
               description: formData.description.trim(),
