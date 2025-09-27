@@ -14,4 +14,22 @@ if (typeof window !== 'undefined') {
   }
 }
 
+// Preferuj wartość z ENV. Ustaw w .env: NEXT_PUBLIC_ROUTER_ADDRESS=0x...
+const ENV_ROUTER = process.env.NEXT_PUBLIC_ROUTER_ADDRESS as `0x${string}` | undefined;
+
+// Zero address jako bezpieczny fallback (do czasu podania ENV)
+const ZERO_ADDR = '0x0000000000000000000000000000000000000000' as `0x${string}`;
+
+// Eksport stałego adresu Routera używanego przez frontend
+export const ROUTER_ADDRESS: `0x${string}` = ENV_ROUTER ?? ZERO_ADDR;
+
+// (opcjonalnie) helper do walidacji adresu
+export function assertRouterAddress() {
+  if (!ENV_ROUTER || ENV_ROUTER === ZERO_ADDR) {
+    // eslint-disable-next-line no-console
+    console.warn('Router address is not set. Define NEXT_PUBLIC_ROUTER_ADDRESS in your .env');
+  }
+  return ROUTER_ADDRESS;
+}
+
 export default POLIDAO_ADDRESSES;

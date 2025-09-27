@@ -1,14 +1,14 @@
 // src/hooks/useFundraisersModular.ts
 // Enumeracja fundraiserów w architekturze modularnej (Core + Storage).
-import { useMemo } from 'react';
-import { useReadContract, useReadContracts } from 'wagmi';
-import { sepolia } from '@reown/appkit/networks';
-import POLIDAO_ADDRESSES from '../blockchain/addresses';
-import { poliDaoStorageAbi } from '../blockchain/storageAbi';
-import { poliDaoCoreAbi } from '../blockchain/coreAbi';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ethers } from 'ethers';
+import { fetchFundraiser, fetchFundraiserCount } from '@/blockchain/contracts';
 
-export interface ModularFundraiser {
+// Typ wyświetlanej kampanii (spłaszczony z Routera pod UI)
+export type ModularFundraiser = {
   id: bigint;
+
+  // Z Router.getFundraiserDetails
   title: string;
   description: string;
   location: string;
@@ -17,133 +17,116 @@ export interface ModularFundraiser {
   status: number;
   token: `0x${string}`;
   goalAmount: bigint;
-  raisedAmount: bigint;
+  raisedAmount: bigint;   // kopia z progress.raised (a jeśli brak, z details.raisedAmount)
   creator: `0x${string}`;
-  isFlexible: boolean; // pochodna fundraiserType / goalAmount
+  extensionCount: bigint;
+  isSuspended: boolean;
+  suspensionReason: string;
+
+  // Z Router.getFundraiserProgress
+  donorsCount: bigint;
+  percentage: bigint;
+  timeLeft: bigint;
+  refundDeadline: bigint;
+  suspensionTime: bigint;
+
+  // Pole wymagane przez UI (Router nie zwraca jawnie) – domyślnie false
+  isFlexible: boolean;
+};
+
+// Domyślny provider (browser/JSON-RPC)
+function useProvider() {
+  return useMemo(() => {
+    if (typeof window !== 'undefined' && (window as any).ethereum) {
+      // BrowserProvider do odczytów też działa (ethers v6)
+      return new ethers.BrowserProvider((window as any).ethereum);
+    }
+    const url =
+      process.env.NEXT_PUBLIC_RPC_URL ||
+      process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL ||
+      'https://rpc.sepolia.org';
+    return new ethers.JsonRpcProvider(url);
+  }, []);
 }
 
-export function useFundraisersModular() {
-  // 1. Pobierz licznik ze Storage
-  const { data: counterData, isLoading: loadingCounter, error: errorCounter, refetch: refetchCounter } = useReadContract({
-    address: POLIDAO_ADDRESSES.storage,
-    abi: poliDaoStorageAbi,
-    functionName: 'fundraiserCounter',
-    chainId: sepolia.id,
-  });
+export function useFundraisersModular(page = 0, pageSize = 50) {
+  const provider = useProvider();
 
-  const total = Number(counterData ?? 0);
-  // Możliwość ustawienia bazy ID przez ENV; domyślnie zakładamy 1 (1..counter)
-  const idBaseEnv = process.env.NEXT_PUBLIC_POLIDAO_ID_BASE;
-  const forcedBase = idBaseEnv ? Number(idBaseEnv) : undefined; // jeśli ustawione, nie auto-detekujemy
-  const ids1: bigint[] = total > 0 ? Array.from({ length: total }, (_, i) => BigInt(i + 1)) : [];
-  const ids0: bigint[] = total > 0 ? Array.from({ length: total }, (_, i) => BigInt(i)) : [];
-  // Wstępnie wybieramy bazę 1 (historyczna) chyba że wymuszona env
-  const primaryIds = forcedBase === 0 ? ids0 : ids1;
-  // 2. Przygotuj batch wywołań getFundraiserDetails z Core
-  const callsPrimary = useMemo(() => primaryIds.map(id => ({
-    address: POLIDAO_ADDRESSES.core,
-    abi: poliDaoCoreAbi,
-    functionName: 'getFundraiserDetails',
-    args: [id],
-    chainId: sepolia.id,
-  })), [primaryIds]);
+  const [fundraisers, setFundraisers] = useState<ModularFundraiser[]>([]);
+  const [count, setCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  // Alternatywne wywołania dla bazy 0 jeśli NIE wymuszono env i total > 0
-  const callsAlt = useMemo(() => (!forcedBase && total > 0 ? ids0 : []).map(id => ({
-    address: POLIDAO_ADDRESSES.core,
-    abi: poliDaoCoreAbi,
-    functionName: 'getFundraiserDetails',
-    args: [id],
-    chainId: sepolia.id,
-  })), [forcedBase, total, ids0]);
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const totalBig = await fetchFundraiserCount(provider as ethers.AbstractProvider);
+      const total = Number(totalBig);
+      setCount(total);
 
-  const { data: dataPrimary, isLoading: loadingPrimary, error: errorPrimary, refetch: refetchPrimary } = useReadContracts({
-    contracts: callsPrimary,
-    query: { enabled: callsPrimary.length > 0 }
-  });
-
-  const { data: dataAlt, isLoading: loadingAlt, error: errorAlt, refetch: refetchAlt } = useReadContracts({
-    contracts: callsAlt,
-    query: { enabled: callsAlt.length > 0 }
-  });
-
-  const parseBatch = (multiData: any[], idsSource: bigint[]): ModularFundraiser[] => {
-    const out: ModularFundraiser[] = [];
-    if (!multiData) return out;
-    for (let i = 0; i < idsSource.length; i++) {
-      const res = multiData[i];
-      if (res?.error || !res.result) continue;
-      const raw: any = res.result;
-      try {
-        // Obsługa dwóch przypadków: wynik jako obiekt z nazwami lub czysta krotka indeksowana
-        const title = raw.title ?? raw[0] ?? '';
-        const description = raw.description ?? raw[1] ?? '';
-        const location = raw.location ?? raw[2] ?? '';
-        const endDate = (raw.endDate ?? raw[3] ?? 0n) as bigint;
-        const fundraiserType = Number(raw.fundraiserType ?? raw[4] ?? 0);
-        const status = Number(raw.status ?? raw[5] ?? 0);
-  const tokenAddress = (raw.token ?? raw[6] ?? '0x0000000000000000000000000000000000000000') as `0x${string}`;
-        const goalAmount = (raw.goalAmount ?? raw[7] ?? 0n) as bigint;
-        const raisedAmount = (raw.raisedAmount ?? raw[8] ?? 0n) as bigint;
-        const creator = (raw.creator ?? raw[9] ?? '0x0000000000000000000000000000000000000000') as `0x${string}`;
-        // extensionCount: raw[10]; isSuspended: raw[11]; suspensionReason: raw[12] (jeśli istnieją)
-
-        const fr: ModularFundraiser = {
-          id: idsSource[i],
-          title,
-          description,
-          location,
-          endDate,
-          fundraiserType,
-          status,
-          token: tokenAddress,
-          goalAmount,
-          raisedAmount,
-          creator,
-          isFlexible: goalAmount === 0n || fundraiserType === 1,
-        };
-        out.push(fr);
-      } catch (e) {
-        // eslint-disable-next-line no-console
-        console.warn('[PoliDAO][Diag] Nie udało się sparsować fundraiser', idsSource[i].toString(), e, raw);
+      if (total === 0) {
+        setFundraisers([]);
+        setIsLoading(false);
+        return;
       }
+
+      // Zakładamy ID 1..total
+      const start = page * pageSize + 1;
+      const end = Math.min(start + pageSize - 1, total);
+      const ids = Array.from({ length: Math.max(end - start + 1, 0) }, (_, i) => start + i);
+
+      const rows = await Promise.all(ids.map((id) => fetchFundraiser(provider as ethers.AbstractProvider, id)));
+
+      const mapped: ModularFundraiser[] = rows.map((row) => {
+        const d = row.details as any;
+        const p = row.progress as any;
+
+        return {
+          id: row.id,
+          title: d.title,
+          description: d.description,
+          location: d.location,
+          endDate: d.endDate,
+          fundraiserType: Number(d.fundraiserType ?? 0),
+          status: Number(d.status ?? 0),
+          token: d.token as `0x${string}`,
+          goalAmount: d.goalAmount,
+          // preferuj bieżący raised z progress; fallback: details.raisedAmount
+          raisedAmount: (p?.raised ?? d?.raisedAmount) as bigint,
+          creator: d.creator as `0x${string}`,
+          extensionCount: d.extensionCount,
+          isSuspended: d.isSuspended,
+          suspensionReason: d.suspensionReason,
+
+          donorsCount: p?.donorsCount ?? 0n,
+          percentage: p?.percentage ?? 0n,
+          timeLeft: p?.timeLeft ?? 0n,
+          refundDeadline: p?.refundDeadline ?? 0n,
+          suspensionTime: p?.suspensionTime ?? 0n,
+
+          // Router obecnie nie zwraca flagi elastyczności – ustawiamy false (lub wylicz z fundraiserType, jeśli umowa tak definiuje)
+          isFlexible: false,
+        };
+      });
+
+      setFundraisers(mapped);
+    } catch (e: any) {
+      setError(e instanceof Error ? e : new Error(e?.message ?? 'Failed to load fundraisers'));
+    } finally {
+      setIsLoading(false);
     }
-    return out;
-  };
+  }, [provider, page, pageSize]);
 
-  let fundraisersPrimary = parseBatch(dataPrimary as any[], primaryIds);
-  let fundraisersAlt = parseBatch(dataAlt as any[], ids0);
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, refreshKey]);
 
-  // Auto-detekcja: jeśli nie wymuszono bazy i primary zwraca 0 poprawnych wpisów
-  // a alternatywa (0-based) zwraca >0 z niezerowym creatorem -> użyj alternatywy
-  const useAlt = !forcedBase
-    && fundraisersPrimary.length > 0
-    ? (fundraisersPrimary[0].creator === '0x0000000000000000000000000000000000000000'
-        && fundraisersAlt.length > 0
-        && fundraisersAlt[0].creator !== '0x0000000000000000000000000000000000000000')
-    : (!forcedBase && fundraisersPrimary.length === 0 && fundraisersAlt.length > 0);
+  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
 
-  const ids = useAlt ? ids0 : primaryIds;
-  const fundraisers = useAlt ? fundraisersAlt : fundraisersPrimary;
-
-  if (typeof window !== 'undefined') {
-    if (!forcedBase && useAlt) {
-      // eslint-disable-next-line no-console
-      console.info('[PoliDAO][AutoDetect] Wykryto bazę ID = 0 (0..counter-1). Ustaw NEXT_PUBLIC_POLIDAO_ID_BASE=0 aby wymusić.');
-    }
-  }
-
-  return {
-    fundraisers,
-    count: fundraisers.length,
-    isLoading: loadingCounter || loadingPrimary || loadingAlt,
-    error: errorCounter || errorPrimary || errorAlt,
-    refetch: () => { 
-      refetchCounter();
-      if (callsPrimary.length) refetchPrimary();
-      if (callsAlt.length) refetchAlt();
-    }
-  };
+  return { fundraisers, count, isLoading, error, refetch };
 }
 
 export default useFundraisersModular;

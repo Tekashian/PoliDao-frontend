@@ -1,118 +1,133 @@
 // src/blockchain/contracts.ts
 
-import { POLIDAO_ABI } from './poliDaoAbi'
+import { ethers } from 'ethers';
+import { poliDaoRouterAbi } from './routerAbi';
+import { ROUTER_ADDRESS, assertRouterAddress, POLIDAO_ADDRESSES } from './addresses';
+import { POLIDAO_ABI } from './poliDaoAbi';
 
-// Nowy adres zunifikowanego (unified storage) kontraktu PoliDao (proxy/core)
-// Można nadpisać przez zmienną środowiskową NEXT_PUBLIC_POLIDAO_ADDRESS aby łatwiej
-// przełączać środowiska bez zmian w kodzie.
-// UWAGA: w .env używasz nazwy NEXT_PUBLIC_POLIDAO_CONTRACT_ADDRESS
-// Kod wcześniej oczekiwał NEXT_PUBLIC_POLIDAO_ADDRESS więc zawsze brał fallback
-// co skutkowało wywołaniem starego kontraktu bez funkcji createFundraiser(struct)
-// => błąd "Function not found" na explorerze.
-// Obsługujemy teraz obie nazwy + ostrzeżenie jeśli używany jest fallback.
-const _envAddress = (process.env.NEXT_PUBLIC_POLIDAO_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_POLIDAO_ADDRESS || '').trim()
+// Upewnij się, że mamy ustawiony adres Routera (zaloguje ostrzeżenie, jeśli brak ENV)
+assertRouterAddress();
 
-export const POLIDAO_CONTRACT_ADDRESS = (_envAddress !== ''
-  ? _envAddress
-  : '0xe0Bdda351177EAe152E00Ba20E16BF017aCe4574'
-) as `0x${string}`
+// Fabryka kontraktu Router
+export function getRouterContract(providerOrSigner: ethers.Signer | ethers.AbstractProvider) {
+  return new ethers.Contract(ROUTER_ADDRESS, poliDaoRouterAbi, providerOrSigner);
+}
 
-if (typeof window !== 'undefined') {
-  if (!_envAddress) {
-    console.warn('[PoliDAO] Używany adres domyślny', POLIDAO_CONTRACT_ADDRESS, '– ustaw NEXT_PUBLIC_POLIDAO_CONTRACT_ADDRESS w .env aby wskazać nowy wdrożony kontrakt.')
+// Konfiguracja kontraktu rdzenia (propozycje) dla wagmi
+export const polidaoContractConfig = {
+  address: POLIDAO_ADDRESSES.core,
+  abi: POLIDAO_ABI,
+} as const;
+
+// Typy pomocnicze
+export type FundraiserDetails = {
+  title: string;
+  description: string;
+  location: string;
+  endDate: bigint;
+  fundraiserType: number;
+  status: number;
+  token: string;
+  goalAmount: bigint;
+  raisedAmount: bigint;
+  creator: string;
+  extensionCount: bigint;
+  isSuspended: boolean;
+  suspensionReason: string;
+};
+
+export type FundraiserProgress = {
+  raised: bigint;
+  goal: bigint;
+  percentage: bigint;
+  donorsCount: bigint;
+  timeLeft: bigint;
+  refundDeadline: bigint;
+  isSuspended: boolean;
+  suspensionTime: bigint;
+};
+
+// Liczba kampanii
+export async function fetchFundraiserCount(provider: ethers.AbstractProvider) {
+  const router = getRouterContract(provider);
+  const count: bigint = await router.getFundraiserCount();
+  return count;
+}
+
+// Pojedyncza kampania (details + progress)
+export async function fetchFundraiser(provider: ethers.AbstractProvider, id: bigint | number) {
+  const router = getRouterContract(provider);
+  const [details, progress] = await Promise.all([
+    router.getFundraiserDetails(id),
+    router.getFundraiserProgress(id),
+  ]);
+  return {
+    id: BigInt(id),
+    details: details as FundraiserDetails,
+    progress: progress as FundraiserProgress,
+  };
+}
+
+// Safe wrapper – zwraca null, jeśli ID nie istnieje/revertuje
+export async function fetchFundraiserSafe(provider: ethers.AbstractProvider, id: number) {
+  try {
+    return await fetchFundraiser(provider, id);
+  } catch {
+    return null;
   }
 }
 
-// Adres kontraktu USDC na Sepolii (jeśli potrzebny)
-export const USDC_CONTRACT_ADDRESS =
-  '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238' as const
-
-export const polidaoContractConfig = {
-  address: POLIDAO_CONTRACT_ADDRESS,
-  abi: POLIDAO_ABI,
-} as const
-
-// Podstawowe ABI dla ERC20 (USDC) - jeśli potrzebne
-const ERC20_ABI = [
-  {
-    inputs: [
-      { internalType: "address", name: "owner", type: "address" },
-      { internalType: "address", name: "spender", type: "address" }
-    ],
-    name: "allowance",
-    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function"
-  },
-  {
-    inputs: [
-      { internalType: "address", name: "spender", type: "address" },
-      { internalType: "uint256", name: "amount", type: "uint256" }
-    ],
-    name: "approve",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "nonpayable",
-    type: "function"
-  },
-  {
-    inputs: [{ internalType: "address", name: "account", type: "address" }],
-    name: "balanceOf",
-    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function"
-  },
-  {
-    inputs: [],
-    name: "decimals",
-    outputs: [{ internalType: "uint8", name: "", type: "uint8" }],
-    stateMutability: "view",
-    type: "function"
-  },
-  {
-    inputs: [],
-    name: "name",
-    outputs: [{ internalType: "string", name: "", type: "string" }],
-    stateMutability: "view",
-    type: "function"
-  },
-  {
-    inputs: [],
-    name: "symbol",
-    outputs: [{ internalType: "string", name: "", type: "string" }],
-    stateMutability: "view",
-    type: "function"
-  },
-  {
-    inputs: [],
-    name: "totalSupply",
-    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function"
-  },
-  {
-    inputs: [
-      { internalType: "address", name: "recipient", type: "address" },
-      { internalType: "uint256", name: "amount", type: "uint256" }
-    ],
-    name: "transfer",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "nonpayable",
-    type: "function"
-  },
-  {
-    inputs: [
-      { internalType: "address", name: "sender", type: "address" },
-      { internalType: "address", name: "recipient", type: "address" },
-      { internalType: "uint256", name: "amount", type: "uint256" }
-    ],
-    name: "transferFrom",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "nonpayable",
-    type: "function"
+// Wykryj bazę ID (0/1)
+async function detectIdBase(provider: ethers.AbstractProvider) {
+  const router = getRouterContract(provider);
+  try {
+    await router.getFundraiserDetails(0);
+    return 0;
+  } catch {
+    return 1;
   }
-] as const
+}
 
-export const usdcContractConfig = {
-  address: USDC_CONTRACT_ADDRESS,
-  abi: ERC20_ABI,
-} as const
+// Lista ID wg strony
+export async function listFundraiserIds(provider: ethers.AbstractProvider, page: number, pageSize: number) {
+  const totalBig = await fetchFundraiserCount(provider);
+  const total = Number(totalBig);
+  if (total <= 0) return { ids: [] as number[], total };
+
+  const base = await detectIdBase(provider);
+  const start = base + page * pageSize;
+  const end = Math.min(start + pageSize - 1, base + total - 1);
+  const ids = Array.from({ length: Math.max(end - start + 1, 0) }, (_, i) => start + i);
+  return { ids, total };
+}
+
+// Strona kampanii (odporna na luki)
+export async function fetchFundraisersPage(provider: ethers.AbstractProvider, page: number, pageSize: number) {
+  const { ids, total } = await listFundraiserIds(provider, page, pageSize);
+  if (ids.length === 0) return { total, items: [] as Awaited<ReturnType<typeof fetchFundraiser>>[] };
+
+  const rows = await Promise.all(ids.map((id) => fetchFundraiserSafe(provider, id)));
+  const items = rows.filter((x): x is NonNullable<typeof x> => x !== null);
+  return { total, items };
+}
+
+// Statystyki platformy
+export async function fetchPlatformStats(provider: ethers.AbstractProvider) {
+  const router = getRouterContract(provider);
+  const stats = await router.getPlatformStats();
+  return { totalFundraisers: stats[0] as bigint, totalDonations: stats[1] as bigint };
+}
+
+// Status użytkownika
+export async function fetchUserStatus(provider: ethers.AbstractProvider, user: string) {
+  const router = getRouterContract(provider);
+  const s = await router.getUserStatus(user);
+  return {
+    donationCount: s[0] as bigint,
+    creationCount: s[1] as bigint,
+    donationLimit: s[2] as bigint,
+    creationLimit: s[3] as bigint,
+    isWhitelisted: s[4] as boolean,
+    isBanned: s[5] as boolean,
+  };
+}

@@ -705,7 +705,6 @@ export default function HomePage() {
             icon={<TrendingUp sx={{ fontSize: 28 }} />}
             items={carouselCampaigns}
             renderItem={(campaign: ModularFundraiser) => {
-              // Mapowanie z ModularFundraiser (Core + Storage) na propsy CampaignCard
               const mappedCampaign = {
                 campaignId: campaign.id.toString(),
                 targetAmount: campaign.goalAmount ?? 0n,
@@ -936,18 +935,17 @@ export default function HomePage() {
                         
                         {/* ✅ ZAKTUALIZOWANE: Używa CampaignCard zamiast EnhancedCampaignCard */}
                         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                          {filteredCampaigns.map((campaign: any) => {
-                            // Mapowanie z typu Campaign z usePoliDao na typ wymagany przez CampaignCard
+                          {filteredCampaigns.map((campaign: ModularFundraiser) => {
                             const mappedCampaign = {
                               campaignId: campaign.id.toString(),
-                              targetAmount: BigInt(campaign.goalAmount ?? campaign.goalAmount ?? 0n),
-                              raisedAmount: BigInt(campaign.raisedAmount ?? 0n),
+                              targetAmount: campaign.goalAmount ?? 0n,
+                              raisedAmount: campaign.raisedAmount ?? 0n,
                               creator: campaign.creator,
                               token: campaign.token,
-                              endTime: BigInt(campaign.endTime ?? campaign.endDate ?? 0n),
+                              endTime: campaign.endDate ?? 0n,
                               isFlexible: campaign.isFlexible
                             };
-                            
+
                             const metadata = {
                               title: campaign.title && campaign.title.length > 0
                                 ? campaign.title
@@ -957,7 +955,7 @@ export default function HomePage() {
                                 : `Kampania utworzona przez ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
                               image: "/images/zbiorka.png"
                             };
-                            
+
                             return (
                               <CampaignCard
                                 key={campaign.id.toString()}
