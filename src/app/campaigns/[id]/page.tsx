@@ -364,24 +364,42 @@ export default function CampaignPage() {
     query: { enabled: !!analyticsAddress && selectedFundraiserId !== null },
   });
 
+  // Unified unique donors count: Analytics (count > 0) -> Analytics total -> donors list -> events -> Analytics (0)
   useEffect(() => {
-    if (donorsCountData !== undefined) {
-      setUniqueDonorsCount(Number(donorsCountData as bigint));
-    }
-  }, [donorsCountData]);
+    let nextCount: number | undefined;
 
-  useEffect(() => {
-    if (!donorsData) return;
-    const tuple = donorsData as unknown as { donors: string[]; amounts: bigint[]; total: bigint } | any;
-    const addresses: string[] = tuple?.donors ?? tuple?.[0] ?? [];
-    const amounts: bigint[] = tuple?.amounts ?? tuple?.[1] ?? [];
-    if (!Array.isArray(addresses) || addresses.length === 0) return; // don't overwrite fallback with empty list
-    const list = (addresses || []).map((addr, i) => ({
-      address: addr,
-      amount: Number(formatUnits((amounts?.[i] ?? 0n) as bigint, decimalsKey)),
-    }));
-    setDonors(list);
-  }, [donorsData, decimalsKey]);
+    // 1) Prefer Analytics.getDonorsCount if > 0
+    if (typeof donorsCountData === 'bigint' && donorsCountData > 0n) {
+      nextCount = Number(donorsCountData);
+    } else {
+      // 2) Try "total" from Analytics.getDonors() if > 0
+      if (donorsData) {
+        const tuple = donorsData as any;
+        const totalFromTuple = tuple?.total ?? tuple?.[2];
+        if (typeof totalFromTuple === 'bigint' && totalFromTuple > 0n) {
+          nextCount = Number(totalFromTuple);
+        }
+      }
+      // 3) Use current donors list (already aggregated/unique)
+      if (nextCount === undefined && Array.isArray(donors) && donors.length > 0) {
+        const uniq = new Set(donors.map(d => d.address.toLowerCase()));
+        nextCount = uniq.size;
+      }
+      // 4) Derive from Core events if needed
+      if (nextCount === undefined && Array.isArray(donations) && donations.length > 0) {
+        const uniq = new Set(donations.map(d => d.donor.toLowerCase()));
+        nextCount = uniq.size;
+      }
+      // 5) If Analytics returned 0 and nothing else available, keep it
+      if (nextCount === undefined && typeof donorsCountData === 'bigint') {
+        nextCount = Number(donorsCountData);
+      }
+    }
+
+    if (typeof nextCount === 'number') {
+      setUniqueDonorsCount(nextCount);
+    }
+  }, [donorsCountData, donorsData, donors, donations]);
 
   // Fallback: build donors list from Core DonationMade events (aggregate and sort desc)
   useEffect(() => {
