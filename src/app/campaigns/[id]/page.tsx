@@ -154,6 +154,9 @@ export default function CampaignPage() {
   const [donors, setDonors] = useState<{ address: string; amount: number }[]>([]);
   const [donorsLimit] = useState(50);
 
+  // remember last posted text to append after tx confirms
+  const [lastPostedUpdate, setLastPostedUpdate] = useState<string>('');
+
   const campaignId = params.id as string;
   const idNum = Number(campaignId);
   const invalid = !campaignId || Number.isNaN(idNum) || idNum < 0;
@@ -500,6 +503,12 @@ export default function CampaignPage() {
     isPending: isApproving,
     data: approvalHash 
   } = useWriteContract();
+  // NEW: dedicated write hook for posting updates
+  const {
+    writeContract: writeUpdate,
+    isPending: isPostingUpdate,
+    data: updateHash
+  } = useWriteContract();
 
   // Wait for transaction confirmations
   const { 
@@ -508,12 +517,19 @@ export default function CampaignPage() {
   } = useWaitForTransactionReceipt({
     hash: donateHash,
   });
-
+  
   const { 
     isLoading: isApprovalConfirming, 
     isSuccess: isApprovalSuccess 
   } = useWaitForTransactionReceipt({
     hash: approvalHash,
+  });
+  // NEW: wait for update tx
+  const {
+    isLoading: isUpdateConfirming,
+    isSuccess: isUpdateSuccess
+  } = useWaitForTransactionReceipt({
+    hash: updateHash,
   });
 
   // Check user's token balance and allowance – dodaj chainId
@@ -539,13 +555,49 @@ export default function CampaignPage() {
   });
 
   // Handle updates
-  const handleAddUpdate = () => {
+  const handleAddUpdate = async () => {
     const trimmed = newUpdateText.trim();
-    if (!trimmed) return;
-    setUpdates(prev => [{ content: trimmed, timestamp: Date.now() }, ...prev ]);
-    setNewUpdateText('');
-    setSnackbar({ open: true, message: 'Aktualność została dodana!', severity: 'success' });
+    if (!trimmed) {
+      setSnackbar({ open: true, message: 'Treść aktualności jest pusta.', severity: 'error' });
+      return;
+    }
+    if (!isConnected) {
+      setSnackbar({ open: true, message: 'Połącz portfel, aby dodać aktualność.', severity: 'error' });
+      return;
+    }
+    if (!isOwner) {
+      setSnackbar({ open: true, message: 'Tylko twórca kampanii może dodać aktualność.', severity: 'error' });
+      return;
+    }
+    if (chainId !== sepolia.id) {
+      setSnackbar({ open: true, message: 'Przełącz sieć na Sepolia i spróbuj ponownie.', severity: 'error' });
+      return;
+    }
+    if (!coreAddress || !campaignData?.id) {
+      setSnackbar({ open: true, message: 'Brak adresu Core lub ID kampanii.', severity: 'error' });
+      return;
+    }
+    try {
+      setLastPostedUpdate(trimmed);
+      await writeUpdate({
+        address: coreAddress as `0x${string}`,
+        abi: poliDaoCoreAbi,
+        functionName: 'postUpdate',
+        args: [BigInt(campaignData.id), trimmed],
+        chainId: sepolia.id,
+      });
+    } catch (e: any) {
+      setSnackbar({ open: true, message: `Błąd publikacji: ${e?.message || 'nieznany'}`, severity: 'error' });
+    }
   };
+  // Append update locally after confirmation
+  useEffect(() => {
+    if (!isUpdateSuccess || !lastPostedUpdate) return;
+    setUpdates(prev => [{ content: lastPostedUpdate, timestamp: Date.now() }, ...prev]);
+    setNewUpdateText('');
+    setLastPostedUpdate('');
+    setSnackbar({ open: true, message: 'Aktualność opublikowana on-chain!', severity: 'success' });
+  }, [isUpdateSuccess, lastPostedUpdate]);
 
   // Enhanced donation flow – przez Router
   const handleDonate = async () => {
@@ -864,9 +916,10 @@ export default function CampaignPage() {
                   />
                   <button
                     onClick={handleAddUpdate}
-                    className="w-full py-2 text-base font-medium text-white bg-[#68CC89] hover:bg-[#5FBF7A] rounded-md"
+                    className="w-full py-2 text-base font-medium text-white bg-[#68CC89] hover:bg-[#5FBF7A] rounded-md disabled:opacity-50"
+                    disabled={isPostingUpdate || isUpdateConfirming}
                   >
-                    Dodaj
+                    {isPostingUpdate || isUpdateConfirming ? 'Publikowanie...' : 'Dodaj'}
                   </button>
                 </div>
               )}
