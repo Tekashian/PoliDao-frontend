@@ -39,6 +39,8 @@ import { formatUnits, parseUnits } from "viem";
 import { Interface, JsonRpcProvider } from 'ethers';
 import { poliDaoRouterAbi } from '../../../blockchain/routerAbi';
 import { ROUTER_ADDRESS } from '../../../blockchain/contracts';
+import { poliDaoCoreAbi } from '../../../blockchain/coreAbi';
+import { poliDaoAnalyticsAbi } from '../../../blockchain/analyticsAbi';
 
 // usuwamy helper i typ progresu z contracts – progres tylko z Routera via wagmi
 // import { fetchFundraiserProgress, type RouterFundraiserProgress } from '../../../blockchain/contracts';
@@ -148,6 +150,9 @@ export default function CampaignPage() {
   const [newUpdateText, setNewUpdateText] = useState<string>('');
   const [isOwner, setIsOwner] = useState(false);
   const [lastRefreshTime, setLastRefreshTime] = useState(Date.now());
+  // NEW: donors list (aggregated per donor from Analytics)
+  const [donors, setDonors] = useState<{ address: string; amount: number }[]>([]);
+  const [donorsLimit] = useState(50);
 
   const campaignId = params.id as string;
   const idNum = Number(campaignId);
@@ -296,7 +301,7 @@ export default function CampaignPage() {
     setIsOwner(campaignData.creator.toLowerCase() === address.toLowerCase());
   }, [campaignData, address]);
 
-  // >>> Moved up: odczyt metadanych tokena (symbol/decimals), wymagane przez historię wpłat
+  // >>> Odczyt metadanych tokena (symbol/decimals)
   const {
     data: tokenSymbol,
   } = useReadContract({
@@ -317,17 +322,89 @@ export default function CampaignPage() {
     query: { enabled: !!campaignData?.token },
   });
 
-  // Stabilne klucze do dependencies (zamiast bezpośrednio chainId/tokenDecimals)
+  // Stabilne klucze do dependencies
   const selectedIdKey = selectedFundraiserId ?? -1;
   const chainKey = useMemo(() => Number(chainId ?? 0), [chainId]);
   const decimalsKey = useMemo(() => Number(tokenDecimals ?? 6), [tokenDecimals]);
 
-  // USUŅIĘTO: zdublowany useReadContract dla progressTuple
-  // USUŅIĘTO: efekt mapujący progressTuple do setProgress (nieistniejący stan)
+  // NEW: read Core address (the actual spender calling transferFrom)
+  const { data: coreAddress } = useReadContract({
+    address: ROUTER_ADDRESS,
+    abi: poliDaoRouterAbi,
+    functionName: 'coreContract',
+    chainId: sepolia.id,
+  });
 
-// Historia wpłat z eventów Routera – solidne dekodowanie po ABI i RPC z ENV
+  // NEW: discover Analytics module from Core, then read donors count and donors list
+  const { data: analyticsAddress } = useReadContract({
+    address: coreAddress as `0x${string}` | undefined,
+    abi: poliDaoCoreAbi,
+    functionName: 'analyticsModule',
+    chainId: sepolia.id,
+    query: { enabled: !!coreAddress },
+  });
+
+  const { data: donorsCountData, refetch: refetchDonorsCount } = useReadContract({
+    address: analyticsAddress as `0x${string}` | undefined,
+    abi: poliDaoAnalyticsAbi,
+    functionName: 'getDonorsCount',
+    args: selectedFundraiserId !== null ? [BigInt(selectedFundraiserId)] : undefined,
+    chainId: sepolia.id,
+    query: { enabled: !!analyticsAddress && selectedFundraiserId !== null },
+  });
+
+  const { data: donorsData, refetch: refetchDonors } = useReadContract({
+    address: analyticsAddress as `0x${string}` | undefined,
+    abi: poliDaoAnalyticsAbi,
+    functionName: 'getDonors',
+    args: selectedFundraiserId !== null ? [BigInt(selectedFundraiserId), 0n, BigInt(donorsLimit)] : undefined,
+    chainId: sepolia.id,
+    query: { enabled: !!analyticsAddress && selectedFundraiserId !== null },
+  });
+
   useEffect(() => {
-    if (selectedIdKey < 0) return;
+    if (donorsCountData !== undefined) {
+      setUniqueDonorsCount(Number(donorsCountData as bigint));
+    }
+  }, [donorsCountData]);
+
+  useEffect(() => {
+    if (!donorsData) return;
+    const tuple = donorsData as unknown as { donors: string[]; amounts: bigint[]; total: bigint } | any;
+    const addresses: string[] = tuple?.donors ?? tuple?.[0] ?? [];
+    const amounts: bigint[] = tuple?.amounts ?? tuple?.[1] ?? [];
+    const list = (addresses || []).map((addr, i) => ({
+      address: addr,
+      amount: Number(formatUnits((amounts?.[i] ?? 0n) as bigint, decimalsKey)),
+    }));
+    setDonors(list);
+  }, [donorsData, decimalsKey]);
+
+  // NEW: Robust fallback for unique donors count
+  useEffect(() => {
+    // Prefer Analytics.getDonorsCount -> already handled in separate effect
+    if (donorsCountData !== undefined && donorsCountData !== null) return;
+
+    // Fallback 1: try "total" from Analytics.getDonors()
+    if (donorsData) {
+      const tuple = donorsData as any;
+      const totalFromTuple: bigint | undefined = (tuple?.total ?? tuple?.[2]) as bigint | undefined;
+      if (typeof totalFromTuple === 'bigint') {
+        setUniqueDonorsCount(Number(totalFromTuple));
+        return;
+      }
+    }
+
+    // Fallback 2: compute from donation history events
+    if (donations.length > 0) {
+      const uniq = new Set(donations.map(d => d.donor.toLowerCase()));
+      setUniqueDonorsCount(uniq.size);
+    }
+  }, [donorsCountData, donorsData, donations]);
+
+  // Historia wpłat z eventów Core (DonationMade) – poprawne źródło
+  useEffect(() => {
+    if (selectedIdKey < 0 || !coreAddress) return;
 
     const rpcUrl =
       process.env.NEXT_PUBLIC_RPC_URL ||
@@ -344,34 +421,26 @@ export default function CampaignPage() {
     const fetchDonationLogs = async () => {
       try {
         const provider = new JsonRpcProvider(rpcUrl);
-        const iface = new Interface(poliDaoRouterAbi as any);
+        const iface = new Interface(poliDaoCoreAbi as any);
 
-        // Rozszerzone nazwy eventów
-        const donationEventFragments = iface.fragments
-          .filter((f: any) =>
-            f.type === 'event' &&
-            (
-              f.name?.toLowerCase?.().includes('donat') ||
-              f.name?.toLowerCase?.().includes('contribut') ||
-              f.name?.toLowerCase?.().includes('funded') ||
-              f.name?.toLowerCase?.().includes('deposit')
-            )
-          );
-
-        if (donationEventFragments.length === 0) {
+        const ev = (iface as any).getEvent?.('DonationMade') ?? (iface.fragments.find((f: any) => f.type === 'event' && f.name === 'DonationMade'));
+        if (!ev) {
           if (!disposed) setDonations([]);
           return;
         }
+        const topic = (iface as any).getEventTopic ? (iface as any).getEventTopic(ev) : (iface as any).getEventTopic?.('DonationMade');
 
-        const topicsOr = donationEventFragments.map((ev: any) => iface.getEventTopic(ev));
-        const startBlockEnv = process.env.NEXT_PUBLIC_ROUTER_START_BLOCK;
+        const startBlockEnv = process.env.NEXT_PUBLIC_CORE_START_BLOCK;
         const fromBlock = startBlockEnv ? BigInt(startBlockEnv) : 0n;
 
+        // NEW: filter by indexed fundraiserId topic to avoid fetching unrelated logs
+        const fundraiserTopic = '0x' + BigInt(selectedIdKey).toString(16).padStart(64, '0');
+
         const logs = await provider.getLogs({
-          address: ROUTER_ADDRESS,
+          address: coreAddress as string,
           fromBlock,
           toBlock: 'latest',
-          topics: [topicsOr],
+          topics: [topic, fundraiserTopic],
         });
 
         const parsed = await Promise.all(
@@ -380,58 +449,14 @@ export default function CampaignPage() {
               const decoded = iface.parseLog(log as any);
               const args = decoded.args as any;
 
-              let fundraiserId: bigint | null = null;
-              const byName = (name: string) => {
-                const v = args?.[name];
-                return typeof v === 'bigint' ? v : null;
-              };
-              fundraiserId =
-                byName('fundraiserId') ??
-                byName('id') ??
-                byName('campaignId') ??
-                null;
+              const fundraiserId = (args?.fundraiserId ?? args?.id ?? args?.[0] ?? null) as bigint | null;
+              if (fundraiserId === null || Number(fundraiserId) !== Number(selectedIdKey)) return null;
 
-              if (fundraiserId === null) {
-                for (const k of Object.keys(args)) {
-                  const v = args[k];
-                  if (typeof v === 'bigint' && Number(v) === Number(selectedIdKey)) {
-                    fundraiserId = v;
-                    break;
-                  }
-                }
-              }
+              const donor = (args?.donor ?? args?.[1] ?? ZERO_ADDR) as string;
+              const amountRaw = (args?.amount ?? args?.[3] ?? 0n) as bigint;
 
-              if (fundraiserId === null || Number(fundraiserId) !== Number(selectedIdKey)) {
-                return null;
-              }
-
-              const donor =
-                (args?.donor ??
-                 args?.user ??
-                 args?.from ??
-                 args?.sender ??
-                 args?.[1] ??
-                 ZERO_ADDR) as string;
-
-              const amountRaw =
-                (args?.amount ??
-                 args?.value ??
-                 args?.[2] ??
-                 0n) as bigint;
-
-              let tsMs: number | null = null;
-              const tsRaw =
-                (args?.timestamp ??
-                 args?.time ??
-                 args?.[3] ??
-                 null) as bigint | null;
-
-              if (tsRaw && typeof tsRaw === 'bigint' && tsRaw > 10n) {
-                tsMs = Number(tsRaw) * 1000;
-              } else {
-                const block = await provider.getBlock(log.blockHash!);
-                tsMs = block?.timestamp ? Number(block.timestamp) * 1000 : Date.now();
-              }
+              const block = await provider.getBlock(log.blockHash!);
+              const tsMs = block?.timestamp ? Number(block.timestamp) * 1000 : Date.now();
 
               return {
                 donor: donor?.toLowerCase?.() || ZERO_ADDR,
@@ -450,7 +475,7 @@ export default function CampaignPage() {
 
         if (!disposed) setDonations(items);
       } catch (err) {
-        console.warn('Błąd pobierania logów donacji:', err);
+        console.warn('Błąd pobierania logów donacji (Core):', err);
         if (!disposed) setDonations([]);
       }
     };
@@ -461,7 +486,7 @@ export default function CampaignPage() {
       disposed = true;
       clearInterval(interval);
     };
-  }, [selectedIdKey, chainKey, decimalsKey]); // stała liczba zależności
+  }, [selectedIdKey, chainKey, decimalsKey, coreAddress]);
 
   // Contract write hooks
   const { 
@@ -499,14 +524,6 @@ export default function CampaignPage() {
     args: [address || "0x0000000000000000000000000000000000000000"],
     chainId: sepolia.id,
     query: { enabled: !!campaignData?.token && !!address },
-  });
-
-  // NEW: read Core address (the actual spender calling transferFrom)
-  const { data: coreAddress } = useReadContract({
-    address: ROUTER_ADDRESS,
-    abi: poliDaoRouterAbi,
-    functionName: 'coreContract',
-    chainId: sepolia.id,
   });
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
@@ -616,7 +633,7 @@ export default function CampaignPage() {
     doDonateAfterApprove();
   }, [isApprovalSuccess, campaignData, pendingDonationAmount, refetchAllowance, writeContract]);
 
-  // Po udanej wpłacie – odśwież progres z Routera
+  // Po udanej wpłacie – odśwież progres + donors Analytics
   useEffect(() => {
     if (isDonationSuccess) {
       setSnackbar({ open: true, message: 'Wpłata została potwierdzona! Odświeżanie danych...', severity: 'success' });
@@ -624,10 +641,12 @@ export default function CampaignPage() {
         setDonateOpen(false);
         setDonateAmount("");
         setNeedsApproval(false);
-        refetchProgress(); // tylko Router.getFundraiserProgress
+        refetchProgress(); // Router.getFundraiserProgress
+        refetchDonorsCount?.(); // Analytics.getDonorsCount
+        refetchDonors?.();      // Analytics.getDonors
       }, 1200);
     }
-  }, [isDonationSuccess, refetchProgress]);
+  }, [isDonationSuccess, refetchProgress, refetchDonorsCount, refetchDonors]);
 
   // Show loading state – only core read
   if (loading || isLoading) {
@@ -779,7 +798,6 @@ export default function CampaignPage() {
         </Box>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-
           {/* Left column */}
           <div className="space-y-6">
             <div className="w-full relative rounded-md overflow-hidden shadow-sm h-[600px]">
@@ -889,6 +907,26 @@ export default function CampaignPage() {
                           </a>
                         )}
                       </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* NEW: Lista donatorów (z Analytics.getDonors) */}
+            <div className="bg-white rounded-md shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h2 className="text-lg font-semibold text-[#1F4E79]">Lista donatorów</h2>
+                <p className="text-xs text-gray-500">Łącznie: {uniqueDonorsCount.toLocaleString('pl-PL')}</p>
+              </div>
+              {donors.length === 0 ? (
+                <p className="px-6 py-4 text-xs text-gray-400">Brak donatorów do wyświetlenia.</p>
+              ) : (
+                <ul className="divide-y divide-gray-100 max-h-[400px] overflow-auto">
+                  {donors.map((d, idx) => (
+                    <li key={idx} className="flex justify-between px-6 py-3">
+                      <span className="text-sm text-gray-700">{d.address.slice(0, 6)}…{d.address.slice(-4)}</span>
+                      <span className="text-sm font-medium text-gray-900">{d.amount.toFixed(2)} {displayTokenSymbol}</span>
                     </li>
                   ))}
                 </ul>
