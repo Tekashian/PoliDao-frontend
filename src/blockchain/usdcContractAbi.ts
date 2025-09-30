@@ -110,3 +110,4 @@ export const USDC_ABI = [
     type: 'event',
   },
 ] as const;
+

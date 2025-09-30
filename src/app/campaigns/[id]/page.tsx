@@ -36,13 +36,13 @@ import Image from 'next/image';
 import { useAppKitAccount, useAppKitNetwork } from "@reown/appkit/react";
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useReadContracts } from "wagmi";
 import { formatUnits, parseUnits } from "viem";
-import { BrowserProvider, Contract } from 'ethers';
+import { Interface, JsonRpcProvider } from 'ethers';
+import { poliDaoRouterAbi } from '../../../blockchain/routerAbi';
+import { ROUTER_ADDRESS } from '../../../blockchain/contracts';
 
-// Contract ABIs
-import { POLIDAO_ABI } from "../../../blockchain/poliDaoAbi";
-import { sepolia } from '@reown/appkit/networks';
-import POLIDAO_ADDRESSES from '../../../blockchain/addresses';
-import { poliDaoCoreAbi } from '../../../blockchain/coreAbi';
+// usuwamy helper i typ progresu z contracts – progres tylko z Routera via wagmi
+// import { fetchFundraiserProgress, type RouterFundraiserProgress } from '../../../blockchain/contracts';
+import { sepolia } from 'viem/chains'; // <-- dodany import
 
 // ERC20 ABI inline
 const ERC20_ABI = [
@@ -90,7 +90,7 @@ const ERC20_ABI = [
 ] as const;
 
 // Contract configuration
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_POLIDAO_CONTRACT_ADDRESS as `0x${string}`;
+// const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_POLIDAO_CONTRACT_ADDRESS as `0x${string}`; // usuwamy
 const PLACEHOLDER_IMAGE = '/images/zbiorka.png';
 
 interface FundraiserData {
@@ -140,6 +140,7 @@ export default function CampaignPage() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsApproval, setNeedsApproval] = useState(false);
+  const [pendingDonationAmount, setPendingDonationAmount] = useState<bigint | null>(null); // <<< zapamiętana kwota do donate
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'info' });
   const [donations, setDonations] = useState<DonationLog[]>([]);
   const [uniqueDonorsCount, setUniqueDonorsCount] = useState(0);
@@ -152,19 +153,19 @@ export default function CampaignPage() {
   const idNum = Number(campaignId);
   const invalid = !campaignId || Number.isNaN(idNum) || idNum < 0;
 
-  // Probe both id and id-1 to handle 1-based vs 0-based IDs using Core ABI
+  // Probe both id and id-1 to handle 1-based vs 0-based IDs using Router ABI
   const calls = useMemo(() => {
     if (invalid) return [];
     const primary = {
-      address: POLIDAO_ADDRESSES.core,
-      abi: poliDaoCoreAbi,
+      address: ROUTER_ADDRESS,
+      abi: poliDaoRouterAbi,
       functionName: 'getFundraiserDetails',
       args: [BigInt(idNum)],
       chainId: sepolia.id,
     } as const;
     const alt = idNum > 0 ? {
-      address: POLIDAO_ADDRESSES.core,
-      abi: poliDaoCoreAbi,
+      address: ROUTER_ADDRESS,
+      abi: poliDaoRouterAbi,
       functionName: 'getFundraiserDetails',
       args: [BigInt(idNum - 1)],
       chainId: sepolia.id,
@@ -192,7 +193,6 @@ export default function CampaignPage() {
         const goalAmount = (raw.goalAmount ?? raw[7] ?? 0n) as bigint;
         const raisedAmount = (raw.raisedAmount ?? raw[8] ?? 0n) as bigint;
         const status = Number(raw.status ?? raw[5] ?? 0);
-        // nowo: tytuł i opis z Core ABI (po nazwach lub indeksach)
         const title = (raw.title ?? raw[0] ?? '') as string;
         const description = (raw.description ?? raw[1] ?? '') as string;
         const realId = i === 0 ? idNum : Math.max(idNum - 1, 0);
@@ -213,7 +213,24 @@ export default function CampaignPage() {
     return null;
   }, [data, idNum]);
 
-  // Set up campaign data from Core
+  // Dodatkowo pobierz progres z Routera dla realId (raised, donorsCount, timeLeft itp.)
+  const selectedFundraiserId = parsed ? parsed.id : null;
+
+  // ZAMIANA: zamiast wagmi useReadContract dla progresu używamy helpera z ethers
+  // const [progress, setProgress] = useState<RouterFundraiserProgress | null>(null);
+  // useEffect(() => { ...ethers JsonRpcProvider fetch... }, [selectedFundraiserId, lastRefreshTime])
+
+  // Progres pobieramy WYŁĄCZNIE z Routera via wagmi
+  const { data: progressTuple, refetch: refetchProgress } = useReadContract({
+    address: ROUTER_ADDRESS,
+    abi: poliDaoRouterAbi,
+    functionName: 'getFundraiserProgress',
+    args: selectedFundraiserId !== null ? [BigInt(selectedFundraiserId)] : undefined,
+    chainId: sepolia.id,
+    query: { enabled: selectedFundraiserId !== null },
+  });
+
+  // Set up campaign data z Router.getFundraiserDetails + Router.getFundraiserProgress (tylko z Routera)
   useEffect(() => {
     if (invalid) {
       setError("Nieprawidłowy ID kampanii");
@@ -234,27 +251,41 @@ export default function CampaignPage() {
       setLoading(false);
       return;
     }
+    // czekamy na progres z Routera – nie korzystamy z parsed.raisedAmount
+    if (!progressTuple || !Array.isArray(progressTuple)) {
+      setLoading(true);
+      return;
+    }
+
+    const p = progressTuple as any[];
+    const raised = (p[0] ?? 0n) as bigint;
+    const goal = (p[1] ?? 0n) as bigint;
+    const donors = (p[3] ?? 0n) as bigint;
 
     setCampaignData({
       id: parsed.id.toString(),
       creator: parsed.creator,
       token: parsed.token,
-      target: parsed.goalAmount,
-      raised: parsed.raisedAmount,
+      target: goal,
+      raised,
       endTime: parsed.endDate,
       isFlexible: parsed.isFlexible,
-      // Brak tych pól w Core ABI – ustawiamy bezpieczne wartości domyślne
       closureInitiated: false,
       reclaimDeadline: 0n,
       fundsWithdrawn: parsed.status === 2,
-      // nowo: tytuł i opis pobrane z poliDaoCoreAbi.getFundraiserDetails
       title: parsed.title,
       description: parsed.description,
     });
+    setUniqueDonorsCount(Number(donors));
     setError(null);
     setLoading(false);
-    setLastRefreshTime(Date.now());
-  }, [invalid, isLoading, contractError, parsed]);
+    // nie wywołujemy tu setLastRefreshTime – robimy to, gdy progres się zmieni
+  }, [invalid, isLoading, contractError, parsed, progressTuple]);
+
+  // Aktualizuj znacznik odświeżenia, gdy przyjdzie nowy progres
+  useEffect(() => {
+    if (progressTuple) setLastRefreshTime(Date.now());
+  }, [progressTuple]);
 
   // Check ownership
   useEffect(() => {
@@ -265,50 +296,172 @@ export default function CampaignPage() {
     setIsOwner(campaignData.creator.toLowerCase() === address.toLowerCase());
   }, [campaignData, address]);
 
-  // Fetch donation logs (optional – depends on legacy contract emitting DonationMade)
+  // >>> Moved up: odczyt metadanych tokena (symbol/decimals), wymagane przez historię wpłat
+  const {
+    data: tokenSymbol,
+  } = useReadContract({
+    address: campaignData?.token,
+    abi: ERC20_ABI,
+    functionName: "symbol",
+    chainId: sepolia.id,
+    query: { enabled: !!campaignData?.token },
+  });
+
+  const {
+    data: tokenDecimals,
+  } = useReadContract({
+    address: campaignData?.token,
+    abi: ERC20_ABI,
+    functionName: "decimals",
+    chainId: sepolia.id,
+    query: { enabled: !!campaignData?.token },
+  });
+
+  // Stabilne klucze do dependencies (zamiast bezpośrednio chainId/tokenDecimals)
+  const selectedIdKey = selectedFundraiserId ?? -1;
+  const chainKey = useMemo(() => Number(chainId ?? 0), [chainId]);
+  const decimalsKey = useMemo(() => Number(tokenDecimals ?? 6), [tokenDecimals]);
+
+  // USUŅIĘTO: zdublowany useReadContract dla progressTuple
+  // USUŅIĘTO: efekt mapujący progressTuple do setProgress (nieistniejący stan)
+
+// Historia wpłat z eventów Routera – solidne dekodowanie po ABI i RPC z ENV
   useEffect(() => {
-    if (!campaignData) return;
-    if (typeof window === 'undefined') return;
+    if (selectedIdKey < 0) return;
+
+    const rpcUrl =
+      process.env.NEXT_PUBLIC_RPC_URL ||
+      process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL;
+
+    if (!rpcUrl) {
+      console.warn('Brak RPC URL. Ustaw NEXT_PUBLIC_RPC_URL lub NEXT_PUBLIC_SEPOLIA_RPC_URL w .env');
+      setDonations([]);
+      return;
+    }
+
+    let disposed = false;
 
     const fetchDonationLogs = async () => {
       try {
-        const ethersProvider = new BrowserProvider(
-          (window as any).ethereum,
-          chainId || 1
-        );
-        const contract = new Contract(
-          CONTRACT_ADDRESS,
-          POLIDAO_ABI,
-          ethersProvider
-        );
-        const filter = (contract as any).filters?.DonationMade?.(BigInt(idNum), null);
-        if (!filter) return;
+        const provider = new JsonRpcProvider(rpcUrl);
+        const iface = new Interface(poliDaoRouterAbi as any);
 
-        const rawLogs = await contract.queryFilter(filter);
-        const decimals = 6;
-        const parsedLogs: DonationLog[] = rawLogs.map((log: any) => {
-          const { donor, amount, timestamp } = log.args || {};
-          return {
-            donor: donor?.toLowerCase() || '',
-            amount: Number(amount || 0) / Math.pow(10, decimals),
-            timestamp: Number(timestamp || 0) > 10 ? Number(timestamp) * 1000 : Date.now(),
-            txHash: log.transactionHash || ''
-          };
-        }).sort((a: any, b: any) => b.timestamp - a.timestamp);
+        // Rozszerzone nazwy eventów
+        const donationEventFragments = iface.fragments
+          .filter((f: any) =>
+            f.type === 'event' &&
+            (
+              f.name?.toLowerCase?.().includes('donat') ||
+              f.name?.toLowerCase?.().includes('contribut') ||
+              f.name?.toLowerCase?.().includes('funded') ||
+              f.name?.toLowerCase?.().includes('deposit')
+            )
+          );
 
-        setDonations(parsedLogs);
-        setUniqueDonorsCount(new Set(parsedLogs.map(d => d.donor)).size);
+        if (donationEventFragments.length === 0) {
+          if (!disposed) setDonations([]);
+          return;
+        }
+
+        const topicsOr = donationEventFragments.map((ev: any) => iface.getEventTopic(ev));
+        const startBlockEnv = process.env.NEXT_PUBLIC_ROUTER_START_BLOCK;
+        const fromBlock = startBlockEnv ? BigInt(startBlockEnv) : 0n;
+
+        const logs = await provider.getLogs({
+          address: ROUTER_ADDRESS,
+          fromBlock,
+          toBlock: 'latest',
+          topics: [topicsOr],
+        });
+
+        const parsed = await Promise.all(
+          logs.map(async (log) => {
+            try {
+              const decoded = iface.parseLog(log as any);
+              const args = decoded.args as any;
+
+              let fundraiserId: bigint | null = null;
+              const byName = (name: string) => {
+                const v = args?.[name];
+                return typeof v === 'bigint' ? v : null;
+              };
+              fundraiserId =
+                byName('fundraiserId') ??
+                byName('id') ??
+                byName('campaignId') ??
+                null;
+
+              if (fundraiserId === null) {
+                for (const k of Object.keys(args)) {
+                  const v = args[k];
+                  if (typeof v === 'bigint' && Number(v) === Number(selectedIdKey)) {
+                    fundraiserId = v;
+                    break;
+                  }
+                }
+              }
+
+              if (fundraiserId === null || Number(fundraiserId) !== Number(selectedIdKey)) {
+                return null;
+              }
+
+              const donor =
+                (args?.donor ??
+                 args?.user ??
+                 args?.from ??
+                 args?.sender ??
+                 args?.[1] ??
+                 ZERO_ADDR) as string;
+
+              const amountRaw =
+                (args?.amount ??
+                 args?.value ??
+                 args?.[2] ??
+                 0n) as bigint;
+
+              let tsMs: number | null = null;
+              const tsRaw =
+                (args?.timestamp ??
+                 args?.time ??
+                 args?.[3] ??
+                 null) as bigint | null;
+
+              if (tsRaw && typeof tsRaw === 'bigint' && tsRaw > 10n) {
+                tsMs = Number(tsRaw) * 1000;
+              } else {
+                const block = await provider.getBlock(log.blockHash!);
+                tsMs = block?.timestamp ? Number(block.timestamp) * 1000 : Date.now();
+              }
+
+              return {
+                donor: donor?.toLowerCase?.() || ZERO_ADDR,
+                amount: Number(formatUnits(amountRaw, decimalsKey)),
+                timestamp: tsMs,
+                txHash: log.transactionHash || '',
+              } as DonationLog;
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        const items = parsed.filter((x): x is DonationLog => !!x)
+          .sort((a, b) => b.timestamp - a.timestamp);
+
+        if (!disposed) setDonations(items);
       } catch (err) {
-        console.warn('Brak logów DonationMade lub błąd:', err);
-        setDonations([]);
-        setUniqueDonorsCount(0);
+        console.warn('Błąd pobierania logów donacji:', err);
+        if (!disposed) setDonations([]);
       }
     };
 
     fetchDonationLogs();
     const interval = setInterval(fetchDonationLogs, 15000);
-    return () => clearInterval(interval);
-  }, [campaignData, chainId, idNum]);
+    return () => {
+      disposed = true;
+      clearInterval(interval);
+    };
+  }, [selectedIdKey, chainKey, decimalsKey]); // stała liczba zależności
 
   // Contract write hooks
   const { 
@@ -338,56 +491,34 @@ export default function CampaignPage() {
     hash: approvalHash,
   });
 
-  // Check user's token balance and allowance
-  const {
-    data: userBalance,
-    refetch: refetchUserBalance,
-  } = useReadContract({
+  // Check user's token balance and allowance – dodaj chainId
+  const { data: userBalance, refetch: refetchUserBalance } = useReadContract({
     address: campaignData?.token,
     abi: ERC20_ABI,
     functionName: "balanceOf",
     args: [address || "0x0000000000000000000000000000000000000000"],
-    query: {
-      enabled: !!campaignData?.token && !!address,
-    },
+    chainId: sepolia.id,
+    query: { enabled: !!campaignData?.token && !!address },
   });
 
-  const {
-    data: allowance,
-    refetch: refetchAllowance,
-  } = useReadContract({
+  // NEW: read Core address (the actual spender calling transferFrom)
+  const { data: coreAddress } = useReadContract({
+    address: ROUTER_ADDRESS,
+    abi: poliDaoRouterAbi,
+    functionName: 'coreContract',
+    chainId: sepolia.id,
+  });
+
+  const { data: allowance, refetch: refetchAllowance } = useReadContract({
     address: campaignData?.token,
     abi: ERC20_ABI,
     functionName: "allowance",
     args: [
-      address || "0x0000000000000000000000000000000000000000",
-      CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000",
+      address || ZERO_ADDR,
+      (coreAddress as `0x${string}`) || ZERO_ADDR,
     ],
-    query: {
-      enabled: !!campaignData?.token && !!address && !!CONTRACT_ADDRESS,
-    },
-  });
-
-  const {
-    data: tokenSymbol,
-  } = useReadContract({
-    address: campaignData?.token,
-    abi: ERC20_ABI,
-    functionName: "symbol",
-    query: {
-      enabled: !!campaignData?.token,
-    },
-  });
-
-  const {
-    data: tokenDecimals,
-  } = useReadContract({
-    address: campaignData?.token,
-    abi: ERC20_ABI,
-    functionName: "decimals",
-    query: {
-      enabled: !!campaignData?.token,
-    },
+    chainId: sepolia.id,
+    query: { enabled: !!campaignData?.token && !!address && !!coreAddress },
   });
 
   // Handle updates
@@ -399,42 +530,60 @@ export default function CampaignPage() {
     setSnackbar({ open: true, message: 'Aktualność została dodana!', severity: 'success' });
   };
 
-  // Enhanced donation flow (legacy donate – may not exist in Core)
+  // Enhanced donation flow – przez Router
   const handleDonate = async () => {
     if (!isConnected || !campaignData) {
       setSnackbar({ open: true, message: 'Najpierw połącz portfel!', severity: 'error' });
+      return;
+    }
+    if (chainId !== sepolia.id) {
+      setSnackbar({ open: true, message: 'Przełącz sieć na Sepolia i spróbuj ponownie.', severity: 'error' });
       return;
     }
     if (!donateAmount || isNaN(Number(donateAmount)) || Number(donateAmount) <= 0) {
       setSnackbar({ open: true, message: 'Wprowadź poprawną kwotę!', severity: 'error' });
       return;
     }
+    if (!campaignData.id) {
+      setSnackbar({ open: true, message: 'Brak ID zbiórki.', severity: 'error' });
+      return;
+    }
+    if (!coreAddress) {
+      setSnackbar({ open: true, message: 'Nie udało się pobrać adresu Core. Spróbuj ponownie.', severity: 'error' });
+      return;
+    }
 
     try {
-      const decimals = tokenDecimals || 6;
-      const amount = parseUnits(donateAmount, decimals);
-      if (userBalance && amount > userBalance) {
+      const decimals = Number(tokenDecimals ?? 6);
+      const amount = parseUnits(donateAmount, decimals as any);
+      setPendingDonationAmount(amount);
+
+      if (userBalance && amount > (userBalance as bigint)) {
         setSnackbar({ open: true, message: 'Niewystarczający balans tokenów!', severity: 'error' });
         return;
       }
 
-      if (!allowance || amount > allowance) {
+      // CHANGED: approve Core (spender), not Router
+      if (!allowance || amount > (allowance as bigint)) {
         setNeedsApproval(true);
         setSnackbar({ open: true, message: 'Najpierw zatwierdź wydatkowanie tokenów', severity: 'info' });
         await writeApproval({
           address: campaignData.token,
           abi: ERC20_ABI,
           functionName: "approve",
-          args: [CONTRACT_ADDRESS, amount],
+          args: [coreAddress as `0x${string}`, amount],
+          chainId: sepolia.id,
         });
-        return;
+        return; // donate uruchomi się po isApprovalSuccess
       }
 
+      // donate bezpośrednio (gdy allowance wystarczające)
       await writeContract({
-        address: CONTRACT_ADDRESS,
-        abi: POLIDAO_ABI,
+        address: ROUTER_ADDRESS,
+        abi: poliDaoRouterAbi,
         functionName: "donate",
-        args: [BigInt(Number(campaignData.id)), amount],
+        args: [BigInt(campaignData.id), amount],
+        chainId: sepolia.id,
       });
     } catch (error: any) {
       console.error("Transaction failed:", error);
@@ -442,6 +591,32 @@ export default function CampaignPage() {
     }
   };
 
+  // Po udanym approve – automatycznie wykonaj donate z zapamiętaną kwotą
+  useEffect(() => {
+    const doDonateAfterApprove = async () => {
+      if (!isApprovalSuccess) return;
+      if (!campaignData || pendingDonationAmount === null) return;
+      try {
+        await refetchAllowance();
+        await writeContract({
+          address: ROUTER_ADDRESS,
+          abi: poliDaoRouterAbi,
+          functionName: "donate",
+          args: [BigInt(campaignData.id), pendingDonationAmount],
+          chainId: sepolia.id,
+        });
+        setNeedsApproval(false);
+      } catch (err: any) {
+        console.error('Donate after approve failed:', err);
+        setSnackbar({ open: true, message: `Donate nie powiódł się: ${err?.message || 'nieznany błąd'}`, severity: 'error' });
+      } finally {
+        setPendingDonationAmount(null);
+      }
+    };
+    doDonateAfterApprove();
+  }, [isApprovalSuccess, campaignData, pendingDonationAmount, refetchAllowance, writeContract]);
+
+  // Po udanej wpłacie – odśwież progres z Routera
   useEffect(() => {
     if (isDonationSuccess) {
       setSnackbar({ open: true, message: 'Wpłata została potwierdzona! Odświeżanie danych...', severity: 'success' });
@@ -449,20 +624,10 @@ export default function CampaignPage() {
         setDonateOpen(false);
         setDonateAmount("");
         setNeedsApproval(false);
-        setLastRefreshTime(Date.now());
-      }, 1500);
+        refetchProgress(); // tylko Router.getFundraiserProgress
+      }, 1200);
     }
-  }, [isDonationSuccess]);
-
-  useEffect(() => {
-    if (isApprovalSuccess) {
-      setSnackbar({ open: true, message: 'Zatwierdzenie zostało potwierdzone!', severity: 'success' });
-      setTimeout(() => {
-        refetchAllowance();
-        setNeedsApproval(false);
-      }, 1000);
-    }
-  }, [isApprovalSuccess, refetchAllowance]);
+  }, [isDonationSuccess, refetchProgress]);
 
   // Show loading state – only core read
   if (loading || isLoading) {
@@ -500,15 +665,65 @@ export default function CampaignPage() {
     );
   }
 
+  // Helper: precyzyjne liczenie procentu (do 6 miejsc po przecinku)
+  function calcPercentPrecise(raised: bigint, target: bigint) {
+    if (!target || target === 0n) return 0;
+    const percentMicro = (raised * 100_000_000n) / target; // (raised/target)*100 * 1e6
+    return Number(percentMicro) / 1_000_000;
+  }
+
+  // Parser krotki zwracanej przez Router.getFundraiserProgress
+  function parseProgressTuple(p: any) {
+    // Oczekiwany porządek: [raised, goal, percentage, donorsCount, timeLeft, refundDeadline, isSuspended, suspensionTime]
+    if (!p) {
+      return {
+        raised: 0n,
+        goal: 0n,
+        percentage: 0n,
+        donorsCount: 0n,
+        timeLeft: 0n,
+        refundDeadline: 0n,
+        isSuspended: false,
+        suspensionTime: 0n,
+      };
+    }
+    if (Array.isArray(p)) {
+      return {
+        raised: (p[0] ?? 0n) as bigint,
+        goal: (p[1] ?? 0n) as bigint,
+        percentage: (p[2] ?? 0n) as bigint,
+        donorsCount: (p[3] ?? 0n) as bigint,
+        timeLeft: (p[4] ?? 0n) as bigint,
+        refundDeadline: (p[5] ?? 0n) as bigint,
+        isSuspended: Boolean(p[6] ?? false),
+        suspensionTime: (p[7] ?? 0n) as bigint,
+      };
+    }
+    // fallback: próba po nazwach
+    return {
+      raised: (p.raised ?? 0n) as bigint,
+      goal: (p.goal ?? 0n) as bigint,
+      percentage: (p.percentage ?? 0n) as bigint,
+      donorsCount: (p.donorsCount ?? 0n) as bigint,
+      timeLeft: (p.timeLeft ?? 0n) as bigint,
+      refundDeadline: (p.refundDeadline ?? 0n) as bigint,
+      isSuspended: Boolean(p.isSuspended ?? false),
+      suspensionTime: (p.suspensionTime ?? 0n) as bigint,
+    };
+  }
+
   // Calculations and display data
   const displayTokenSymbol = tokenSymbol || 'USDC';
-  const decimals = tokenDecimals || 6;
+  const decimals = decimalsKey; // użyj stabilnego klucza
   const raised = Number(formatUnits(campaignData.raised, decimals));
   const target = Number(formatUnits(campaignData.target, decimals));
   const missing = (target - raised).toFixed(2);
+  // Precyzyjny procent
   const progressPercent = campaignData.target > 0n 
-    ? Number((campaignData.raised * 10000n) / campaignData.target) / 100 
+    ? calcPercentPrecise(campaignData.raised, campaignData.target)
     : 0;
+  // Minimalna widoczna szerokość paska (jeśli >0)
+  const barWidth = progressPercent > 0 ? Math.max(progressPercent, 0.1) : 0;
 
   // Compute time left locally using endTime
   const nowSec = Math.floor(Date.now() / 1000);
@@ -700,7 +915,7 @@ export default function CampaignPage() {
                 <div className="mt-2 w-full bg-gray-100 rounded-full h-3">
                   <div
                     className="h-3 rounded-full bg-green-600 transition-all duration-1000 ease-out"
-                    style={{ width: `${Math.min(progressPercent, 100)}%` }}
+                    style={{ width: `${Math.min(barWidth, 100)}%` }}
                   />
                 </div>
                 <p className="mt-2 text-xs text-gray-500">

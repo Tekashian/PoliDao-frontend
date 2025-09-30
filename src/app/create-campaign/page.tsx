@@ -2,14 +2,13 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, usePublicClient } from 'wagmi';
-import { parseUnits, decodeEventLog } from 'viem';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, usePublicClient, useChainId } from 'wagmi';
+import { parseUnits } from 'viem';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
-import { USDC_CONTRACT_ADDRESS } from '../../blockchain/contracts';
-import POLIDAO_ADDRESSES from '../../blockchain/addresses';
-import { POLIDAO_ABI } from '../../blockchain/poliDaoAbi';
+import { ROUTER_ADDRESS, ROUTER_ABI, DEFAULT_TOKEN_ADDRESS } from '../../blockchain/contracts';
 import { decodeErrorResult } from 'viem';
+import { USDC_ABI } from '../../blockchain/usdcContractAbi';
 
 // USDC ma 6 miejsc po przecinku
 const USDC_DECIMALS = 6;
@@ -28,27 +27,37 @@ interface FormData {
   location: string;
 }
 
+// NEW: zero address constant
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+
+// NEW: USDC Sepolia address (must be used on testnet)
+const USDC_TESTNET_ADDRESS: `0x${string}` = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238';
+
+// NEW: helper to resolve USDC address by chain (Sepolia only)
+function getUsdcAddress(chainId?: number): `0x${string}` | null {
+  if (!chainId) return null;
+  // 11155111 = Sepolia
+  if (chainId === 11155111) return USDC_TESTNET_ADDRESS;
+  return null;
+}
+
 export default function CreateCampaignPage() {
   const { address, isConnected } = useAccount();
   const { writeContract, data: hash, isPending, error } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
-    hash,
-  });
-  // NOTE: Na razie zakładamy że walidacje whitelist/paused pozostają w monolicie; jeśli przeniesione do innego modułu trzeba zaktualizować.
-  const { data: pausedData } = useReadContract({
-    address: POLIDAO_ADDRESSES.core,
-    abi: POLIDAO_ABI,
-    functionName: 'paused'
-  } as any);
-  const { data: isWhitelisted } = useReadContract({
-    address: POLIDAO_ADDRESSES.core,
-    abi: POLIDAO_ABI,
-    functionName: 'isTokenWhitelisted',
-    args: [USDC_CONTRACT_ADDRESS]
-  } as any);
-  const publicClient = usePublicClient();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  const paused = Boolean(pausedData);
+  // Read Router config once – creationEnabledFlag controls creator flow
+  const { data: routerConfig } = useReadContract({
+    address: ROUTER_ADDRESS,
+    abi: ROUTER_ABI as any,
+    functionName: 'getRouterConfig',
+  } as any);
+
+  const publicClient = usePublicClient();
+  const chainId = useChainId();
+
+  // creationEnabledFlag is index 4 in getRouterConfig return tuple
+  const creationEnabled = Boolean((routerConfig as any)?.[4] ?? true);
 
   const [createdId, setCreatedId] = useState<bigint | null>(null);
   const [friendlyError, setFriendlyError] = useState<string | null>(null);
@@ -72,6 +81,11 @@ export default function CreateCampaignPage() {
 
   const [currentStep, setCurrentStep] = useState(1);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // NEW: whitelist + selection
+  type TokenInfo = { address: `0x${string}`; symbol: string; decimals?: number };
+  const [tokensList, setTokensList] = useState<TokenInfo[]>([]);
+  const [selectedTokenAddress, setSelectedTokenAddress] = useState<`0x${string}` | null>(null);
 
   const handleInputChange = (field: keyof FormData, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -150,22 +164,38 @@ export default function CreateCampaignPage() {
     }
     if (!validateStep(3) || !isConnected) return;
 
+    // Prefer network Sepolia USDC, then user selection, then DEFAULT_TOKEN_ADDRESS
+    const networkUsdc = getUsdcAddress(chainId) as `0x${string}` | null;
+    const effectiveToken =
+      (networkUsdc as `0x${string}`) ||
+      (selectedTokenAddress as `0x${string}`) ||
+      (DEFAULT_TOKEN_ADDRESS as unknown as `0x${string}`);
+
+    if (!effectiveToken || effectiveToken.toLowerCase() === ZERO_ADDRESS) {
+      setFriendlyError('Brak poprawnego adresu tokena. Skontaktuj się z administracją.');
+      return;
+    }
+
     try {
       const now = Math.floor(Date.now() / 1000);
       const endDate = BigInt(now + parseInt(formData.duration) * 24 * 60 * 60);
       const metadataHash = '';
-      const goalAmount = formData.campaignType === 'target' ? parseUnits(formData.targetAmount || '0', USDC_DECIMALS) : BigInt(0);
+      // NEW: pick decimals from selected token if available (fallback 6)
+      const selectedAddr = (selectedTokenAddress || networkUsdc) as `0x${string}` | null;
+      const selected = tokensList.find(t => t.address.toLowerCase() === (selectedAddr || '').toLowerCase());
+      const decimalsUsed = selected?.decimals ?? 6;
+      const goalAmount = formData.campaignType === 'target' ? parseUnits(formData.targetAmount || '0', decimalsUsed) : 0n;
       const fundraiserType = mapFundraiserType(formData.campaignType);
       const images: string[] = [];
       const videos: string[] = [];
       const location = formData.location || '';
 
-      // 1. Pre-symulacja (diagnostyka revertu zanim wydamy gas)
+      // 1) Pre-simulation
       try {
         if (publicClient) {
           await publicClient.simulateContract({
-            address: POLIDAO_ADDRESSES.core,
-            abi: POLIDAO_ABI as any,
+            address: ROUTER_ADDRESS,
+            abi: ROUTER_ABI as any,
             functionName: 'createFundraiser',
             account: address as `0x${string}`,
             args: [{
@@ -173,7 +203,7 @@ export default function CreateCampaignPage() {
               description: formData.description.trim(),
               endDate,
               fundraiserType,
-              token: USDC_CONTRACT_ADDRESS,
+              token: effectiveToken,
               goalAmount,
               initialImages: images,
               initialVideos: videos,
@@ -187,7 +217,7 @@ export default function CreateCampaignPage() {
         console.error('Simulation revert', simErr);
         try {
           if (simErr?.data) {
-            const decoded = decodeErrorResult({ abi: POLIDAO_ABI as any, data: simErr.data });
+            const decoded = decodeErrorResult({ abi: ROUTER_ABI as any, data: simErr.data });
             setFriendlyError(mapError(decoded.errorName || simErr?.shortMessage || simErr?.message || 'Błąd symulacji'));
           } else {
             setFriendlyError(mapError(simErr?.shortMessage || simErr?.message || 'Błąd symulacji'));
@@ -195,19 +225,19 @@ export default function CreateCampaignPage() {
         } catch {
           setFriendlyError(mapError(simErr?.shortMessage || simErr?.message || 'Błąd symulacji'));
         }
-        return; // nie wysyłaj transakcji jeśli symulacja się wywaliła (np. Invalid creator)
+        return;
       }
 
       await writeContract({
-        address: POLIDAO_ADDRESSES.core,
-        abi: POLIDAO_ABI as any,
+        address: ROUTER_ADDRESS,
+        abi: ROUTER_ABI as any,
         functionName: 'createFundraiser',
         args: [{
           title: formData.title.trim(),
           description: formData.description.trim(),
           endDate,
           fundraiserType,
-          token: USDC_CONTRACT_ADDRESS,
+          token: effectiveToken,
           goalAmount,
           initialImages: images,
           initialVideos: videos,
@@ -222,47 +252,38 @@ export default function CreateCampaignPage() {
     }
   };
 
-  // Gdy transakcja potwierdzona – dekodujemy log FundraiserCreated aby uzyskać ID.
+  // After success – derive createdId via getFundraiserCount and probing details (no event in Router ABI)
   useEffect(() => {
     const run = async () => {
-      if (!isSuccess || createdId || !hash || !publicClient) return;
+      if (!isSuccess || createdId || !publicClient) return;
       try {
-        const receipt = await publicClient.getTransactionReceipt({ hash });
-        // Próbujemy znaleźć log eventu FundraiserCreated
-        for (const log of receipt.logs) {
-          try {
-            const decoded: any = decodeEventLog({
-              abi: POLIDAO_ABI as any,
-              data: log.data,
-              topics: [...log.topics] as [`0x${string}`, ...`0x${string}`[]],
-            });
-            if (decoded?.eventName === 'FundraiserCreated') {
-              const id = decoded?.args?.fundraiserId as bigint | undefined;
-              if (id && id > 0n) {
-                setCreatedId(id);
-                return;
-              }
-            }
-          } catch {/* ignore non-matching logs */}
-        }
-        // Fallback: fundraiserCounter - 1 (zakładamy sekwencyjne inkrementowanie)
-        try {
-          const counter = await publicClient.readContract({
-            address: POLIDAO_ADDRESSES.core,
-            abi: POLIDAO_ABI as any,
-            functionName: 'fundraiserCounter',
-            args: []
-          });
-          if (typeof counter === 'bigint' && counter > 0n) {
-            setCreatedId(counter); // jeżeli kontrakt zwraca już nowy counter jako ID nowej zbiórki
+        const total: any = await publicClient.readContract({
+          address: ROUTER_ADDRESS,
+          abi: ROUTER_ABI as any,
+          functionName: 'getFundraiserCount',
+        });
+        if (typeof total === 'bigint') {
+          // Try candidates: (count - 1) and count, to cover base-0 and base-1
+          const candidates = [];
+          if (total > 0n) candidates.push(total - 1n);
+          candidates.push(total);
+          for (const cand of candidates) {
+            try {
+              await publicClient.readContract({
+                address: ROUTER_ADDRESS,
+                abi: ROUTER_ABI as any,
+                functionName: 'getFundraiserDetails',
+                args: [cand],
+              });
+              setCreatedId(cand);
+              return;
+            } catch {/* try next */}
           }
-        } catch {/* ignore fallback errors */}
-      } catch (e) {
-        // brak ID – użytkownik może przejść do konta żeby ją odnaleźć
-      }
+        }
+      } catch {/* ignore */}
     };
     run();
-  }, [isSuccess, createdId, hash, publicClient]);
+  }, [isSuccess, createdId, publicClient]);
 
   // Auto-redirect po uzyskaniu createdId (placeholder – gdy będzie dekodowanie logów z viem publicClient)
   useEffect(() => {
@@ -293,8 +314,8 @@ export default function CreateCampaignPage() {
       for (const fn of candidateFns) {
         try {
           const res: any = await publicClient.readContract({
-            address: POLIDAO_ADDRESSES.core,
-            abi: POLIDAO_ABI as any,
+            address: ROUTER_ADDRESS,
+            abi: ROUTER_ABI as any,
             functionName: fn as any,
             args: [address]
           });
@@ -313,70 +334,56 @@ export default function CreateCampaignPage() {
     return () => { cancelled = true; };
   }, [address, publicClient]);
 
-  if (!isConnected) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
-        <div className="container mx-auto px-4 py-20">
-          <div className="max-w-md mx-auto bg-white rounded-2xl shadow-lg p-8 text-center">
-            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <span className="text-4xl">🔒</span>
-            </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Połącz portfel</h2>
-            <p className="text-gray-600 mb-6">
-              Aby utworzyć zbiórkę, musisz najpierw połączyć swój portfel Web3.
-            </p>
-            <button className="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-8 rounded-xl transition-all duration-300">
-              Połącz portfel
-            </button>
-          </div>
-        </div>
-        <Footer />
-      </div>
-    );
-  }
+  // FIX: resolve token info (USDC Sepolia) and populate dropdown
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!publicClient) return;
 
-  if (isSuccess) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
-        <div className="container mx-auto px-4 py-20">
-          <div className="max-w-md mx-auto bg-white rounded-2xl shadow-lg p-8 text-center">
-            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <span className="text-4xl">✅</span>
-            </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Zbiórka utworzona!</h2>
-            <p className="text-gray-600 mb-6">
-              Twoja zbiórka została pomyślnie utworzona i jest już dostępna na platformie.
-            </p>
-            <div className="space-y-3">
-              {createdId && (
-                <button
-                  onClick={() => window.location.href = `/campaigns/${createdId.toString()}`}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300"
-                >
-                  Przejdź do zbiórki #{createdId.toString()}
-                </button>
-              )}
-              <button 
-                onClick={() => window.location.href = '/my-account'}
-                className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300"
-              >
-                Zobacz w moim koncie
-              </button>
-              <button 
-                onClick={() => window.location.href = '/'}
-                className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 px-6 rounded-xl transition-all duration-300"
-              >
-                Wróć do strony głównej
-              </button>
-            </div>
-          </div>
-        </div>
-        <Footer />
-      </div>
-    );
-  }
+      const list: TokenInfo[] = [];
+
+      const pushToken = async (addr: `0x${string}`) => {
+        let symbol = 'TOKEN';
+        let decimals: number | undefined = undefined;
+        try {
+          const s = await publicClient.readContract({
+            address: addr,
+            abi: USDC_ABI as any,
+            functionName: 'symbol',
+          });
+          if (typeof s === 'string' && s.length) symbol = s;
+        } catch {}
+        try {
+          const d = await publicClient.readContract({
+            address: addr,
+            abi: USDC_ABI as any,
+            functionName: 'decimals',
+          }) as number | bigint;
+          decimals = typeof d === 'bigint' ? Number(d) : Number(d);
+        } catch {}
+        list.push({ address: addr, symbol, decimals });
+      };
+
+      const netUsdc = getUsdcAddress(chainId);
+      if (netUsdc && netUsdc.toLowerCase() !== ZERO_ADDRESS) {
+        await pushToken(netUsdc as `0x${string}`);
+      }
+
+      if (DEFAULT_TOKEN_ADDRESS && (DEFAULT_TOKEN_ADDRESS as string).toLowerCase() !== ZERO_ADDRESS) {
+        const sameAsNet = netUsdc && (DEFAULT_TOKEN_ADDRESS as string).toLowerCase() === netUsdc.toLowerCase();
+        if (!sameAsNet) {
+          await pushToken(DEFAULT_TOKEN_ADDRESS as unknown as `0x${string}`);
+        }
+      }
+
+      if (cancelled) return;
+      setTokensList(list);
+      if (!selectedTokenAddress && list.length > 0) {
+        setSelectedTokenAddress(list[0].address);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [publicClient, chainId, DEFAULT_TOKEN_ADDRESS, selectedTokenAddress]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -582,6 +589,29 @@ export default function CreateCampaignPage() {
                 </div>
 
                 <div className="space-y-6">
+                  {/* NEW: Wybór tokena (domyślnie USDC Sepolia) */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Token wpłat
+                    </label>
+                    <select
+                      value={selectedTokenAddress ?? ''}
+                      onChange={(e) => setSelectedTokenAddress(e.target.value as `0x${string}`)}
+                      className="w-full px-5 py-4 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-medium text-lg"
+                    >
+                      {tokensList.map(t => (
+                        <option key={t.address} value={t.address}>
+                          {t.symbol}{t.decimals != null ? ` (${t.decimals})` : ''} — {t.address.slice(0,6)}...{t.address.slice(-4)}
+                        </option>
+                      ))}
+                    </select>
+                    {(!tokensList || tokensList.length === 0) && (
+                      <p className="mt-2 text-sm text-amber-600">
+                        Nie wykryto tokenów – użyty zostanie domyślny adres sieci.
+                      </p>
+                    )}
+                  </div>
+
                   {/* Typ zbiórki */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-4">
@@ -824,35 +854,33 @@ export default function CreateCampaignPage() {
                   <button
                     onClick={handleSubmit}
                     disabled={
-                      paused ||
+                      !creationEnabled ||
                       isPending ||
                       isConfirming ||
                       !formData.agreeTerms ||
                       !formData.agreeDataProcessing ||
-                      (isWhitelisted === false) ||
                       creatorStatus === 'notAllowed' ||
                       creatorStatus === 'loading'
                     }
                     className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-5 px-8 rounded-xl transition-all duration-300 transform hover:scale-[1.02] disabled:hover:scale-100 text-xl shadow-lg"
                   >
-                    {paused
-                      ? 'Kontrakt wstrzymany'
-                      : isWhitelisted === false
-                        ? 'Token USDC nie jest whitelisted'
-                        : (isPending || isConfirming)
-                          ? (
-                            <div className="flex items-center justify-center">
-                              <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin mr-3"></div>
-                              {isPending ? '1/2 Wysyłanie...' : '2/2 Potwierdzanie...'}
-                            </div>
-                          )
-                          : (
-                            <div className="flex items-center justify-center">
-                              <span className="mr-3">🚀</span>
-                              Opublikuj zbiórkę w USDC
-                            </div>
-                          )}
+                    {!creationEnabled
+                      ? 'Tworzenie wyłączone'
+                      : (isPending || isConfirming)
+                        ? (
+                          <div className="flex items-center justify-center">
+                            <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin mr-3"></div>
+                            {isPending ? '1/2 Wysyłanie...' : '2/2 Potwierdzanie...'}
+                          </div>
+                        )
+                        : (
+                          <div className="flex items-center justify-center">
+                            <span className="mr-3">🚀</span>
+                            Opublikuj zbiórkę w USDC
+                          </div>
+                        )}
                   </button>
+                  {/* Removed token whitelist and paused messaging; rely on Router config + simulation errors */}
                   {creatorStatus === 'notAllowed' && (
                     <p className="mt-2 text-sm text-red-600 font-medium">
                       Twoje konto nie ma uprawnień do tworzenia zbiórek. Uzupełnij weryfikację lub skontaktuj się z administracją.
@@ -865,14 +893,9 @@ export default function CreateCampaignPage() {
                   )}
                   {creatorStatus === 'unknown' && (
                     <p className="mt-2 text-xs text-gray-500 font-medium">
-                      Nie udało się potwierdzić uprawnień twórcy (funkcja whitelist nieznaleziona). Próba utworzenia może się nie powieść jeśli kontrakt wymaga weryfikacji.
+                      Nie udało się potwierdzić uprawnień twórcy. Próba utworzenia może się nie powieść jeśli kontrakt wymaga weryfikacji.
                     </p>
                   )}
-
-                  {isWhitelisted === false && (
-                    <p className="mt-2 text-sm text-red-600 font-medium">Wybrany token nie jest dopuszczony przez kontrakt.</p>
-                  )}
-
                   {(friendlyError || error) && (
                     <div className="mt-4 p-4 bg-red-50 border-2 border-red-200 rounded-xl">
                       <p className="text-red-700 text-sm font-medium">

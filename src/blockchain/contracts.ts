@@ -1,23 +1,33 @@
 // src/blockchain/contracts.ts
 
 import { ethers } from 'ethers';
-import { poliDaoRouterAbi } from './routerAbi';
-import { ROUTER_ADDRESS, assertRouterAddress, POLIDAO_ADDRESSES } from './addresses';
-import { POLIDAO_ABI } from './poliDaoAbi';
+import routerAbi from './routerAbi';
 
-// Upewnij się, że mamy ustawiony adres Routera (zaloguje ostrzeżenie, jeśli brak ENV)
-assertRouterAddress();
+// Router-only source of truth
+export const ROUTER_ADDRESS =
+  (process.env.NEXT_PUBLIC_ROUTER_ADDRESS as `0x${string}`) ||
+  ('0x0000000000000000000000000000000000000000' as const);
+
+export const ROUTER_ABI = routerAbi;
+
+// Backward-compatible config for wagmi hooks/components
+export const polidaoContractConfig = {
+  address: ROUTER_ADDRESS,
+  abi: ROUTER_ABI,
+} as const;
+
+// Legacy alias so old imports keep working (recommended to migrate to ROUTER_ABI)
+export const POLIDAO_ABI = ROUTER_ABI;
+
+// Optional: default ERC20 token address for create/donate flows (set in .env)
+export const DEFAULT_TOKEN_ADDRESS =
+  (process.env.NEXT_PUBLIC_DEFAULT_TOKEN_ADDRESS as `0x${string}`) ||
+  ('0x0000000000000000000000000000000000000000' as const);
 
 // Fabryka kontraktu Router
 export function getRouterContract(providerOrSigner: ethers.Signer | ethers.AbstractProvider) {
-  return new ethers.Contract(ROUTER_ADDRESS, poliDaoRouterAbi, providerOrSigner);
+  return new ethers.Contract(ROUTER_ADDRESS, routerAbi, providerOrSigner);
 }
-
-// Konfiguracja kontraktu rdzenia (propozycje) dla wagmi
-export const polidaoContractConfig = {
-  address: POLIDAO_ADDRESSES.core,
-  abi: POLIDAO_ABI,
-} as const;
 
 // Typy pomocnicze
 export type FundraiserDetails = {
@@ -46,6 +56,35 @@ export type FundraiserProgress = {
   isSuspended: boolean;
   suspensionTime: bigint;
 };
+
+export type RouterFundraiserProgress = {
+  raised: bigint;
+  goal: bigint;
+  percentage: bigint;
+  donorsCount: bigint;
+  timeLeft: bigint;
+  refundDeadline: bigint;
+  isSuspended: boolean;
+  suspensionTime: bigint;
+};
+
+export async function fetchFundraiserProgress(
+  provider: ethers.AbstractProvider,
+  id: number | bigint
+): Promise<RouterFundraiserProgress> {
+  const contract = new ethers.Contract(ROUTER_ADDRESS, routerAbi, provider) as any;
+  const p: any = await contract.getFundraiserProgress(id);
+  return {
+    raised: (p?.[0] ?? p?.raised ?? 0n) as bigint,
+    goal: (p?.[1] ?? p?.goal ?? 0n) as bigint,
+    percentage: (p?.[2] ?? p?.percentage ?? 0n) as bigint,
+    donorsCount: (p?.[3] ?? p?.donorsCount ?? 0n) as bigint,
+    timeLeft: (p?.[4] ?? p?.timeLeft ?? 0n) as bigint,
+    refundDeadline: (p?.[5] ?? p?.refundDeadline ?? 0n) as bigint,
+    isSuspended: Boolean(p?.[6] ?? p?.isSuspended ?? false),
+    suspensionTime: (p?.[7] ?? p?.suspensionTime ?? 0n) as bigint,
+  };
+}
 
 // Liczba kampanii
 export async function fetchFundraiserCount(provider: ethers.AbstractProvider) {
