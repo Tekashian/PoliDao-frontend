@@ -154,9 +154,6 @@ export default function CampaignPage() {
   const [donors, setDonors] = useState<{ address: string; amount: number }[]>([]);
   const [donorsLimit] = useState(50);
 
-  // remember last posted text to append after tx confirms
-  const [lastPostedUpdate, setLastPostedUpdate] = useState<string>('');
-
   const campaignId = params.id as string;
   const idNum = Number(campaignId);
   const invalid = !campaignId || Number.isNaN(idNum) || idNum < 0;
@@ -329,6 +326,8 @@ export default function CampaignPage() {
   const selectedIdKey = selectedFundraiserId ?? -1;
   const chainKey = useMemo(() => Number(chainId ?? 0), [chainId]);
   const decimalsKey = useMemo(() => Number(tokenDecimals ?? 6), [tokenDecimals]);
+  // Etherscan base (Sepolia)
+  const ETHERSCAN_BASE = 'https://sepolia.etherscan.io';
 
   // NEW: read Core address (the actual spender calling transferFrom)
   const { data: coreAddress } = useReadContract({
@@ -376,6 +375,7 @@ export default function CampaignPage() {
     const tuple = donorsData as unknown as { donors: string[]; amounts: bigint[]; total: bigint } | any;
     const addresses: string[] = tuple?.donors ?? tuple?.[0] ?? [];
     const amounts: bigint[] = tuple?.amounts ?? tuple?.[1] ?? [];
+    if (!Array.isArray(addresses) || addresses.length === 0) return; // don't overwrite fallback with empty list
     const list = (addresses || []).map((addr, i) => ({
       address: addr,
       amount: Number(formatUnits((amounts?.[i] ?? 0n) as bigint, decimalsKey)),
@@ -383,27 +383,21 @@ export default function CampaignPage() {
     setDonors(list);
   }, [donorsData, decimalsKey]);
 
-  // NEW: Robust fallback for unique donors count
+  // Fallback: build donors list from Core DonationMade events (aggregate and sort desc)
   useEffect(() => {
-    // Prefer Analytics.getDonorsCount -> already handled in separate effect
-    if (donorsCountData !== undefined && donorsCountData !== null) return;
-
-    // Fallback 1: try "total" from Analytics.getDonors()
-    if (donorsData) {
-      const tuple = donorsData as any;
-      const totalFromTuple: bigint | undefined = (tuple?.total ?? tuple?.[2]) as bigint | undefined;
-      if (typeof totalFromTuple === 'bigint') {
-        setUniqueDonorsCount(Number(totalFromTuple));
-        return;
-      }
+    if (!donations || donations.length === 0) return;
+    // if Analytics already populated a non-empty list, keep it
+    if (Array.isArray(donors) && donors.length > 0) return;
+    const totals = new Map<string, number>();
+    for (const d of donations) {
+      const key = d.donor.toLowerCase();
+      totals.set(key, (totals.get(key) ?? 0) + d.amount);
     }
-
-    // Fallback 2: compute from donation history events
-    if (donations.length > 0) {
-      const uniq = new Set(donations.map(d => d.donor.toLowerCase()));
-      setUniqueDonorsCount(uniq.size);
-    }
-  }, [donorsCountData, donorsData, donations]);
+    const aggregated = Array.from(totals.entries())
+      .map(([address, amount]) => ({ address, amount }))
+      .sort((a, b) => b.amount - a.amount);
+    setDonors(aggregated);
+  }, [donations, donors.length]);
 
   // Historia wpłat z eventów Core (DonationMade) – poprawne źródło
   useEffect(() => {
@@ -503,12 +497,6 @@ export default function CampaignPage() {
     isPending: isApproving,
     data: approvalHash 
   } = useWriteContract();
-  // NEW: dedicated write hook for posting updates
-  const {
-    writeContract: writeUpdate,
-    isPending: isPostingUpdate,
-    data: updateHash
-  } = useWriteContract();
 
   // Wait for transaction confirmations
   const { 
@@ -517,19 +505,12 @@ export default function CampaignPage() {
   } = useWaitForTransactionReceipt({
     hash: donateHash,
   });
-  
+
   const { 
     isLoading: isApprovalConfirming, 
     isSuccess: isApprovalSuccess 
   } = useWaitForTransactionReceipt({
     hash: approvalHash,
-  });
-  // NEW: wait for update tx
-  const {
-    isLoading: isUpdateConfirming,
-    isSuccess: isUpdateSuccess
-  } = useWaitForTransactionReceipt({
-    hash: updateHash,
   });
 
   // Check user's token balance and allowance – dodaj chainId
@@ -555,49 +536,13 @@ export default function CampaignPage() {
   });
 
   // Handle updates
-  const handleAddUpdate = async () => {
+  const handleAddUpdate = () => {
     const trimmed = newUpdateText.trim();
-    if (!trimmed) {
-      setSnackbar({ open: true, message: 'Treść aktualności jest pusta.', severity: 'error' });
-      return;
-    }
-    if (!isConnected) {
-      setSnackbar({ open: true, message: 'Połącz portfel, aby dodać aktualność.', severity: 'error' });
-      return;
-    }
-    if (!isOwner) {
-      setSnackbar({ open: true, message: 'Tylko twórca kampanii może dodać aktualność.', severity: 'error' });
-      return;
-    }
-    if (chainId !== sepolia.id) {
-      setSnackbar({ open: true, message: 'Przełącz sieć na Sepolia i spróbuj ponownie.', severity: 'error' });
-      return;
-    }
-    if (!coreAddress || !campaignData?.id) {
-      setSnackbar({ open: true, message: 'Brak adresu Core lub ID kampanii.', severity: 'error' });
-      return;
-    }
-    try {
-      setLastPostedUpdate(trimmed);
-      await writeUpdate({
-        address: coreAddress as `0x${string}`,
-        abi: poliDaoCoreAbi,
-        functionName: 'postUpdate',
-        args: [BigInt(campaignData.id), trimmed],
-        chainId: sepolia.id,
-      });
-    } catch (e: any) {
-      setSnackbar({ open: true, message: `Błąd publikacji: ${e?.message || 'nieznany'}`, severity: 'error' });
-    }
-  };
-  // Append update locally after confirmation
-  useEffect(() => {
-    if (!isUpdateSuccess || !lastPostedUpdate) return;
-    setUpdates(prev => [{ content: lastPostedUpdate, timestamp: Date.now() }, ...prev]);
+    if (!trimmed) return;
+    setUpdates(prev => [{ content: trimmed, timestamp: Date.now() }, ...prev ]);
     setNewUpdateText('');
-    setLastPostedUpdate('');
-    setSnackbar({ open: true, message: 'Aktualność opublikowana on-chain!', severity: 'success' });
-  }, [isUpdateSuccess, lastPostedUpdate]);
+    setSnackbar({ open: true, message: 'Aktualność została dodana!', severity: 'success' });
+  };
 
   // Enhanced donation flow – przez Router
   const handleDonate = async () => {
@@ -916,10 +861,9 @@ export default function CampaignPage() {
                   />
                   <button
                     onClick={handleAddUpdate}
-                    className="w-full py-2 text-base font-medium text-white bg-[#68CC89] hover:bg-[#5FBF7A] rounded-md disabled:opacity-50"
-                    disabled={isPostingUpdate || isUpdateConfirming}
+                    className="w-full py-2 text-base font-medium text-white bg-[#68CC89] hover:bg-[#5FBF7A] rounded-md"
                   >
-                    {isPostingUpdate || isUpdateConfirming ? 'Publikowanie...' : 'Dodaj'}
+                    Dodaj
                   </button>
                 </div>
               )}
@@ -928,7 +872,7 @@ export default function CampaignPage() {
             <div className="bg-white rounded-md shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100">
                 <h2 className="text-lg font-semibold text-[#1F4E79]">Historia wpłat</h2>
-                <p className="text-xs text-gray-500">Ostatnie odświeżenie: {new Date(lastRefreshTime).toLocaleTimeString('pl-PL')}</p>
+                <p className="text-xs text-gray-500">Ostatnie wpłaty mogą być opóźnione w czasie</p>
               </div>
               {donations.length === 0 && (
                 <p className="px-6 py-4 text-xs text-gray-400">Brak wpłat.</p>
@@ -978,7 +922,15 @@ export default function CampaignPage() {
                 <ul className="divide-y divide-gray-100 max-h-[400px] overflow-auto">
                   {donors.map((d, idx) => (
                     <li key={idx} className="flex justify-between px-6 py-3">
-                      <span className="text-sm text-gray-700">{d.address.slice(0, 6)}…{d.address.slice(-4)}</span>
+                      <a
+                        href={`${ETHERSCAN_BASE}/address/${d.address}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-blue-600 hover:underline"
+                        title={d.address}
+                      >
+                        {d.address.slice(0, 6)}…{d.address.slice(-4)}
+                      </a>
                       <span className="text-sm font-medium text-gray-900">{d.amount.toFixed(2)} {displayTokenSymbol}</span>
                     </li>
                   ))}
