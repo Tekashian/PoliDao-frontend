@@ -417,6 +417,29 @@ export default function CampaignPage() {
     setDonors(aggregated);
   }, [donations, donors.length]);
 
+  // KPIs and 14-day activity series (for flexible campaigns) – must be before any early return
+  const { avgDonation, maxDonation, series14 } = useMemo(() => {
+    const total = donations.reduce((s, d) => s + (d.amount || 0), 0);
+    const count = donations.length;
+    const avg = count > 0 ? total / count : 0;
+    const max = donations.reduce((m, d) => Math.max(m, d.amount || 0), 0);
+    // Build last 14 days series (sum per day)
+    const days = 14;
+    const oneDay = 24 * 60 * 60 * 1000;
+    const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+    const buckets = new Array(days).fill(0);
+    for (const d of donations) {
+      const dt0 = new Date(d.timestamp); dt0.setHours(0, 0, 0, 0);
+      const diffDays = Math.floor((today0.getTime() - dt0.getTime()) / oneDay);
+      if (diffDays >= 0 && diffDays < days) {
+        // Put older days to the left by reversing index
+        const idx = days - 1 - diffDays;
+        buckets[idx] += d.amount || 0;
+      }
+    }
+    return { avgDonation: avg, maxDonation: max, series14: buckets };
+  }, [donations]);
+
   // Historia wpłat z eventów Core (DonationMade) – poprawne źródło
   useEffect(() => {
     if (selectedIdKey < 0 || !coreAddress) return;
@@ -706,6 +729,26 @@ export default function CampaignPage() {
     return Number(percentMicro) / 1_000_000;
   }
 
+  // Sparkline (inline SVG) for last N points
+  function Sparkline({ data }: { data: number[] }) {
+    const w = 300, h = 40, pad = 2;
+    const n = data.length;
+    if (n === 0) return <svg width="100%" height={h} />;
+    const min = Math.min(...data, 0);
+    const max = Math.max(...data, 1);
+    const dx = (w - pad * 2) / Math.max(n - 1, 1);
+    const scaleY = (v: number) => {
+      if (max === min) return h - pad;
+      return h - pad - ((v - min) / (max - min)) * (h - pad * 2);
+    };
+    const pts = data.map((v, i) => `${pad + i * dx},${scaleY(v)}`).join(' ');
+    return (
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h}>
+        <polyline fill="none" stroke="#16a34a" strokeWidth="2" points={pts} />
+      </svg>
+    );
+  }
+
   // Parser krotki zwracanej przez Router.getFundraiserProgress
   function parseProgressTuple(p: any) {
     // Oczekiwany porządek: [raised, goal, percentage, donorsCount, timeLeft, refundDeadline, isSuspended, suspensionTime]
@@ -748,15 +791,13 @@ export default function CampaignPage() {
 
   // Calculations and display data
   const displayTokenSymbol = tokenSymbol || 'USDC';
-  const decimals = decimalsKey; // użyj stabilnego klucza
+  const decimals = decimalsKey;
   const raised = Number(formatUnits(campaignData.raised, decimals));
   const target = Number(formatUnits(campaignData.target, decimals));
   const missing = (target - raised).toFixed(2);
-  // Precyzyjny procent
   const progressPercent = campaignData.target > 0n 
     ? calcPercentPrecise(campaignData.raised, campaignData.target)
     : 0;
-  // Minimalna widoczna szerokość paska (jeśli >0)
   const barWidth = progressPercent > 0 ? Math.max(progressPercent, 0.1) : 0;
 
   // Compute time left locally using endTime
@@ -970,18 +1011,47 @@ export default function CampaignPage() {
                     {raised.toLocaleString('pl-PL')} {displayTokenSymbol}
                   </p>
                 </div>
-                <p className="text-base font-normal text-gray-500 mb-2">
-                  ({progressPercent.toFixed(2)}%) z {target.toLocaleString('pl-PL')} {displayTokenSymbol}
-                </p>
-                <div className="mt-2 w-full bg-gray-100 rounded-full h-3">
-                  <div
-                    className="h-3 rounded-full bg-green-600 transition-all duration-1000 ease-out"
-                    style={{ width: `${Math.min(barWidth, 100)}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-xs text-gray-500">
-                  Brakuje {missing} {displayTokenSymbol}
-                </p>
+                {campaignData.isFlexible ? (
+                  <>
+                    <div className="grid grid-cols-3 gap-3 mt-2">
+                      <div className="bg-gray-50 rounded-md p-3 border border-gray-100 text-center">
+                        <p className="text-lg font-bold text-gray-800">{uniqueDonorsCount.toLocaleString('pl-PL')}</p>
+                        <p className="text-[11px] text-gray-500">Wsparło osób</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-md p-3 border border-gray-100 text-center">
+                        <p className="text-lg font-bold text-gray-800">
+                          {avgDonation.toLocaleString('pl-PL', { maximumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-[11px] text-gray-500">Śr. wpłata</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-md p-3 border border-gray-100 text-center">
+                        <p className="text-lg font-bold text-gray-800">
+                          {maxDonation.toLocaleString('pl-PL', { maximumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-[11px] text-gray-500">Największa</p>
+                      </div>
+                    </div>
+                    <div className="mt-4 p-3 bg-gray-50 rounded-md border border-gray-100">
+                      <p className="text-xs text-gray-500 mb-2">Aktywność (ostatnie 14 dni)</p>
+                      <Sparkline data={series14} />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-base font-normal text-gray-500 mb-2">
+                      ({progressPercent.toFixed(2)}%) z {target.toLocaleString('pl-PL')} {displayTokenSymbol}
+                    </p>
+                    <div className="mt-2 w-full bg-gray-100 rounded-full h-3">
+                      <div
+                        className="h-3 rounded-full bg-green-600 transition-all duration-1000 ease-out"
+                        style={{ width: `${Math.min(barWidth, 100)}%` }}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs text-gray-500">
+                      Brakuje {missing} {displayTokenSymbol}
+                    </p>
+                  </>
+                )}
               </div>
 
               <div className="px-6 py-3 bg-gray-50 border-y border-gray-100">
