@@ -29,7 +29,9 @@ interface Proposal {
 
 export default function AccountPage() {
   const { address, isConnected } = useAccount();
-  const [activeTab, setActiveTab] = useState<'fundraisers' | 'proposals'>('fundraisers');
+  const [activeTab, setActiveTab] = useState<
+    'dashboard' | 'donations' | 'approvals' | 'refunds' | 'fundraisers' | 'proposals' | 'activity'
+  >('dashboard');
 
   // Używaj istniejących hooków
   const { 
@@ -107,6 +109,29 @@ export default function AccountPage() {
     );
   }
 
+  // Kontrakty (placeholdery/env)
+  const CORE_SPENDER_ADDRESS = process.env.NEXT_PUBLIC_CORE_ADDRESS ?? '0xCoreSpender...';
+  const ROUTER_ADDRESS = process.env.NEXT_PUBLIC_ROUTER_ADDRESS ?? '0xRouter...';
+
+  // Placeholder metryk (TODO: podłącz do eventów i odczytów on-chain)
+  const [totalDonationsCount, setTotalDonationsCount] = useState<number>(0);
+  const [totalDonationsSum, setTotalDonationsSum] = useState<string>('0');
+  const [availableRefundsCount, setAvailableRefundsCount] = useState<number>(0);
+
+  useEffect(() => {
+    // TODO:
+    // - Zeventuj Core.DonationMade → zlicz liczbę i sumę wpłat usera
+    // - Sprawdź canRefund per kampania → zsumuj dostępne refundy
+    // - Rozważ pobranie historii z modułu Refunds (ClaimRefund/RefundStarted)
+  }, [address]);
+
+  // Przydatne zbiory (np. do Approvals)
+  const uniqueTokens = Array.from(
+    new Set(
+      (campaigns || []).map((f: any) => (typeof f.token === 'string' ? f.token.toLowerCase() : f.token))
+    )
+  ).filter(Boolean);
+
   const loading = campaignsLoading || proposalsLoading;
 
   return (
@@ -119,11 +144,11 @@ export default function AccountPage() {
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-8">
             <div className="flex items-center space-x-6">
-              <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center text-white text-2xl font-bold">
+              <div className="w-24 h-24 bg-green-600 rounded-3xl flex items-center justify-center text-white text-2xl font-bold ring-4 ring-green-100 shadow-lg">
                 {address?.slice(2, 4).toUpperCase()}
               </div>
               <div className="flex-1">
-                <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-blue-800 bg-clip-text text-transparent mb-2">
+                <h1 className="text-4xl font-bold text-green-700 mb-2">
                   👤 Moje Konto
                 </h1>
                 <p className="text-gray-600 text-lg font-mono">
@@ -136,8 +161,9 @@ export default function AccountPage() {
                   </div>
                   {canPropose && (
                     <div className="flex items-center space-x-2">
-                      <span className="w-3 h-3 bg-purple-500 rounded-full"></span>
-                      <span className="text-sm text-gray-700">Uprawnienia do głosowania</span>
+                      {/* changed color and label to match green/white theme */}
+                      <span className="w-3 h-3 bg-green-600 rounded-full"></span>
+                      <span className="text-sm text-gray-700">Uprawniony do tworzenia głosowań</span>
                     </div>
                   )}
                 </div>
@@ -167,13 +193,15 @@ export default function AccountPage() {
           </div>
 
           <div className="bg-white/70 backdrop-blur-lg rounded-2xl shadow-lg border border-white/20 p-6 text-center">
-            <div className="w-12 h-12 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            {/* changed icon background to green */}
+            <div className="w-12 h-12 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <span className="text-2xl">{canPropose ? "✅" : "❌"}</span>
             </div>
             <h3 className="text-2xl font-bold text-gray-900">
               {canPropose ? "Tak" : "Nie"}
             </h3>
-            <p className="text-gray-600">Uprawnienia głosowania</p>
+            {/* renamed label */}
+            <p className="text-gray-600">Uprawnienie do tworzenia głosowań</p>
           </div>
         </div>
       </div>
@@ -200,24 +228,74 @@ export default function AccountPage() {
         
         {/* Tabs */}
         <div className="bg-white/70 backdrop-blur-lg rounded-t-3xl shadow-xl border border-white/20 border-b-0">
-          <div className="flex">
+          <div className="flex flex-wrap">
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
+                activeTab === 'dashboard'
+                  ? 'bg-green-600 text-white rounded-tl-3xl'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-green-50'
+              }`}
+            >
+              🧭 Dashboard
+            </button>
+            <button
+              onClick={() => setActiveTab('donations')}
+              className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
+                activeTab === 'donations'
+                  ? 'bg-green-600 text-white'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-green-50'
+              }`}
+            >
+              💝 Wpłaty
+            </button>
+            <button
+              onClick={() => setActiveTab('approvals')}
+              className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
+                activeTab === 'approvals'
+                  ? 'bg-green-600 text-white'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-green-50'
+              }`}
+            >
+              ✅ Zgody (Approvals)
+            </button>
+            <button
+              onClick={() => setActiveTab('refunds')}
+              className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
+                activeTab === 'refunds'
+                  ? 'bg-green-600 text-white'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-green-50'
+              }`}
+            >
+              ♻️ Refundy
+            </button>
             <button
               onClick={() => setActiveTab('fundraisers')}
               className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
                 activeTab === 'fundraisers'
-                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-tl-3xl'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50/50'
+                  ? 'bg-green-600 text-white'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-green-50'
               }`}
             >
-              🎯 Moje zbiórki ({userFundraisers.length})
+              🎯 Moje zbiórki
+            </button>
+            <button
+              onClick={() => setActiveTab('activity')}
+              className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
+                activeTab === 'activity'
+                  ? 'bg-green-600 text-white'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-green-50'
+              }`}
+            >
+              🧾 Aktywność
             </button>
             {canPropose && (
               <button
                 onClick={() => setActiveTab('proposals')}
                 className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
                   activeTab === 'proposals'
-                    ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-tr-3xl'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50/50'
+                    ? 'bg-green-600 text-white rounded-tr-3xl'
+                    : 'text-gray-700 hover:text-gray-900 hover:bg-green-50'
                 }`}
               >
                 🗳️ Moje propozycje ({userProposals.length})
@@ -228,7 +306,6 @@ export default function AccountPage() {
 
         {/* Tab Content */}
         <div className="bg-white/70 backdrop-blur-lg rounded-b-3xl shadow-xl border border-white/20 border-t-0 p-8">
-          
           {loading ? (
             <div className="flex items-center justify-center py-20">
               <div className="flex items-center space-x-4">
@@ -238,7 +315,159 @@ export default function AccountPage() {
             </div>
           ) : (
             <>
-              {/* Fundraisers Tab */}
+              {/* NOWE: Dashboard */}
+              {activeTab === 'dashboard' && (
+                <div className="space-y-8">
+                  <h2 className="text-3xl font-bold text-gray-900">🧭 Dashboard</h2>
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div className="bg-white/60 rounded-2xl p-6 border">
+                      <p className="text-gray-600">Łączna liczba wpłat</p>
+                      <p className="text-3xl font-bold">{totalDonationsCount}</p>
+                    </div>
+                    <div className="bg-white/60 rounded-2xl p-6 border">
+                      <p className="text-gray-600">Suma wpłat</p>
+                      <p className="text-3xl font-bold">{totalDonationsSum}</p>
+                    </div>
+                    <div className="bg-white/60 rounded-2xl p-6 border">
+                      <p className="text-gray-600">Moje zbiórki</p>
+                      <p className="text-3xl font-bold">{userFundraisers.length}</p>
+                    </div>
+                    <div className="bg-white/60 rounded-2xl p-6 border">
+                      <p className="text-gray-600">Dostępne refundy</p>
+                      <p className="text-3xl font-bold">{availableRefundsCount}</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-white/60 rounded-2xl p-6 border">
+                    <h3 className="text-xl font-semibold mb-4">Kontrakty i spender</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-600">Router</p>
+                        <p className="font-mono text-gray-900">{ROUTER_ADDRESS}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Core (spender do approve)</p>
+                        <p className="font-mono text-gray-900">{CORE_SPENDER_ADDRESS}</p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-600 mt-4">Token per kampania widoczny w szczegółach/na liście zbiórek.</p>
+                  </div>
+
+                  <div className="bg-white/60 rounded-2xl p-6 border">
+                    <h3 className="text-xl font-semibold mb-4">Szybkie statusy</h3>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {userFundraisers.slice(0, 6).map((f: any) => {
+                        const timeLeft = getTimeLeft(f.endDate ?? 0n);
+                        return (
+                          <div key={f.id?.toString?.() ?? String(f.id)} className="flex items-center justify-between p-4 rounded-xl border bg-white/50">
+                            <div>
+                              <p className="font-semibold">Kampania #{f.id?.toString?.() ?? String(f.id)}</p>
+                              <p className="text-sm text-gray-600">
+                                Token: {(f.token || '').slice(0, 6)}...{(f.token || '').slice(-4)}
+                              </p>
+                            </div>
+                            <span className={`px-3 py-1 rounded-full text-sm ${
+                              timeLeft.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                            }`}>{timeLeft.text}</span>
+                          </div>
+                        );
+                      })}
+                      {userFundraisers.length === 0 && (
+                        <p className="text-gray-600">Brak danych o statusach – utwórz zbiórkę lub dokonaj wpłaty.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* NOWE: Moje wpłaty (Donations) */}
+              {activeTab === 'donations' && (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-3xl font-bold text-gray-900">💝 Moje wpłaty</h2>
+                    <div className="flex gap-3">
+                      <button disabled className="bg-blue-100 text-blue-700 font-medium py-2 px-4 rounded-xl cursor-not-allowed">
+                        🔎 Filtr statusu (wkrótce)
+                      </button>
+                      <button disabled className="bg-purple-100 text-purple-700 font-medium py-2 px-4 rounded-xl cursor-not-allowed">
+                        ↻ Odśwież (wkrótce)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-white/60 rounded-2xl p-6 border">
+                    <p className="text-gray-600">Lista wpłat z eventów Core.DonationMade lub odczyt Core.getDonationAmount(fid, user).</p>
+                    <div className="mt-4">
+                      <button disabled className="bg-green-100 text-green-800 font-medium py-2 px-4 rounded-xl cursor-not-allowed mr-2">
+                        💰 Donate teraz (ERC20)
+                      </button>
+                      <button disabled className="bg-green-100 text-green-800 font-medium py-2 px-4 rounded-xl cursor-not-allowed">
+                        📦 Batch donate (opcjonalnie)
+                      </button>
+                    </div>
+                    <p className="text-sm text-gray-500 mt-3">
+                      Pre-check: whitelista tokena, saldo, decimals; approve dla Core; Router.donateFrom(fid, user, amount).
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* NOWE: Menedżer zgód (Approvals) */}
+              {activeTab === 'approvals' && (
+                <div className="space-y-6">
+                  <h2 className="text-3xl font-bold text-gray-900">✅ Zgody (Approvals)</h2>
+                  <p className="text-gray-600">Per token: balanceOf(user), allowance(user → Core). Przyciski poniżej są placeholderami.</p>
+                  <div className="space-y-4">
+                    {uniqueTokens.length > 0 ? uniqueTokens.map((t) => (
+                      <div key={t} className="flex items-center justify-between p-4 rounded-xl border bg-white/50">
+                        <div>
+                          <p className="font-semibold">Token: {t.slice(0, 8)}...{t.slice(-6)}</p>
+                          <p className="text-sm text-gray-600">Core (spender): {CORE_SPENDER_ADDRESS.slice(0, 8)}...{CORE_SPENDER_ADDRESS.slice(-6)}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button disabled className="bg-blue-100 text-blue-800 py-2 px-3 rounded-lg cursor-not-allowed">Approve</button>
+                          <button disabled className="bg-blue-100 text-blue-800 py-2 px-3 rounded-lg cursor-not-allowed">Increase</button>
+                          <button disabled className="bg-blue-100 text-blue-800 py-2 px-3 rounded-lg cursor-not-allowed">Max</button>
+                          <button disabled className="bg-red-100 text-red-800 py-2 px-3 rounded-lg cursor-not-allowed">Revoke (0)</button>
+                        </div>
+                      </div>
+                    )) : (
+                      <p className="text-gray-600">Brak tokenów powiązanych ze zbiórkami użytkownika.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* NOWE: Moje refundy (Refunds) */}
+              {activeTab === 'refunds' && (
+                <div className="space-y-6">
+                  <h2 className="text-3xl font-bold text-gray-900">♻️ Moje refundy</h2>
+                  <p className="text-gray-600">Widok eligibility: Core.canRefund(fid, user). Poniżej placeholdery.</p>
+                  <div className="space-y-4">
+                    {userFundraisers.length > 0 ? userFundraisers.map((f: any) => (
+                      <div key={f.id?.toString?.() ?? String(f.id)} className="flex items-center justify-between p-4 rounded-xl border bg-white/50">
+                        <div>
+                          <p className="font-semibold">Kampania #{f.id?.toString?.() ?? String(f.id)}</p>
+                          <p className="text-sm text-gray-600">Token: {(f.token || '').slice(0, 6)}...{(f.token || '').slice(-4)}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button disabled className="bg-orange-100 text-orange-800 py-2 px-3 rounded-lg cursor-not-allowed">Sprawdź możliwość</button>
+                          <button disabled className="bg-green-100 text-green-800 py-2 px-3 rounded-lg cursor-not-allowed">Odbierz zwrot</button>
+                        </div>
+                      </div>
+                    )) : (
+                      <p className="text-gray-600">Brak kampanii z wpłatami kwalifikującymi się do refundu.</p>
+                    )}
+                  </div>
+                  <div className="bg-white/60 rounded-2xl p-6 border">
+                    <h3 className="font-semibold mb-2">Historia refundów</h3>
+                    <p className="text-sm text-gray-600">Źródło: eventy modułu refundów (np. ClaimRefund/RefundStarted). (wkrótce)</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Fundraisers Tab (zostaje jak było) */}
               {activeTab === 'fundraisers' && (
                 <div>
                   <div className="flex items-center justify-between mb-8">
@@ -333,7 +562,22 @@ export default function AccountPage() {
                 </div>
               )}
 
-              {/* Proposals Tab */}
+              {/* NOWE: Aktywność (Activity log) */}
+              {activeTab === 'activity' && (
+                <div className="space-y-6">
+                  <h2 className="text-3xl font-bold text-gray-900">🧾 Aktywność</h2>
+                  <p className="text-gray-600">
+                    Subskrypcje eventów: Core (FundraiserCreated, DonationMade, FundsWithdrawn, FundraiserSuspended),
+                    Extension (FundraiserExtended, LocationUpdated), Refunds (ClaimRefund/RefundStarted).
+                  </p>
+                  <div className="bg-white/60 rounded-2xl p-6 border">
+                    <p className="text-gray-600">Timeline Twoich akcji i zdarzeń kampanii (wkrótce).</p>
+                    <button disabled className="mt-4 bg-blue-100 text-blue-800 py-2 px-4 rounded-xl cursor-not-allowed">🔄 Załaduj historię</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Proposals Tab (zostaje jak było) */}
               {activeTab === 'proposals' && canPropose && (
                 <div>
                   <div className="flex items-center justify-between mb-8">
@@ -434,13 +678,14 @@ export default function AccountPage() {
                 </div>
               )}
 
-              {/* Message for users without proposal rights */}
+              {/* ...existing code... komunikat o braku uprawnień do propozycji */}
               {!canPropose && (
                 <div className="text-center py-20">
                   <div className="w-24 h-24 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
                     <span className="text-4xl">🔒</span>
                   </div>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-4">Brak uprawnień do głosowania</h3>
+                  {/* renamed heading */}
+                  <h3 className="text-2xl font-bold text-gray-900 mb-4">Brak uprawnień do tworzenia głosowań</h3>
                   <p className="text-gray-600 mb-8 max-w-md mx-auto">
                     Obecnie nie masz uprawnień do tworzenia propozycji głosowania. 
                     Skontaktuj się z administratorami DAO, aby uzyskać dostęp.
