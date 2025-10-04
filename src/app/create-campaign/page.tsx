@@ -6,9 +6,10 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadCont
 import { parseUnits } from 'viem';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
-import { ROUTER_ADDRESS, ROUTER_ABI, DEFAULT_TOKEN_ADDRESS } from '../../blockchain/contracts';
+import { ROUTER_ADDRESS, DEFAULT_TOKEN_ADDRESS } from '../../blockchain/contracts';
 import { decodeErrorResult } from 'viem';
 import { USDC_ABI } from '../../blockchain/usdcContractAbi';
+import { poliDaoRouterAbi } from '../../blockchain/routerAbi';
 
 // USDC ma 6 miejsc po przecinku
 const USDC_DECIMALS = 6;
@@ -49,7 +50,7 @@ export default function CreateCampaignPage() {
   // Read Router config once – creationEnabledFlag controls creator flow
   const { data: routerConfig } = useReadContract({
     address: ROUTER_ADDRESS,
-    abi: ROUTER_ABI as any,
+    abi: poliDaoRouterAbi as any,
     functionName: 'getRouterConfig',
   } as any);
 
@@ -195,7 +196,7 @@ export default function CreateCampaignPage() {
         if (publicClient) {
           await publicClient.simulateContract({
             address: ROUTER_ADDRESS,
-            abi: ROUTER_ABI as any,
+            abi: poliDaoRouterAbi as any,
             functionName: 'createFundraiser',
             account: address as `0x${string}`,
             args: [{
@@ -217,7 +218,7 @@ export default function CreateCampaignPage() {
         console.error('Simulation revert', simErr);
         try {
           if (simErr?.data) {
-            const decoded = decodeErrorResult({ abi: ROUTER_ABI as any, data: simErr.data });
+            const decoded = decodeErrorResult({ abi: poliDaoRouterAbi as any, data: simErr.data });
             setFriendlyError(mapError(decoded.errorName || simErr?.shortMessage || simErr?.message || 'Błąd symulacji'));
           } else {
             setFriendlyError(mapError(simErr?.shortMessage || simErr?.message || 'Błąd symulacji'));
@@ -230,7 +231,7 @@ export default function CreateCampaignPage() {
 
       await writeContract({
         address: ROUTER_ADDRESS,
-        abi: ROUTER_ABI as any,
+        abi: poliDaoRouterAbi as any,
         functionName: 'createFundraiser',
         args: [{
           title: formData.title.trim(),
@@ -259,7 +260,7 @@ export default function CreateCampaignPage() {
       try {
         const total: any = await publicClient.readContract({
           address: ROUTER_ADDRESS,
-          abi: ROUTER_ABI as any,
+          abi: poliDaoRouterAbi as any,
           functionName: 'getFundraiserCount',
         });
         if (typeof total === 'bigint') {
@@ -271,7 +272,7 @@ export default function CreateCampaignPage() {
             try {
               await publicClient.readContract({
                 address: ROUTER_ADDRESS,
-                abi: ROUTER_ABI as any,
+                abi: poliDaoRouterAbi as any,
                 functionName: 'getFundraiserDetails',
                 args: [cand],
               });
@@ -315,7 +316,7 @@ export default function CreateCampaignPage() {
         try {
           const res: any = await publicClient.readContract({
             address: ROUTER_ADDRESS,
-            abi: ROUTER_ABI as any,
+            abi: poliDaoRouterAbi as any,
             functionName: fn as any,
             args: [address]
           });

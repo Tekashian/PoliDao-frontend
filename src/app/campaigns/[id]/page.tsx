@@ -329,6 +329,39 @@ export default function CampaignPage() {
   // Etherscan base (Sepolia)
   const ETHERSCAN_BASE = 'https://sepolia.etherscan.io';
 
+  // NEW: read single-donation limit (prefer security.effectiveDonationLimit)
+  const { data: donationLimitRaw } = useReadContract({
+    address: ROUTER_ADDRESS,
+    abi: poliDaoRouterAbi,
+    functionName: 'currentDonationLimit',
+    chainId: sepolia.id,
+  });
+
+  const { data: securityInfo } = useReadContract({
+    address: ROUTER_ADDRESS,
+    abi: poliDaoRouterAbi,
+    functionName: 'getSecurityInfo',
+    chainId: sepolia.id,
+  });
+
+  const donationLimitBaseUnits = useMemo(() => {
+    // getSecurityInfo returns [hasSecurity, effectiveDonationLimit, configuredSecurityLimit]
+    if (Array.isArray(securityInfo) && securityInfo[0] === true && typeof securityInfo[1] === 'bigint') {
+      return securityInfo[1] as bigint;
+    }
+    if (typeof donationLimitRaw === 'bigint') return donationLimitRaw as bigint;
+    return null;
+  }, [securityInfo, donationLimitRaw]);
+
+  const donationLimitHuman = useMemo(() => {
+    if (!donationLimitBaseUnits) return null;
+    try {
+      return Number(formatUnits(donationLimitBaseUnits, decimalsKey));
+    } catch {
+      return null;
+    }
+  }, [donationLimitBaseUnits, decimalsKey]);
+
   // NEW: read Core address (the actual spender calling transferFrom)
   const { data: coreAddress } = useReadContract({
     address: ROUTER_ADDRESS,
@@ -612,6 +645,17 @@ export default function CampaignPage() {
       const decimals = Number(tokenDecimals ?? 6);
       const amount = parseUnits(donateAmount, decimals as any);
       setPendingDonationAmount(amount);
+
+      // NEW: enforce single-donation limit
+      if (donationLimitBaseUnits && amount > donationLimitBaseUnits) {
+        const lim = donationLimitHuman ?? 0;
+        setSnackbar({
+          open: true,
+          message: `Przekroczono limit pojedynczej wpłaty: ${lim.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} ${displayTokenSymbol}`,
+          severity: 'error'
+        });
+        return;
+      }
 
       if (userBalance && amount > (userBalance as bigint)) {
         setSnackbar({ open: true, message: 'Niewystarczający balans tokenów!', severity: 'error' });
@@ -1092,6 +1136,11 @@ export default function CampaignPage() {
                     💰 Dostępne: {(userBalance ? Number(formatUnits(userBalance as any, decimals)) : 0).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} {displayTokenSymbol}
                   </p>
                 )}
+                {donationLimitHuman != null && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    ⛔ Limit pojedynczej wpłaty: {donationLimitHuman.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} {displayTokenSymbol}
+                  </p>
+                )}
               </div>
 
               <div className="px-6 py-4">
@@ -1221,6 +1270,11 @@ export default function CampaignPage() {
           {!campaignData.isFlexible && (
             <Alert severity="info" sx={{ mb: 2 }}>
               To jest zbiórka z celem. Środki mogą zostać zwrócone jeśli cel nie zostanie osiągnięty.
+            </Alert>
+          )}
+          {donationLimitHuman != null && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Limit pojedynczej wpłaty: {donationLimitHuman.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} {displayTokenSymbol}
             </Alert>
           )}
         </DialogContent>
