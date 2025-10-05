@@ -97,34 +97,70 @@ export default function AccountPage() {
     query: { enabled: !!coreAddress }
   });
 
-  const { data: govIdsAll } = useReadContract({
-    address: governanceAddress as `0x${string}` | undefined,
+  const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
+  const isNonZeroAddress = (addr?: string) =>
+    typeof addr === 'string' &&
+    /^0x[a-fA-F0-9]{40}$/.test(addr) &&
+    addr.toLowerCase() !== ZERO_ADDR;
+
+  // REPLACED: getAllProposalIds -> getProposals (paged)
+  const { data: govPage } = useReadContract({
+    address: (governanceAddress as `0x${string}`) ?? undefined,
     abi: poliDaoGovernanceAbi,
-    functionName: 'getAllProposalIds',
-    query: { enabled: !!governanceAddress },
+    functionName: 'getProposals',
+    args: [0n, 200n],
+    query: { enabled: isNonZeroAddress(governanceAddress as string) },
   });
 
   const { data: govCountRaw } = useReadContract({
-    address: governanceAddress as `0x${string}` | undefined,
+    address: (governanceAddress as `0x${string}`) ?? undefined,
     abi: poliDaoGovernanceAbi,
     functionName: 'getProposalCount',
-    query: { enabled: !!governanceAddress && (!(Array.isArray(govIdsAll)) || (govIdsAll as any[]).length === 0) },
+    query: { enabled: isNonZeroAddress(governanceAddress as string) },
+  });
+
+  // Fallback: resolve real IDs via proposalIds(index) if needed
+  const proposalIndexCalls = React.useMemo(() => {
+    const count = Number(govCountRaw ?? 0n);
+    if (!isNonZeroAddress(governanceAddress as string) || count === 0) return [];
+    const limit = Math.min(count, 200);
+    return Array.from({ length: limit }, (_, i) => ({
+      address: governanceAddress as `0x${string}`,
+      abi: poliDaoGovernanceAbi,
+      functionName: 'proposalIds' as const,
+      args: [BigInt(i)],
+    }));
+  }, [governanceAddress, govCountRaw]);
+
+  const { data: indexIdResults } = useReadContracts({
+    contracts: proposalIndexCalls,
+    query: { enabled: proposalIndexCalls.length > 0 },
   });
 
   const govIds = React.useMemo(() => {
-    if (Array.isArray(govIdsAll) && govIdsAll.length > 0) {
-      return (govIdsAll as bigint[]).slice(0, 200);
+    const tuple = govPage as any;
+    const pagedIds: bigint[] = Array.isArray(tuple?.ids)
+      ? (tuple.ids as bigint[])
+      : (Array.isArray(tuple?.[0]) ? (tuple[0] as bigint[]) : []);
+    if (pagedIds && pagedIds.length > 0) return pagedIds.slice(0, 200);
+
+    if (indexIdResults && indexIdResults.length > 0) {
+      const realIds = indexIdResults
+        .map((r) => (r as any)?.result as bigint | undefined)
+        .filter((x): x is bigint => typeof x === 'bigint');
+      if (realIds.length > 0) return realIds.slice(0, 200);
     }
+
     const n = Number(govCountRaw ?? 0n);
     return Array.from({ length: Math.min(n, 100) }, (_, i) => BigInt(i));
-  }, [govIdsAll, govCountRaw]);
+  }, [govPage, indexIdResults, govCountRaw]);
 
   const govCalls = React.useMemo(() => {
-    if (!governanceAddress || govIds.length === 0) return [];
+    if (!isNonZeroAddress(governanceAddress as string) || govIds.length === 0) return [];
     return govIds.map((id) => ({
       address: governanceAddress as `0x${string}`,
       abi: poliDaoGovernanceAbi,
-      functionName: 'getProposal',
+      functionName: 'getProposal' as const,
       args: [id],
     }));
   }, [governanceAddress, govIds]);
@@ -148,7 +184,7 @@ export default function AccountPage() {
         yesVotes: BigInt(v.yesVotes ?? v[2] ?? 0n),
         noVotes: BigInt(v.noVotes ?? v[3] ?? 0n),
         endTime: BigInt(v.endTime ?? v[4] ?? 0n),
-        creator: String(v.creator ?? v[5] ?? '0x0000000000000000000000000000000000000000'),
+        creator: String(v.creator ?? v[5] ?? ZERO_ADDR),
       });
     });
     return out;

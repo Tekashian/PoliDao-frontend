@@ -16,7 +16,9 @@ import {
   useTheme,
   alpha,
   Paper,
-  LinearProgress
+  LinearProgress,
+  MobileStepper,
+  useMediaQuery
 } from '@mui/material';
 import { 
   ChevronLeft, 
@@ -43,6 +45,13 @@ import { ROUTER_ADDRESS } from '../blockchain/contracts';
 import { poliDaoRouterAbi } from '../blockchain/routerAbi';
 import { poliDaoCoreAbi } from '../blockchain/coreAbi';
 import poliDaoGovernanceAbi from '../blockchain/governanceAbi';
+
+// NEW: Swiper imports (minimal)
+import { Swiper, SwiperSlide } from 'swiper/react';
+import { Pagination, Autoplay, Navigation } from 'swiper/modules';
+import 'swiper/css';
+import 'swiper/css/pagination';
+import 'swiper/css/navigation'; // + navigation CSS
 
 // Material-UI Proposal Card z nawigacją - ZAKTUALIZOWANE
 function MUIProposalCard({ proposal }: { proposal: Proposal }) {
@@ -265,322 +274,164 @@ function FuturisticCarousel({
   icon,
   items, 
   renderItem, 
-  emptyMessage 
-}: { 
+  emptyMessage,
+  rtl = false,
+  autoplayDelay = 3000,
+  space, // NEW: custom gap between slides (px)
+}: {
   title: string;
   icon: React.ReactNode;
   items: any[];
   renderItem: (item: any, index: number) => React.ReactNode;
   emptyMessage: string;
+  rtl?: boolean;
+  autoplayDelay?: number;
+  space?: number; // NEW
 }) {
   const theme = useTheme();
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const ACCENT = '#10b981';
+  const GAP = space ?? 4;
 
-  const checkScrollButtons = () => {
-    if (scrollContainerRef.current) {
-      const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
-      setCanScrollLeft(scrollLeft > 0);
-      setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 10);
-      
-      // Oblicz aktualny indeks
-      const cardWidth = 340; // szerokość karty + gap
-      const newIndex = Math.round(scrollLeft / cardWidth);
-      setCurrentIndex(newIndex);
-    }
-  };
-
-  useEffect(() => {
-    checkScrollButtons();
-    const container = scrollContainerRef.current;
-    if (container) {
-      container.addEventListener('scroll', checkScrollButtons);
-      return () => container.removeEventListener('scroll', checkScrollButtons);
-    }
+  // Ensure enough slides for seamless loop
+  const slides = React.useMemo(() => {
+    if (!items || items.length === 0) return [];
+    if (items.length >= 9) return items;
+    const reps = Math.ceil(9 / Math.max(1, items.length));
+    return Array.from({ length: reps }).flatMap(() => items).slice(0, 9);
   }, [items]);
 
-  const scroll = (direction: 'left' | 'right') => {
-    if (scrollContainerRef.current) {
-      const scrollAmount = 340; // Width of one card + gap
-      const newScrollLeft = scrollContainerRef.current.scrollLeft + 
-        (direction === 'left' ? -scrollAmount : scrollAmount);
-      
-      scrollContainerRef.current.scrollTo({
-        left: newScrollLeft,
-        behavior: 'smooth'
-      });
-    }
-  };
+  // NEW: custom navigation refs (external buttons)
+  const prevRef = React.useRef<HTMLButtonElement | null>(null);
+  const nextRef = React.useRef<HTMLButtonElement | null>(null);
 
-  const scrollToIndex = (index: number) => {
-    if (scrollContainerRef.current) {
-      const scrollAmount = 340 * index;
-      scrollContainerRef.current.scrollTo({
-        left: scrollAmount,
-        behavior: 'smooth'
-      });
-    }
-  };
-
-  if (items.length === 0) return null;
-
-  const visibleDots = Math.min(items.length, 8); // Maksymalnie 8 kropek
+  if (!slides || slides.length === 0) return null;
 
   return (
-    <Paper 
+    <Paper
       elevation={0}
-      sx={{ 
+      sx={{
         mb: 6,
-        background: `linear-gradient(135deg, ${alpha(theme.palette.background.paper, 0.8)} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
-        backdropFilter: 'blur(20px)',
-        border: `1px solid ${alpha(theme.palette.primary.main, 0.08)}`,
-        borderRadius: 4,
-        overflow: 'hidden',
+        background: 'transparent',
+        border: 'none',
+        boxShadow: 'none',
+        borderRadius: 0,
+        overflow: 'visible', // was 'hidden' – allow arrows outside to be visible
         position: 'relative',
       }}
     >
-      {/* Futurystyczny header */}
-      <Box sx={{ 
-        p: 4,
-        background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.03)} 0%, ${alpha(theme.palette.secondary.main, 0.02)} 100%)`,
-        borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-        position: 'relative',
-      }}>
-        {/* Animowane tło */}
-        <Box
+      {/* Header */}
+      <Box sx={{ px: 0, py: 0, mb: 1 }}>
+        <Typography variant="h5" component="h2" sx={{ fontWeight: 800, color: theme.palette.text.primary }}>
+          {title}
+        </Typography>
+      </Box>
+
+      {/* Carousel wrapper */}
+      <Box
+        sx={{
+          position: 'relative',
+          px: 0,
+          pb: 3,
+          overflow: 'visible',
+          '& .swiper-wrapper': { transitionTimingFunction: 'ease-in-out' },
+          // Ensure visible spacing equals GAP even if Swiper rounding kicks in
+          '& .swiper-slide': {
+            marginInlineEnd: `${GAP}px !important`,
+          },
+          // Pagination below (no overlay)
+          '& .swiper-pagination': {
+            position: 'static !important',
+            marginTop: theme.spacing(1.5),
+            display: 'flex',
+            justifyContent: 'center',
+          },
+          '& .swiper-pagination-bullet': { width: 6, height: 6, opacity: 1, backgroundColor: 'rgba(0,0,0,.25)' },
+          '& .swiper-pagination-bullet-active': { backgroundColor: ACCENT },
+        }}
+      >
+        {/* NEW: external prev/next buttons fully outside the slide area */}
+        <IconButton
+          ref={prevRef}
+          aria-label="Poprzedni"
           sx={{
             position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: `radial-gradient(ellipse at top left, ${alpha(theme.palette.primary.main, 0.1)} 0%, transparent 50%)`,
-            opacity: 0.3,
-          }}
-        />
-        
-        <Box sx={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          position: 'relative',
-          zIndex: 1,
-        }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-            <Box
-              sx={{
-                p: 2,
-                borderRadius: 3,
-                background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-                color: 'white',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                minWidth: 56,
-                minHeight: 56,
-                boxShadow: `0 8px 32px ${alpha(theme.palette.primary.main, 0.3)}`,
-              }}
-            >
-              {icon}
-            </Box>
-            
-            <Box>
-              <Typography variant="h4" component="h2" sx={{ 
-                fontWeight: 800,
-                background: `linear-gradient(135deg, ${theme.palette.text.primary}, ${theme.palette.primary.main})`,
-                backgroundClip: 'text',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                mb: 0.5,
-                letterSpacing: '-0.02em',
-              }}>
-                {title}
-              </Typography>
-              
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Chip 
-                  label={`${items.length} elementów`}
-                  size="small"
-                  sx={{
-                    bgcolor: alpha(theme.palette.primary.main, 0.1),
-                    color: theme.palette.primary.main,
-                    fontWeight: 600,
-                    border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
-                  }}
-                />
-                
-                {/* Minimalistyczne kropki nawigacji */}
-                <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-                  {Array.from({ length: visibleDots }).map((_, index) => (
-                    <Box
-                      key={index}
-                      onClick={() => scrollToIndex(index)}
-                      sx={{
-                        width: currentIndex === index ? 24 : 8,
-                        height: 8,
-                        borderRadius: 4,
-                        bgcolor: currentIndex === index 
-                          ? theme.palette.primary.main 
-                          : alpha(theme.palette.primary.main, 0.2),
-                        cursor: 'pointer',
-                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                        '&:hover': {
-                          bgcolor: currentIndex === index 
-                            ? theme.palette.primary.dark 
-                            : alpha(theme.palette.primary.main, 0.4),
-                        }
-                      }}
-                    />
-                  ))}
-                </Box>
-              </Box>
-            </Box>
-          </Box>
-          
-          {/* Futurystyczne przyciski nawigacji */}
-          <Stack direction="row" spacing={1}>
-            <IconButton
-              onClick={() => scroll('left')}
-              disabled={!canScrollLeft}
-              sx={{
-                width: 48,
-                height: 48,
-                bgcolor: canScrollLeft 
-                  ? alpha(theme.palette.background.paper, 0.9) 
-                  : alpha(theme.palette.action.disabled, 0.1),
-                backdropFilter: 'blur(10px)',
-                border: `1px solid ${alpha(theme.palette.divider, canScrollLeft ? 0.2 : 0.1)}`,
-                color: canScrollLeft 
-                  ? theme.palette.primary.main 
-                  : theme.palette.action.disabled,
-                '&:hover': {
-                  bgcolor: canScrollLeft 
-                    ? alpha(theme.palette.primary.main, 0.1) 
-                    : alpha(theme.palette.action.disabled, 0.1),
-                  transform: canScrollLeft ? 'scale(1.05)' : 'none',
-                  borderColor: canScrollLeft 
-                    ? alpha(theme.palette.primary.main, 0.3) 
-                    : alpha(theme.palette.divider, 0.1),
-                  boxShadow: canScrollLeft ? '0 0 18px rgba(16,185,129,0.45)' : 'none',
-                },
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              }}
-            >
-              <ChevronLeft />
-            </IconButton>
-            <IconButton
-              onClick={() => scroll('right')}
-              disabled={!canScrollRight}
-              sx={{
-                width: 48,
-                height: 48,
-                bgcolor: canScrollRight 
-                  ? alpha(theme.palette.background.paper, 0.9) 
-                  : alpha(theme.palette.action.disabled, 0.1),
-                backdropFilter: 'blur(10px)',
-                border: `1px solid ${alpha(theme.palette.divider, canScrollRight ? 0.2 : 0.1)}`,
-                color: canScrollRight 
-                  ? theme.palette.primary.main 
-                  : theme.palette.action.disabled,
-                '&:hover': {
-                  bgcolor: canScrollRight 
-                    ? alpha(theme.palette.primary.main, 0.1) 
-                    : alpha(theme.palette.action.disabled, 0.1),
-                  transform: canScrollRight ? 'scale(1.05)' : 'none',
-                  borderColor: canScrollRight 
-                    ? alpha(theme.palette.primary.main, 0.3) 
-                    : alpha(theme.palette.divider, 0.1),
-                  boxShadow: canScrollRight ? '0 0 18px rgba(16,185,129,0.45)' : 'none',
-                },
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              }}
-            >
-              <ChevronRight />
-            </IconButton>
-          </Stack>
-        </Box>
-      </Box>
-      
-      {/* Zawartość karuzeli */}
-      <Box sx={{ position: 'relative', overflow: 'hidden', p: 3, pt: 4 }}>
-        <Box
-          ref={scrollContainerRef}
-          sx={{
-            display: 'flex',
-            gap: 3,
-            overflowX: 'auto',
-            scrollbarWidth: 'none',
-            '&::-webkit-scrollbar': {
-              display: 'none',
-            },
-            pb: 2,
-            px: 1,
-            scrollBehavior: 'smooth',
+            left: { xs: -14, sm: -18, md: -24, lg: -32 }, // push further left outside
+            top: '50%',
+            transform: 'translateY(-50%)',
+            zIndex: 5, // ensure above swiper
+            backgroundColor: 'rgba(255,255,255,0.98)',
+            border: `1px solid ${alpha(ACCENT, 0.25)}`,
+            boxShadow: `0 6px 20px ${alpha('#000', 0.12)}`,
+            color: ACCENT,
+            width: 36,
+            height: 36,
+            '&:hover': { backgroundColor: 'white' },
           }}
         >
-          {items.map((item, index) => (
-            <Box 
-              key={index} 
-              sx={{ 
-                flexShrink: 0,
-                transform: currentIndex === index ? 'scale(1.02)' : 'scale(1)',
-                transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              }}
-            >
-              {renderItem(item, index)}
-            </Box>
+          <ChevronLeft fontSize="small" />
+        </IconButton>
+
+        <IconButton
+          ref={nextRef}
+          aria-label="Następny"
+          sx={{
+            position: 'absolute',
+            right: { xs: -14, sm: -18, md: -24, lg: -32 }, // outside on the right
+            top: '50%',
+            transform: 'translateY(-50%)',
+            zIndex: 5, // ensure above swiper
+            backgroundColor: 'rgba(255,255,255,0.98)',
+            border: `1px solid ${alpha(ACCENT, 0.25)}`,
+            boxShadow: `0 6px 20px ${alpha('#000', 0.12)}`,
+            color: ACCENT,
+            width: 36,
+            height: 36,
+            '&:hover': { backgroundColor: 'white' },
+          }}
+        >
+          <ChevronRight fontSize="small" />
+        </IconButton>
+
+        <Swiper
+          key={`swiper-${title}-${slides.length}`}
+          modules={[Pagination, Autoplay, Navigation]}
+          loop
+          loopedSlides={slides.length}
+          loopedSlidesLimit={false}
+          loopAdditionalSlides={Math.min(slides.length, 12)}
+          speed={750}
+          autoplay={{
+            delay: autoplayDelay,
+            disableOnInteraction: false,
+            pauseOnMouseEnter: false,
+            reverseDirection: rtl,    // step to the right
+            waitForTransition: true,
+          }}
+          pagination={{ clickable: true }}
+          // NEW: bind custom external buttons
+          navigation={{
+            prevEl: prevRef.current,
+            nextEl: nextRef.current,
+          }}
+          onBeforeInit={(swiper) => {
+            // @ts-expect-error - runtime assignment supported by Swiper
+            swiper.params.navigation.prevEl = prevRef.current;
+            // @ts-expect-error - runtime assignment supported by Swiper
+            swiper.params.navigation.nextEl = nextRef.current;
+          }}
+          slidesPerView={3}
+          slidesPerGroup={1}
+          spaceBetween={GAP}
+          cssMode={false}
+        >
+          {slides.map((item, index) => (
+            <SwiperSlide key={`${title}-${index}`}>
+              <Box sx={{ borderRadius: 0 }}>
+                {renderItem(item, index)}
+              </Box>
+            </SwiperSlide>
           ))}
-        </Box>
-        
-        {/* Eleganckie gradienty po bokach */}
-        <Box
-          sx={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: 80,
-            background: `linear-gradient(90deg, ${alpha(theme.palette.background.paper, 0.8)} 0%, transparent 100%)`,
-            pointerEvents: 'none',
-            opacity: canScrollLeft ? 1 : 0,
-            transition: 'opacity 0.3s ease',
-            zIndex: 1,
-          }}
-        />
-        <Box
-          sx={{
-            position: 'absolute',
-            right: 0,
-            top: 0,
-            bottom: 0,
-            width: 80,
-            background: `linear-gradient(270deg, ${alpha(theme.palette.background.paper, 0.8)} 0%, transparent 100%)`,
-            pointerEvents: 'none',
-            opacity: canScrollRight ? 1 : 0,
-            transition: 'opacity 0.3s ease',
-            zIndex: 1,
-          }}
-        />
-        
-        {/* Subtelny progress bar */}
-        <LinearProgress
-          variant="determinate"
-          value={(currentIndex / Math.max(items.length - 1, 1)) * 100}
-          sx={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: 2,
-            bgcolor: alpha(theme.palette.primary.main, 0.1),
-            '& .MuiLinearProgress-bar': {
-              bgcolor: theme.palette.primary.main,
-              transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-            }
-          }}
-        />
+        </Swiper>
       </Box>
     </Paper>
   );
@@ -824,11 +675,14 @@ export default function HomePage() {
             emptyMessage="Brak aktywnych głosowań"
           />
 
-          {/* ✅ ZAKTUALIZOWANA: Karuzela najlepszych zbiórek używająca CampaignCard */}
+          {/* ✅ Karuzela kampanii – super-płynny ruch w prawo */}
           <FuturisticCarousel
-            title="Najgorętsze kampanie i zbiórki"
+            title="Najlepsze kampanie i zbiórki"
             icon={<TrendingUp sx={{ fontSize: 28 }} />}
             items={carouselCampaigns}
+            rtl={true}
+            autoplayDelay={3000}
+            space={0} // CHANGED: force zero gap for a clear ~70%+ reduction
             renderItem={(campaign: ModularFundraiser) => {
               const mappedCampaign = {
                 campaignId: campaign.id.toString(),
@@ -1049,7 +903,7 @@ export default function HomePage() {
                                 {campaignFilter === "target" ? "🎯" : "🌊"}
                               </span>
                               <span className="font-medium">
-                                Wyświetlanie: {campaignFilter === "target" ? "Zbiórki z celem" : "Kampanie"} 
+                                Wyświetlanie: {campaignFilter === "target" ? "Zbiórek z celem" : "Kampanie"} 
                                 ({filteredCampaigns.length} z {campaigns?.length || 0})
                               </span>
                             </div>
