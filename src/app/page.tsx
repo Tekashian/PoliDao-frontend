@@ -37,6 +37,12 @@ import CampaignCard from "../components/CampaignCard";
 import { useAccount } from 'wagmi';
 import { useGetAllProposals, type Proposal } from '../hooks/usePoliDao';
 import { useFundraisersModular, type ModularFundraiser } from '../hooks/useFundraisersModular';
+// NEW: governance reads
+import { useReadContract, useReadContracts } from 'wagmi';
+import { ROUTER_ADDRESS } from '../blockchain/contracts';
+import { poliDaoRouterAbi } from '../blockchain/routerAbi';
+import { poliDaoCoreAbi } from '../blockchain/coreAbi';
+import poliDaoGovernanceAbi from '../blockchain/governanceAbi';
 
 // Material-UI Proposal Card z nawigacją - ZAKTUALIZOWANE
 function MUIProposalCard({ proposal }: { proposal: Proposal }) {
@@ -600,6 +606,105 @@ export default function HomePage() {
     proposalCount 
   } = useGetAllProposals();
 
+  // --- Governance module: resolve and read proposals ---
+  const { data: coreAddress } = useReadContract({
+    address: ROUTER_ADDRESS,
+    abi: poliDaoRouterAbi,
+    functionName: 'coreContract',
+  });
+
+  const { data: governanceAddress } = useReadContract({
+    address: coreAddress as `0x${string}` | undefined,
+    abi: poliDaoCoreAbi,
+    functionName: 'governanceModule',
+    query: { enabled: !!coreAddress },
+  });
+
+  // REPLACED: getAllProposalIds -> getProposals (paged)
+  const { data: govPage, refetch: refetchGovPage } = useReadContract({
+    address: governanceAddress as `0x${string}` | undefined,
+    abi: poliDaoGovernanceAbi,
+    functionName: 'getProposals',
+    args: [0n, 200n],
+    query: { enabled: !!governanceAddress },
+  });
+
+  // Keep count as fallback
+  const { data: govCountRaw } = useReadContract({
+    address: governanceAddress as `0x${string}` | undefined,
+    abi: poliDaoGovernanceAbi,
+    functionName: 'getProposalCount',
+    query: { enabled: !!governanceAddress },
+  });
+
+  // IDs from page tuple or fallback to 0..count-1
+  const govIds = React.useMemo(() => {
+    const tuple = govPage as any;
+    const pagedIds: bigint[] = Array.isArray(tuple?.ids)
+      ? (tuple.ids as bigint[])
+      : (Array.isArray(tuple?.[0]) ? (tuple[0] as bigint[]) : []);
+    if (pagedIds && pagedIds.length > 0) return pagedIds.slice(0, 200);
+    const n = Number(govCountRaw ?? 0n);
+    return Array.from({ length: Math.min(n, 100) }, (_, i) => BigInt(i));
+  }, [govPage, govCountRaw]);
+
+  const govCalls = React.useMemo(() => {
+    if (!governanceAddress || govIds.length === 0) return [];
+    return govIds.map((id) => ({
+      address: governanceAddress as `0x${string}`,
+      abi: poliDaoGovernanceAbi,
+      functionName: 'getProposal',
+      args: [id],
+    }));
+  }, [governanceAddress, govIds]);
+
+  const { data: govResults, refetch: refetchGovResults } = useReadContracts({
+    contracts: govCalls,
+    query: { enabled: govCalls.length > 0 },
+  });
+
+  const governanceProposals: Proposal[] = React.useMemo(() => {
+    if (!govResults || govResults.length === 0) return [];
+    const out: Proposal[] = [];
+    govResults.forEach((r) => {
+      const v = (r as any)?.result;
+      if (!v) return;
+      const exists = Boolean(v.exists ?? v[6] ?? true);
+      if (!exists) return;
+      out.push({
+        id: BigInt(v.id ?? v[0] ?? 0n),
+        question: String(v.question ?? v[1] ?? ''),
+        yesVotes: BigInt(v.yesVotes ?? v[2] ?? 0n),
+        noVotes: BigInt(v.noVotes ?? v[3] ?? 0n),
+        endTime: BigInt(v.endTime ?? v[4] ?? 0n),
+        creator: String(v.creator ?? v[5] ?? '0x0000000000000000000000000000000000000000'),
+      });
+    });
+    return out;
+  }, [govResults]);
+
+  // Use governance proposals if available, else fallback to hook
+  const displayProposals = React.useMemo(
+    () => (governanceProposals.length > 0 ? governanceProposals : (proposals || [])),
+    [governanceProposals, proposals]
+  );
+  const displayProposalCount = displayProposals.length || Number(govCountRaw ?? 0n) || proposalCount;
+
+  // New: combined loading/error respecting governance fallback
+  // Filter out ABI mismatch errors coming from the legacy hook (getAllProposalIds)
+  const hookErrorIsAbiMismatch = Boolean(proposalsError?.message?.includes('getAllProposalIds'));
+  const votesLoading = proposalsLoading && displayProposals.length === 0;
+  const votesError = !!proposalsError && !hookErrorIsAbiMismatch && displayProposals.length === 0;
+
+  // Helper: explicit governance refresh
+  const refetchVotes = async () => {
+    try {
+      await Promise.allSettled([refetchGovPage(), refetchGovResults()]);
+      // Optionally also refetch legacy hook (safe no-op if it errors)
+      await Promise.resolve(refetchProposals?.());
+    } catch {}
+  };
+
   const [activeTab, setActiveTab] = useState<"zbiorki" | "glosowania">("glosowania");
   const [campaignFilter, setCampaignFilter] = useState<"all" | "target" | "flexible">("all");
   const { isConnected } = useAccount();
@@ -613,19 +718,19 @@ export default function HomePage() {
   }) : [];
 
   // Sprawdź czy są aktywne propozycje
-  const hasActiveProposals = proposals && proposals.some((proposal: Proposal) => {
+  const hasActiveProposals = displayProposals && displayProposals.some((proposal: Proposal) => {
     const timeLeft = Number(proposal.endTime) - Math.floor(Date.now() / 1000);
     return timeLeft > 0;
   });
 
   // ✅ ZAKTUALIZOWANE: Logika dla karuzeli propozycji - aktywne propozycje pierwsze
   const getCarouselProposals = () => {
-    if (!proposals || proposals.length === 0) return [];
+    if (!displayProposals || displayProposals.length === 0) return [];
     
     const now = Math.floor(Date.now() / 1000);
     
     // Sortuj: aktywne pierwsze (według czasu pozostałego), potem zakończone (według aktywności)
-    return [...proposals].sort((a, b) => {
+    return [...displayProposals].sort((a, b) => {
       const timeLeftA = Number(a.endTime) - now;
       const timeLeftB = Number(b.endTime) - now;
       const isActiveA = timeLeftA > 0;
@@ -770,7 +875,7 @@ export default function HomePage() {
                   : "border-transparent text-gray-600"
               } transform transition-transform hover:scale-105`}
             >
-              🗳️ Wszystkie głosowania ({proposalCount})
+              🗳️ Wszystkie głosowania ({displayProposalCount})
             </button>
             <button
               onClick={() => setActiveTab("zbiorki")}
@@ -808,42 +913,42 @@ export default function HomePage() {
                     Wszystkie głosowania
                   </h2>
                   <button
-                    onClick={refetchProposals}
-                    disabled={proposalsLoading}
+                    onClick={refetchVotes}
+                    disabled={votesLoading}
                     className={`px-4 py-2 rounded-lg transition-colors ${
-                      proposalsLoading
+                      votesLoading
                         ? 'bg-gray-400 cursor-not-allowed'
                         : 'bg-[#10b981] hover:bg-[#10b981]'
                     } text-white transform transition-transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]`}
                   >
-                    {proposalsLoading ? '⏳ Ładowanie...' : '🔄 Odśwież'}
+                    {votesLoading ? '⏳ Ładowanie...' : '🔄 Odśwież'}
                   </button>
                 </div>
 
-                {proposalsLoading && (
+                {votesLoading && (
                   <div className="flex items-center justify-center py-12">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
                     <span className="ml-3 text-gray-600">Pobieranie danych z kontraktu...</span>
                   </div>
                 )}
 
-                {proposalsError && (
+                {votesError && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
                     <div className="flex items-center">
                       <span className="text-red-500 text-xl mr-3">⚠️</span>
                       <div>
                         <h3 className="font-bold text-red-800">Błąd ładowania propozycji</h3>
-                        <p className="text-red-700 text-sm mt-1">{proposalsError.message}</p>
+                        <p className="text-red-700 text-sm mt-1">{proposalsError?.message}</p>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {!proposalsLoading && !proposalsError && (
+                {!votesLoading && (
                   <>
-                    {proposals && proposals.length > 0 ? (
+                    {displayProposals && displayProposals.length > 0 ? (
                       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                        {proposals.map((proposal: Proposal) => (
+                        {displayProposals.map((proposal: Proposal) => (
                           <MUIProposalCard
                             key={proposal.id.toString()}
                             proposal={proposal}
@@ -944,7 +1049,7 @@ export default function HomePage() {
                                 {campaignFilter === "target" ? "🎯" : "🌊"}
                               </span>
                               <span className="font-medium">
-                                Wyświetlanie: {campaignFilter === "target" ? "Zbiórki z określonym celem" : "Kampanie"} 
+                                Wyświetlanie: {campaignFilter === "target" ? "Zbiórki z celem" : "Kampanie"} 
                                 ({filteredCampaigns.length} z {campaigns?.length || 0})
                               </span>
                             </div>
