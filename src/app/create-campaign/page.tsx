@@ -391,7 +391,7 @@ export default function CreateCampaignPage() {
       <Header />
       
       {/* Hero sekcja */}
-      <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white py-16">
+      <div className="bg-[#10b981] text-white py-16">
         <div className="container mx-auto px-4 text-center">
           <h1 className="text-4xl md:text-5xl font-bold mb-4">
             Utwórz zbiórkę i zbieraj w USDC
@@ -457,7 +457,7 @@ export default function CreateCampaignPage() {
                       value={formData.title}
                       onChange={(e) => handleInputChange('title', e.target.value)}
                       placeholder="Podaj krótki i opisowy tytuł swojej zbiórki"
-                      className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all text-lg font-medium ${
+                      className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-[#10b981] focus:border-[#10b981] transition-all text-lg font-medium ${
                         errors.title ? 'border-red-500 bg-red-50' : 'border-gray-300'
                       }`}
                       style={{ fontSize: '18px' }}
@@ -507,7 +507,7 @@ export default function CreateCampaignPage() {
                       value={formData.location}
                       onChange={(e) => handleInputChange('location', e.target.value)}
                       placeholder="Np. Warszawa, Polska"
-                      className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all text-lg font-medium ${
+                      className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-[#10b981] focus:border-[#10b981] transition-all text-lg font-medium ${
                         errors.location ? 'border-red-500 bg-red-50' : 'border-gray-300'
                       }`}
                     />
@@ -529,7 +529,7 @@ export default function CreateCampaignPage() {
                       onChange={(e) => handleInputChange('description', e.target.value)}
                       rows={6}
                       placeholder="Opisz szczegółowo sytuację, na co będą przeznaczone zebrane środki, dlaczego potrzebujesz pomocy..."
-                      className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all resize-none font-medium ${
+                      className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-[#10b981] focus:border-[#10b981] transition-all resize-none font-medium ${
                         errors.description ? 'border-red-500 bg-red-50' : 'border-gray-300'
                       }`}
                       style={{ fontSize: '16px', lineHeight: '1.5' }}
@@ -549,7 +549,7 @@ export default function CreateCampaignPage() {
                     <select
                       value={formData.category}
                       onChange={(e) => handleInputChange('category', e.target.value)}
-                      className="w-full px-5 py-4 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-medium text-lg"
+                      className="w-full px-5 py-4 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-[#10b981] focus:border-[#10b981] font-medium text-lg"
                     >
                       <option value="medical">💊 Medycyna i zdrowie</option>
                       <option value="education">📚 Edukacja</option>
@@ -598,7 +598,7 @@ export default function CreateCampaignPage() {
                     <select
                       value={selectedTokenAddress ?? ''}
                       onChange={(e) => setSelectedTokenAddress(e.target.value as `0x${string}`)}
-                      className="w-full px-5 py-4 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-medium text-lg"
+                      className="w-full px-5 py-4 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-[#10b981] focus:border-[#10b981] font-medium text-lg"
                     >
                       {tokensList.map(t => (
                         <option key={t.address} value={t.address}>
@@ -621,8 +621,8 @@ export default function CreateCampaignPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <label className={`p-6 border-2 rounded-xl cursor-pointer transition-all ${
                         formData.campaignType === 'target' 
-                          ? 'border-green-500 bg-green-50' 
-                          : 'border-gray-200 hover:border-green-300'
+                          ? 'border-[#10b981] bg-[#10b981]/10' 
+                          : 'border-gray-200 hover:border-[#10b981]'
                       }`}>
                         <input
                           type="radio"
@@ -647,8 +647,8 @@ export default function CreateCampaignPage() {
 
                       <label className={`p-6 border-2 rounded-xl cursor-pointer transition-all ${
                         formData.campaignType === 'flexible' 
-                          ? 'border-green-500 bg-green-50' 
-                          : 'border-gray-200 hover:border-green-300'
+                          ? 'border-[#10b981] bg-[#10b981]/10' 
+                          : 'border-gray-200 hover:border-[#10b981]'
                       }`}>
                         <input
                           type="radio"
@@ -688,7 +688,7 @@ export default function CreateCampaignPage() {
                           value={formData.targetAmount}
                           onChange={(e) => handleInputChange('targetAmount', e.target.value)}
                           placeholder="1000.00"
-                          className={`w-full px-6 py-5 pr-20 border-2 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-bold text-2xl ${
+                          className={`w-full px-6 py-5 pr-20 border-2 rounded-xl focus:ring-2 focus:ring-[#10b981] focus:border-[#10b981] font-bold text-2xl ${
                             errors.targetAmount ? 'border-red-500 bg-red-50' : 'border-gray-300'
                           }`}
                         />
@@ -699,7 +699,7 @@ export default function CreateCampaignPage() {
                       {errors.targetAmount && (
                         <p className="mt-2 text-sm text-red-600 font-medium">{errors.targetAmount}</p>
                       )}
-                      <p className="mt-2 text-sm text-green-600 font-medium">
+                      <p className="mt-2 text-sm text-[#10b981] font-medium">
                         💡 1 USDC ≈ 1 USD ≈ 4 PLN | Zastanów się nad realną kwotą
                       </p>
                     </div>
@@ -713,7 +713,7 @@ export default function CreateCampaignPage() {
                     <select
                       value={formData.duration}
                       onChange={(e) => handleInputChange('duration', e.target.value)}
-                      className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-bold text-lg ${
+                      className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-[#10b981] focus:border-[#10b981] font-bold text-lg ${
                         errors.duration ? 'border-red-500 bg-red-50' : 'border-gray-300'
                       }`}
                     >
@@ -740,7 +740,7 @@ export default function CreateCampaignPage() {
                       value={formData.contactInfo}
                       onChange={(e) => handleInputChange('contactInfo', e.target.value)}
                       placeholder="Email lub numer telefonu do kontaktu"
-                      className="w-full px-5 py-4 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-medium text-lg"
+                      className="w-full px-5 py-4 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-[#10b981] focus:border-[#10b981] font-medium text-lg"
                     />
                     <p className="mt-1 text-sm text-gray-500">
                       Darczyńcy będą mogli skontaktować się z Tobą w sprawie zbiórki
@@ -816,7 +816,7 @@ export default function CreateCampaignPage() {
                   </div>
 
                   <label className={`flex items-start p-5 border-2 rounded-xl cursor-pointer transition-all ${
-                    errors.agreeTerms ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-green-300'
+                    errors.agreeTerms ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-[#10b981]'
                   }`}>
                     <input
                       type="checkbox"
@@ -833,7 +833,7 @@ export default function CreateCampaignPage() {
                   )}
 
                   <label className={`flex items-start p-5 border-2 rounded-xl cursor-pointer transition-all ${
-                    errors.agreeDataProcessing ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-green-300'
+                    errors.agreeDataProcessing ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-[#10b981]'
                   }`}>
                     <input
                       type="checkbox"
@@ -863,7 +863,7 @@ export default function CreateCampaignPage() {
                       creatorStatus === 'notAllowed' ||
                       creatorStatus === 'loading'
                     }
-                    className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-5 px-8 rounded-xl transition-all duration-300 transform hover:scale-[1.02] disabled:hover:scale-100 text-xl shadow-lg"
+                    className="w-full bg-[#10b981] hover:bg-[#10b981] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-5 px-8 rounded-xl transition-all duration-300 transform hover:scale-105 disabled:hover:scale-100 text-xl shadow-lg hover:shadow-[0_0_25px_rgba(16,185,129,0.45)]"
                   >
                     {!creationEnabled
                       ? 'Tworzenie wyłączone'
@@ -920,7 +920,7 @@ export default function CreateCampaignPage() {
                 </button>
                 <button
                   onClick={handleNext}
-                  className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg transition-all duration-300 text-lg"
+                  className="px-8 py-3 bg-[#10b981] hover:bg-[#10b981] text-white font-bold rounded-lg transition-all duration-300 text-lg transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]"
                 >
                   Dalej →
                 </button>
@@ -1020,13 +1020,13 @@ export default function CreateCampaignPage() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <a 
                 href="/contact" 
-                className="bg-white text-green-600 font-bold py-3 px-6 rounded-lg hover:shadow-md transition-all duration-300 border-2 border-green-200"
+                className="bg-white text-green-600 font-bold py-3 px-6 rounded-lg hover:shadow-md transition-all duration-300 border-2 border-green-200 transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]"
               >
                 📧 Skontaktuj się z nami
               </a>
               <a 
                 href="/white-paper" 
-                className="bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition-all duration-300"
+                className="bg-[#10b981] text-white font-bold py-3 px-6 rounded-lg hover:bg-[#10b981] transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]"
               >
                 📖 Przeczytaj dokumentację
               </a>

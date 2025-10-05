@@ -2,11 +2,16 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { useAccount } from 'wagmi';
+import { useAccount, useReadContract, useReadContracts } from 'wagmi';
+import { ROUTER_ADDRESS } from '../../blockchain/contracts';
+import { poliDaoRouterAbi } from '../../blockchain/routerAbi';
+import { poliDaoCoreAbi } from '../../blockchain/coreAbi';
+import { poliDaoAnalyticsAbi } from '../../blockchain/analyticsAbi';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { useGetAllProposals } from '../../hooks/usePoliDao';
 import { useFundraisersModular } from '../../hooks/useFundraisersModular';
+import CampaignCard from '../../components/CampaignCard';
 
 interface Fundraiser {
   id: bigint;
@@ -46,6 +51,133 @@ export default function AccountPage() {
     error: proposalsError 
   } = useGetAllProposals();
 
+  // Resolve Core and Analytics module
+  const { data: coreAddress } = useReadContract({
+    address: ROUTER_ADDRESS,
+    abi: poliDaoRouterAbi,
+    functionName: 'coreContract'
+  });
+
+  const { data: analyticsAddress } = useReadContract({
+    address: coreAddress as `0x${string}` | undefined,
+    abi: poliDaoCoreAbi,
+    functionName: 'analyticsModule',
+    query: { enabled: !!coreAddress }
+  });
+
+  // Router: list user's donations globally (ids[], amounts[])
+  const { data: userDonationsTuple } = useReadContract({
+    address: ROUTER_ADDRESS,
+    abi: poliDaoRouterAbi,
+    functionName: 'listUserDonations',
+    args: [address ?? '0x0000000000000000000000000000000000000000', 0n, 1000n],
+    query: { enabled: !!address }
+  });
+
+  // Derived: unique donated fundraisers + per-fundraiser donated sum for this user (bigint)
+  const donatedPerFundraiser = React.useMemo(() => {
+    const res = new Map<string, bigint>();
+    const ids = (userDonationsTuple as any)?.[0] as bigint[] | undefined;
+    const amounts = (userDonationsTuple as any)?.[1] as bigint[] | undefined;
+    if (ids && amounts && ids.length === amounts.length) {
+      for (let i = 0; i < ids.length; i++) {
+        const k = (ids[i] ?? 0n).toString();
+        res.set(k, (res.get(k) ?? 0n) + (amounts[i] ?? 0n));
+      }
+    }
+    return res;
+  }, [userDonationsTuple]);
+
+  const donatedFundraiserIds = React.useMemo(
+    () => Array.from(donatedPerFundraiser.keys()).map((k) => BigInt(k)),
+    [donatedPerFundraiser]
+  );
+
+  // Analytics: donors count for user's own fundraisers
+  const donorsCountContracts = React.useMemo(() => {
+    if (!analyticsAddress || !campaigns || campaigns.length === 0) return [];
+    const mine = campaigns.filter((f: any) => f.creator?.toLowerCase?.() === address?.toLowerCase?.());
+    return mine.map((f: any) => ({
+      address: analyticsAddress as `0x${string}`,
+      abi: poliDaoAnalyticsAbi,
+      functionName: 'getDonorsCount',
+      args: [BigInt(f.id)]
+    }));
+  }, [analyticsAddress, campaigns, address]);
+
+  const { data: donorsCountResults } = useReadContracts({
+    contracts: donorsCountContracts,
+    query: { enabled: donorsCountContracts.length > 0 }
+  });
+
+  const donorsCountById = React.useMemo(() => {
+    const map = new Map<string, number>();
+    if (!donorsCountResults) return map;
+    // align with mine order
+    const mine = (campaigns || []).filter((f: any) => f.creator?.toLowerCase?.() === address?.toLowerCase?.());
+    donorsCountResults.forEach((r, idx) => {
+      const fid = mine[idx]?.id;
+      if (!fid) return;
+      const val = (r as any)?.result as bigint | undefined;
+      map.set(fid.toString(), Number(val ?? 0n));
+    });
+    return map;
+  }, [donorsCountResults, campaigns, address]);
+
+  // Router.canRefund for campaigns the user donated to (limited to first 50 to avoid overload)
+  const refundCheckContracts = React.useMemo(() => {
+    if (!address || donatedFundraiserIds.length === 0) return [];
+    return donatedFundraiserIds.slice(0, 50).map((fid) => ({
+      address: ROUTER_ADDRESS,
+      abi: poliDaoRouterAbi,
+      functionName: 'canRefund',
+      args: [fid, address as `0x${string}`]
+    }));
+  }, [donatedFundraiserIds, address]);
+
+  const { data: refundChecks } = useReadContracts({
+    contracts: refundCheckContracts,
+    query: { enabled: refundCheckContracts.length > 0 }
+  });
+
+  // KPIs: totals and available refunds count
+  const [totalDonationsCount, setTotalDonationsCount] = useState<number>(0);
+  const [totalDonationsSum, setTotalDonationsSum] = useState<string>('0');
+  const [availableRefundsCount, setAvailableRefundsCount] = useState<number>(0);
+
+  useEffect(() => {
+    // count from listUserDonations (length)
+    const ids = (userDonationsTuple as any)?.[0] as bigint[] | undefined;
+    const amounts = (userDonationsTuple as any)?.[1] as bigint[] | undefined;
+    setTotalDonationsCount(Array.isArray(ids) ? ids.length : 0);
+
+    // sum amounts (assume USDC 6 decimals as platform-default)
+    if (Array.isArray(amounts)) {
+      const sum = amounts.reduce((acc, v) => acc + (v ?? 0n), 0n);
+      const human = Number(sum) / 1_000_000; // USDC
+      setTotalDonationsSum(`${human.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC`);
+    } else {
+      setTotalDonationsSum('0');
+    }
+  }, [userDonationsTuple]);
+
+  useEffect(() => {
+    if (!refundChecks) {
+      setAvailableRefundsCount(0);
+      return;
+    }
+    const count = refundChecks.reduce((acc, r) => {
+      const tuple = (r as any)?.result;
+      const can = Array.isArray(tuple) ? Boolean(tuple[0]) : Boolean((tuple as any)?.canRefundResult);
+      return acc + (can ? 1 : 0);
+    }, 0);
+    setAvailableRefundsCount(count);
+  }, [refundChecks]);
+
+  // Helper: format donation amount assuming USDC (6 decimals)
+  const formatUsdc = (v: bigint) =>
+    (Number(v) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 }) + ' USDC';
+
   // Filtruj kampanie użytkownika
   const userFundraisers = campaigns?.filter(campaign => 
     campaign.creator.toLowerCase() === address?.toLowerCase()
@@ -58,6 +190,17 @@ export default function AccountPage() {
 
   // Symulacja uprawnień (użyj prawdziwego hooka gdy będzie dostępny)
   const canPropose = true; // Zastąp właściwym hookiem
+
+  // Przydatne zbiory (np. do Approvals) – PRZYWRÓCONE
+  const uniqueTokens = React.useMemo(() => {
+    return Array.from(
+      new Set(
+        (campaigns || []).map((f: any) =>
+          typeof f.token === 'string' ? f.token.toLowerCase() : f.token
+        )
+      )
+    ).filter(Boolean) as string[];
+  }, [campaigns]);
 
   // Funkcja do formatowania tokena
   const formatTokenAmount = (amount: bigint, token: string) => {
@@ -111,27 +254,9 @@ export default function AccountPage() {
 
   // Kontrakty (placeholdery/env)
   const CORE_SPENDER_ADDRESS = process.env.NEXT_PUBLIC_CORE_ADDRESS ?? '0xCoreSpender...';
-  const ROUTER_ADDRESS = process.env.NEXT_PUBLIC_ROUTER_ADDRESS ?? '0xRouter...';
+  const ROUTER_ADDRESS_ENV = process.env.NEXT_PUBLIC_ROUTER_ADDRESS;
 
-  // Placeholder metryk (TODO: podłącz do eventów i odczytów on-chain)
-  const [totalDonationsCount, setTotalDonationsCount] = useState<number>(0);
-  const [totalDonationsSum, setTotalDonationsSum] = useState<string>('0');
-  const [availableRefundsCount, setAvailableRefundsCount] = useState<number>(0);
-
-  useEffect(() => {
-    // TODO:
-    // - Zeventuj Core.DonationMade → zlicz liczbę i sumę wpłat usera
-    // - Sprawdź canRefund per kampania → zsumuj dostępne refundy
-    // - Rozważ pobranie historii z modułu Refunds (ClaimRefund/RefundStarted)
-  }, [address]);
-
-  // Przydatne zbiory (np. do Approvals)
-  const uniqueTokens = Array.from(
-    new Set(
-      (campaigns || []).map((f: any) => (typeof f.token === 'string' ? f.token.toLowerCase() : f.token))
-    )
-  ).filter(Boolean);
-
+  // Error States
   const loading = campaignsLoading || proposalsLoading;
 
   return (
@@ -144,7 +269,8 @@ export default function AccountPage() {
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-8">
             <div className="flex items-center space-x-6">
-              <div className="w-24 h-24 bg-green-600 rounded-3xl flex items-center justify-center text-white text-2xl font-bold ring-4 ring-green-100 shadow-lg">
+              {/* Avatar tile */}
+              <div className="w-24 h-24 bg-[#10b981] rounded-3xl flex items-center justify-center text-white text-2xl font-bold ring-4 ring-[#10b981]/20 shadow-lg">
                 {address?.slice(2, 4).toUpperCase()}
               </div>
               <div className="flex-1">
@@ -156,13 +282,13 @@ export default function AccountPage() {
                 </p>
                 <div className="flex items-center space-x-4 mt-4">
                   <div className="flex items-center space-x-2">
-                    <span className="w-3 h-3 bg-green-500 rounded-full"></span>
+                    <span className="w-3 h-3 bg-[#10b981] rounded-full"></span>
                     <span className="text-sm text-gray-700">Portfel połączony</span>
                   </div>
                   {canPropose && (
                     <div className="flex items-center space-x-2">
                       {/* changed color and label to match green/white theme */}
-                      <span className="w-3 h-3 bg-green-600 rounded-full"></span>
+                      <span className="w-3 h-3 bg-[#10b981] rounded-full"></span>
                       <span className="text-sm text-gray-700">Uprawniony do tworzenia głosowań</span>
                     </div>
                   )}
@@ -233,8 +359,8 @@ export default function AccountPage() {
               onClick={() => setActiveTab('dashboard')}
               className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
                 activeTab === 'dashboard'
-                  ? 'bg-green-600 text-white rounded-tl-3xl'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-green-50'
+                  ? 'bg-[#10b981] text-white rounded-tl-3xl'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-[#10b981]/10'
               }`}
             >
               🧭 Dashboard
@@ -243,8 +369,8 @@ export default function AccountPage() {
               onClick={() => setActiveTab('donations')}
               className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
                 activeTab === 'donations'
-                  ? 'bg-green-600 text-white'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-green-50'
+                  ? 'bg-[#10b981] text-white'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-[#10b981]/10'
               }`}
             >
               💝 Wpłaty
@@ -253,8 +379,8 @@ export default function AccountPage() {
               onClick={() => setActiveTab('approvals')}
               className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
                 activeTab === 'approvals'
-                  ? 'bg-green-600 text-white'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-green-50'
+                  ? 'bg-[#10b981] text-white'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-[#10b981]/10'
               }`}
             >
               ✅ Zgody (Approvals)
@@ -263,8 +389,8 @@ export default function AccountPage() {
               onClick={() => setActiveTab('refunds')}
               className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
                 activeTab === 'refunds'
-                  ? 'bg-green-600 text-white'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-green-50'
+                  ? 'bg-[#10b981] text-white'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-[#10b981]/10'
               }`}
             >
               ♻️ Refundy
@@ -273,8 +399,8 @@ export default function AccountPage() {
               onClick={() => setActiveTab('fundraisers')}
               className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
                 activeTab === 'fundraisers'
-                  ? 'bg-green-600 text-white'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-green-50'
+                  ? 'bg-[#10b981] text-white'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-[#10b981]/10'
               }`}
             >
               🎯 Moje zbiórki
@@ -283,8 +409,8 @@ export default function AccountPage() {
               onClick={() => setActiveTab('activity')}
               className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
                 activeTab === 'activity'
-                  ? 'bg-green-600 text-white'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-green-50'
+                  ? 'bg-[#10b981] text-white'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-[#10b981]/10'
               }`}
             >
               🧾 Aktywność
@@ -294,8 +420,8 @@ export default function AccountPage() {
                 onClick={() => setActiveTab('proposals')}
                 className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
                   activeTab === 'proposals'
-                    ? 'bg-green-600 text-white rounded-tr-3xl'
-                    : 'text-gray-700 hover:text-gray-900 hover:bg-green-50'
+                    ? 'bg-[#10b981] text-white rounded-tr-3xl'
+                    : 'text-gray-700 hover:text-gray-900 hover:bg-[#10b981]/10'
                 }`}
               >
                 🗳️ Moje propozycje ({userProposals.length})
@@ -315,7 +441,7 @@ export default function AccountPage() {
             </div>
           ) : (
             <>
-              {/* NOWE: Dashboard */}
+              {/* Dashboard with real on-chain KPIs */}
               {activeTab === 'dashboard' && (
                 <div className="space-y-8">
                   <h2 className="text-3xl font-bold text-gray-900">🧭 Dashboard</h2>
@@ -344,7 +470,7 @@ export default function AccountPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm text-gray-600">Router</p>
-                        <p className="font-mono text-gray-900">{ROUTER_ADDRESS}</p>
+                        <p className="font-mono text-gray-900">{ROUTER_ADDRESS_ENV ?? ROUTER_ADDRESS}</p>
                       </div>
                       <div>
                         <p className="text-sm text-gray-600">Core (spender do approve)</p>
@@ -367,8 +493,9 @@ export default function AccountPage() {
                                 Token: {(f.token || '').slice(0, 6)}...{(f.token || '').slice(-4)}
                               </p>
                             </div>
+                            {/* Status chips */}
                             <span className={`px-3 py-1 rounded-full text-sm ${
-                              timeLeft.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                              timeLeft.isActive ? 'bg-[#10b981]/10 text-[#10b981]' : 'bg-gray-100 text-gray-800'
                             }`}>{timeLeft.text}</span>
                           </div>
                         );
@@ -467,14 +594,14 @@ export default function AccountPage() {
                 </div>
               )}
 
-              {/* Fundraisers Tab (zostaje jak było) */}
+              {/* Fundraisers tab: render using CampaignCard + donors count from Analytics */}
               {activeTab === 'fundraisers' && (
                 <div>
                   <div className="flex items-center justify-between mb-8">
                     <h2 className="text-3xl font-bold text-gray-900">🎯 Moje zbiórki</h2>
                     <a 
                       href="/create-campaign"
-                      className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-2xl transition-all duration-300 transform hover:scale-105 inline-block"
+                      className="bg-gradient-to-r from-[#10b981] to-blue-600 hover:from-[#10b981] hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-2xl transition-all duration-300 transform hover:scale-105 inline-block"
                     >
                       ➕ Utwórz zbiórkę
                     </a>
@@ -482,61 +609,33 @@ export default function AccountPage() {
 
                   {userFundraisers.length > 0 ? (
                     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                      {userFundraisers.map((fundraiser) => {
-                        const timeLeft = getTimeLeft(fundraiser.endDate ?? 0n);
-                        const progress = fundraiser.isFlexible 
-                          ? 0 
-                          : (Number(fundraiser.raisedAmount ?? 0n) / Math.max(Number(fundraiser.goalAmount ?? 0n), 1)) * 100;
-
+                      {userFundraisers.map((fund: any, idx: number) => {
+                        const mappedCampaign = {
+                          campaignId: fund.id.toString(),
+                          targetAmount: fund.goalAmount ?? 0n,
+                          raisedAmount: fund.raisedAmount ?? 0n,
+                          creator: fund.creator,
+                          token: fund.token,
+                          endTime: fund.endDate ?? 0n,
+                          isFlexible: fund.isFlexible
+                        };
+                        const donorsCount = donorsCountById.get(fund.id.toString()) ?? 0;
+                        const metadata = {
+                          title: fund.title && fund.title.length > 0
+                            ? fund.title
+                            : fund.isFlexible ? `Elastyczna kampania #${fund.id}` : `Zbiórka #${fund.id}`,
+                          description: fund.description && fund.description.length > 0
+                            ? fund.description.slice(0, 140)
+                            : `Donatorów: ${donorsCount.toLocaleString('pl-PL')}`,
+                          image: "/images/zbiorka.png"
+                        };
                         return (
-                          <div key={fundraiser.id.toString()} className="bg-white/60 rounded-2xl p-6 border border-gray-200 hover:shadow-lg transition-all duration-300">
-                            <div className="flex items-center justify-between mb-4">
-                              <h3 className="text-xl font-bold text-gray-900">
-                                {fundraiser.isFlexible ? "🌊 Kampania" : "🎯 Zbiórka"} #{fundraiser.id.toString()}
-                              </h3>
-                              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                                timeLeft.isActive 
-                                  ? 'bg-green-100 text-green-800' 
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}>
-                                {timeLeft.text}
+                          <div key={fund.id.toString()} className="bg-white/60 rounded-2xl border hover:shadow-lg transition-all duration-300">
+                            <CampaignCard campaign={mappedCampaign} metadata={metadata} />
+                            <div className="px-4 pb-4 -mt-2">
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-[#10b981]/10 text-[#10b981]">
+                                👥 Donatorzy: {donorsCount.toLocaleString('pl-PL')}
                               </span>
-                            </div>
-
-                            <div className="space-y-3">
-                              <div>
-                                <p className="text-sm text-gray-600">Zebrano:</p>
-                                <p className="text-lg font-semibold text-gray-900">
-                                  {formatTokenAmount(fundraiser.raisedAmount ?? 0n, fundraiser.token)}
-                                </p>
-                              </div>
-
-                              {!fundraiser.isFlexible && (
-                                <div>
-                                  <p className="text-sm text-gray-600">Cel:</p>
-                                  <p className="text-lg font-semibold text-gray-900">
-                                    {formatTokenAmount(fundraiser.goalAmount ?? 0n, fundraiser.token)}
-                                  </p>
-                                  <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
-                                    <div 
-                                      className="bg-gradient-to-r from-green-500 to-blue-500 h-2 rounded-full transition-all duration-500"
-                                      style={{ width: `${Math.min(progress, 100)}%` }}
-                                    />
-                                  </div>
-                                  <p className="text-sm text-gray-600 mt-1">{progress.toFixed(1)}% celu</p>
-                                </div>
-                              )}
-
-                              <div className="flex space-x-3 pt-4">
-                                <button className="flex-1 bg-blue-100 hover:bg-blue-200 text-blue-800 font-medium py-2 px-4 rounded-xl transition-colors">
-                                  📊 Szczegóły
-                                </button>
-                                {timeLeft.isActive && (
-                                  <button className="flex-1 bg-green-100 hover:bg-green-200 text-green-800 font-medium py-2 px-4 rounded-xl transition-colors">
-                                    💰 Wypłać
-                                  </button>
-                                )}
-                              </div>
                             </div>
                           </div>
                         );
@@ -553,7 +652,7 @@ export default function AccountPage() {
                       </p>
                       <a 
                         href="/create-campaign"
-                        className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white font-semibold py-4 px-8 rounded-2xl transition-all duration-300 transform hover:scale-105 inline-block"
+                        className="bg-gradient-to-r from-[#10b981] to-blue-600 hover:from-[#10b981] hover:to-blue-700 text-white font-semibold py-4 px-8 rounded-2xl transition-all duration-300 transform hover:scale-105 inline-block"
                       >
                         🚀 Utwórz pierwszą zbiórkę
                       </a>
@@ -606,7 +705,7 @@ export default function AccountPage() {
                               </div>
                               <span className={`px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ml-4 ${
                                 timeLeft.isActive 
-                                  ? 'bg-green-100 text-green-800' 
+                                  ? 'bg-[#10b981]/10 text-[#10b981]' 
                                   : 'bg-gray-100 text-gray-800'
                               }`}>
                                 {timeLeft.text}

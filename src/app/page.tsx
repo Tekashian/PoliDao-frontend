@@ -184,9 +184,17 @@ function MUIProposalCard({ proposal }: { proposal: Proposal }) {
           <Stack direction="row" spacing={1}>
             <Button
               variant="contained"
-              color="success"
-              size="small"
-              sx={{ flex: 1, fontWeight: 600, textTransform: 'none', borderRadius: 2 }}
+              // unified green + hover scale + glow
+              sx={{ 
+                flex: 1, fontWeight: 600, textTransform: 'none', borderRadius: 2,
+                bgcolor: '#10b981',
+                '&:hover': {
+                  bgcolor: '#10b981',
+                  transform: 'scale(1.03)',
+                  boxShadow: '0 0 18px rgba(16,185,129,0.45)',
+                },
+                transition: 'all .2s ease',
+              }}
               startIcon={<CheckCircle />}
               onClick={(e) => handleVote(e, true)}
             >
@@ -195,8 +203,11 @@ function MUIProposalCard({ proposal }: { proposal: Proposal }) {
             <Button
               variant="contained"
               color="error"
-              size="small"
-              sx={{ flex: 1, fontWeight: 600, textTransform: 'none', borderRadius: 2 }}
+              sx={{
+                flex: 1, fontWeight: 600, textTransform: 'none', borderRadius: 2,
+                '&:hover': { transform: 'scale(1.03)' },
+                transition: 'all .2s ease',
+              }}
               startIcon={<Cancel />}
               onClick={(e) => handleVote(e, false)}
             >
@@ -207,9 +218,13 @@ function MUIProposalCard({ proposal }: { proposal: Proposal }) {
               size="small"
               onClick={(e) => {
                 e.stopPropagation();
-                router.push(`/votes/${proposal.id.toString()}`); // ✅ ZMIENIONE
+                router.push(`/votes/${proposal.id.toString()}`);
               }}
-              sx={{ fontWeight: 600, textTransform: 'none', borderRadius: 2, minWidth: '80px' }}
+              sx={{ 
+                fontWeight: 600, textTransform: 'none', borderRadius: 2, minWidth: '80px',
+                '&:hover': { transform: 'scale(1.03)', boxShadow: '0 0 12px rgba(16,185,129,0.35)' },
+                transition: 'all .2s ease',
+              }}
             >
               <VisibilityOutlined fontSize="small" />
             </Button>
@@ -221,9 +236,13 @@ function MUIProposalCard({ proposal }: { proposal: Proposal }) {
             size="small"
             onClick={(e) => {
               e.stopPropagation();
-              router.push(`/votes/${proposal.id.toString()}`); // ✅ ZMIENIONE
+              router.push(`/votes/${proposal.id.toString()}`);
             }}
-            sx={{ textTransform: 'none', borderRadius: 2 }}
+            sx={{ 
+              textTransform: 'none', borderRadius: 2,
+              '&:hover': { transform: 'scale(1.03)', boxShadow: '0 0 12px rgba(16,185,129,0.35)' },
+              transition: 'all .2s ease',
+            }}
             startIcon={<VisibilityOutlined />}
           >
             Zobacz szczegóły
@@ -438,13 +457,13 @@ function FuturisticCarousel({
                   borderColor: canScrollLeft 
                     ? alpha(theme.palette.primary.main, 0.3) 
                     : alpha(theme.palette.divider, 0.1),
+                  boxShadow: canScrollLeft ? '0 0 18px rgba(16,185,129,0.45)' : 'none',
                 },
                 transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
               }}
             >
               <ChevronLeft />
             </IconButton>
-            
             <IconButton
               onClick={() => scroll('right')}
               disabled={!canScrollRight}
@@ -467,6 +486,7 @@ function FuturisticCarousel({
                   borderColor: canScrollRight 
                     ? alpha(theme.palette.primary.main, 0.3) 
                     : alpha(theme.palette.divider, 0.1),
+                  boxShadow: canScrollRight ? '0 0 18px rgba(16,185,129,0.45)' : 'none',
                 },
                 transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
               }}
@@ -746,9 +766,9 @@ export default function HomePage() {
               onClick={() => setActiveTab("glosowania")}
               className={`py-2 px-4 -mb-px border-b-2 font-medium ${
                 activeTab === "glosowania"
-                  ? "border-blue-500 text-blue-500"
+                  ? "border-[#10b981] text-[#10b981]"
                   : "border-transparent text-gray-600"
-              }`}
+              } transform transition-transform hover:scale-105`}
             >
               🗳️ Wszystkie głosowania ({proposalCount})
             </button>
@@ -756,9 +776,9 @@ export default function HomePage() {
               onClick={() => setActiveTab("zbiorki")}
               className={`py-2 px-4 -mb-px border-b-2 font-medium ${
                 activeTab === "zbiorki"
-                  ? "border-green-500 text-green-500"
+                  ? "border-[#10b981] text-[#10b981]"
                   : "border-transparent text-gray-600"
-              }`}
+              } transform transition-transform hover:scale-105`}
             >
               🎯 Wszystkie kampanie i zbiórki ({campaignCount})
             </button>
@@ -793,8 +813,8 @@ export default function HomePage() {
                     className={`px-4 py-2 rounded-lg transition-colors ${
                       proposalsLoading
                         ? 'bg-gray-400 cursor-not-allowed'
-                        : 'bg-blue-500 hover:bg-blue-600'
-                    } text-white`}
+                        : 'bg-[#10b981] hover:bg-[#10b981]'
+                    } text-white transform transition-transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]`}
                   >
                     {proposalsLoading ? '⏳ Ładowanie...' : '🔄 Odśwież'}
                   </button>
@@ -852,10 +872,8 @@ export default function HomePage() {
                     onClick={refetchCampaigns}
                     disabled={campaignsLoading}
                     className={`px-4 py-2 rounded-lg transition-colors ${
-                      campaignsLoading
-                        ? 'bg-gray-400 cursor-not-allowed'
-                        : 'bg-green-500 hover:bg-green-600'
-                    } text-white`}
+                      campaignsLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#10b981] hover:bg-[#10b981]'
+                    } text-white transform transition-transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]`}
                   >
                     {campaignsLoading ? '⏳ Ładowanie...' : '🔄 Odśwież'}
                   </button>
@@ -867,8 +885,8 @@ export default function HomePage() {
                     onClick={() => setCampaignFilter("all")}
                     className={`py-3 px-6 -mb-px border-b-2 font-medium transition-colors ${
                       campaignFilter === "all"
-                        ? "border-green-500 text-green-600 bg-green-50"
-                        : "border-transparent text-gray-600 hover:text-green-600"
+                        ? "border-[#10b981] text-[#10b981] bg-[#10b981]/10"
+                        : "border-transparent text-gray-600 hover:text-[#10b981]"
                     }`}
                   >
                     📊 Wszystkie ({campaigns ? campaigns.length : 0})
@@ -877,8 +895,8 @@ export default function HomePage() {
                     onClick={() => setCampaignFilter("target")}
                     className={`py-3 px-6 -mb-px border-b-2 font-medium transition-colors ${
                       campaignFilter === "target"
-                        ? "border-orange-500 text-orange-600 bg-orange-50"
-                        : "border-transparent text-gray-600 hover:text-orange-600"
+                        ? "border-[#10b981] text-[#10b981] bg-[#10b981]/10"
+                        : "border-transparent text-gray-600 hover:text-[#10b981]"
                     }`}
                   >
                     🎯 Zbiórki ({campaigns ? campaigns.filter(c => !c.isFlexible).length : 0})
@@ -887,8 +905,8 @@ export default function HomePage() {
                     onClick={() => setCampaignFilter("flexible")}
                     className={`py-3 px-6 -mb-px border-b-2 font-medium transition-colors ${
                       campaignFilter === "flexible"
-                        ? "border-blue-500 text-blue-600 bg-blue-50"
-                        : "border-transparent text-gray-600 hover:text-blue-600"
+                        ? "border-[#10b981] text-[#10b981] bg-[#10b981]/10"
+                        : "border-transparent text-gray-600 hover:text-[#10b981]"
                     }`}
                   >
                     🌊 Kampanie ({campaigns ? campaigns.filter(c => c.isFlexible).length : 0})
@@ -980,7 +998,7 @@ export default function HomePage() {
                         </p>
                         <button
                           onClick={() => setCampaignFilter("all")}
-                          className="mt-3 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
+                          className="mt-3 px-4 py-2 bg-[#10b981] hover:bg-[#10b981] text-white rounded-lg transition-colors transform transition-transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]"
                         >
                           🔄 Pokaż wszystkie projekty
                         </button>

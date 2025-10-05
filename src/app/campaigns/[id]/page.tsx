@@ -738,7 +738,7 @@ export default function CampaignPage() {
         <Container maxWidth="xl" sx={{ pt: 3, pb: 6 }}>
           <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "50vh" }}>
             <Box sx={{ textAlign: 'center' }}>
-              <CircularProgress size={60} sx={{ color: '#16a34a', mb: 2 }} />
+              <CircularProgress size={60} sx={{ color: '#10b981', mb: 2 }} />
               <Typography variant="h6" color="text.secondary">
                 Ładowanie kampanii #{campaignId}...
               </Typography>
@@ -788,7 +788,7 @@ export default function CampaignPage() {
     const pts = data.map((v, i) => `${pad + i * dx},${scaleY(v)}`).join(' ');
     return (
       <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h}>
-        <polyline fill="none" stroke="#16a34a" strokeWidth="2" points={pts} />
+        <polyline fill="none" stroke="#10b981" strokeWidth="2" points={pts} />
       </svg>
     );
   }
@@ -887,13 +887,13 @@ export default function CampaignPage() {
             <ArrowBack />
           </IconButton>
           <Typography variant="body2" color="text.secondary">
-            <span style={{ color: '#16a34a', fontWeight: 500 }}>PoliDAO</span> / Kampanie / #{campaignData.id}
+            <span style={{ color: '#10b981', fontWeight: 500 }}>PoliDAO</span> / Kampanie / #{campaignData.id}
           </Typography>
           <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
             <Typography variant="caption" color="text.secondary">
               Ostatnie odświeżenie: {new Date(lastRefreshTime).toLocaleTimeString('pl-PL')}
             </Typography>
-            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#16a34a' }} />
+            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#10b981' }} />
           </Box>
         </Box>
 
@@ -912,7 +912,7 @@ export default function CampaignPage() {
                 label={isActive ? "AKTYWNA!" : "ZAKOŃCZONA"}
                 sx={{ 
                   position: "absolute", top: 20, left: 20,
-                  bgcolor: isActive ? '#16a34a' : '#dc2626',
+                  bgcolor: isActive ? '#10b981' : '#dc2626',
                   color: 'white', fontWeight: 700, fontSize: '0.9rem', px: 2, py: 1, zIndex: 10
                 }}
               />
@@ -964,7 +964,7 @@ export default function CampaignPage() {
                   />
                   <button
                     onClick={handleAddUpdate}
-                    className="w-full py-2 text-base font-medium text-white bg-[#68CC89] hover:bg-[#5FBF7A] rounded-md"
+                    className="w-full py-2 text-base font-medium text-white bg-[#10b981] hover:bg-[#10b981] rounded-md transform transition-transform hover:scale-105 shadow-md hover:shadow-[0_0_18px_rgba(16,185,129,0.45)]"
                   >
                     Dodaj
                   </button>
@@ -1051,7 +1051,7 @@ export default function CampaignPage() {
 
               <div className="px-6 pb-4">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-lg font-medium text-green-600">
+                  <p className="text-lg font-medium text-[#10b981]">
                     {raised.toLocaleString('pl-PL')} {displayTokenSymbol}
                   </p>
                 </div>
@@ -1087,7 +1087,7 @@ export default function CampaignPage() {
                     </p>
                     <div className="mt-2 w-full bg-gray-100 rounded-full h-3">
                       <div
-                        className="h-3 rounded-full bg-green-600 transition-all duration-1000 ease-out"
+                        className="h-3 rounded-full bg-[#10b981] transition-all duration-1000 ease-out"
                         style={{ width: `${Math.min(barWidth, 100)}%` }}
                       />
                     </div>
@@ -1129,7 +1129,7 @@ export default function CampaignPage() {
                   placeholder={`Kwota w ${displayTokenSymbol}`}
                   value={donateAmount}
                   onChange={e => setDonateAmount(e.target.value)}
-                  className="w-full px-3 py-3 border border-gray-200 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#16a34a] focus:border-transparent"
+                  className="w-full px-3 py-3 border border-gray-200 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#10b981] focus:border-transparent"
                 />
                 {userBalance !== undefined && (
                   <p className="mt-1 text-xs text-gray-500">
@@ -1153,7 +1153,7 @@ export default function CampaignPage() {
                   <button
                     onClick={() => setDonateOpen(true)}
                     disabled={isDonating || isDonationConfirming || isApproving || isApprovalConfirming}
-                    className="w-full py-3 text-lg font-semibold text-white bg-[#16a34a] hover:bg-[#15803d] rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                    className="w-full py-3 text-lg font-semibold text-white bg-[#10b981] hover:bg-[#10b981] rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]"
                   >
                     {isDonating || isDonationConfirming ? (
                       <div className="flex items-center justify-center gap-2">
@@ -1219,7 +1219,7 @@ export default function CampaignPage() {
       >
         <DialogTitle>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <VolunteerActivism sx={{ color: '#16a34a' }} />
+            <VolunteerActivism sx={{ color: '#10b981' }} />
             Wesprzyj kampanię #{campaignData.id}
           </Box>
         </DialogTitle>
@@ -1284,7 +1284,11 @@ export default function CampaignPage() {
             variant="contained"
             onClick={handleDonate}
             disabled={!donateAmount || Number(donateAmount) <= 0}
-            sx={{ bgcolor: '#16a34a', '&:hover': { bgcolor: '#15803d' } }}
+            sx={{ 
+              bgcolor: '#10b981', 
+              '&:hover': { bgcolor: '#10b981', transform: 'scale(1.03)', boxShadow: '0 0 18px rgba(16,185,129,0.45)' },
+              transition: 'all .2s ease',
+            }}
           >
             {isApproving || isApprovalConfirming ? 'Zatwierdzanie...' : 
              isDonating || isDonationConfirming ? 'Wpłacanie...' : 
@@ -1297,7 +1301,7 @@ export default function CampaignPage() {
       <Dialog open={shareOpen} onClose={() => setShareOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Share sx={{ color: '#16a34a' }} />
+            <Share sx={{ color: '#10b981' }} />
             Udostępnij kampanię
           </Box>
         </DialogTitle>
