@@ -12,6 +12,8 @@ import Footer from '../../components/Footer';
 import { useGetAllProposals } from '../../hooks/usePoliDao';
 import { useFundraisersModular } from '../../hooks/useFundraisersModular';
 import CampaignCard from '../../components/CampaignCard';
+// Fallback B: event scan
+import { Interface, JsonRpcProvider } from 'ethers';
 
 interface Fundraiser {
   id: bigint;
@@ -72,6 +74,23 @@ export default function AccountPage() {
     functionName: 'listUserDonations',
     args: [address ?? '0x0000000000000000000000000000000000000000', 0n, 1000n],
     query: { enabled: !!address }
+  });
+
+  // Fallback A: batch per-campaign donation reads (Router.getDonationAmount)
+  const donationAmountContracts = React.useMemo(() => {
+    if (!address || !campaigns || campaigns.length === 0) return [];
+    // Limit to first 200 to avoid RPC overload
+    return campaigns.slice(0, 200).map((f: any) => ({
+      address: ROUTER_ADDRESS,
+      abi: poliDaoRouterAbi,
+      functionName: 'getDonationAmount',
+      args: [BigInt(f.id), address as `0x${string}`]
+    }));
+  }, [address, campaigns]);
+
+  const { data: donationAmountResults } = useReadContracts({
+    contracts: donationAmountContracts,
+    query: { enabled: donationAmountContracts.length > 0 }
   });
 
   // Derived: unique donated fundraisers + per-fundraiser donated sum for this user (bigint)
@@ -140,669 +159,361 @@ export default function AccountPage() {
     query: { enabled: refundCheckContracts.length > 0 }
   });
 
+  // Map refund checks back to fundraiser ids (in order of donatedFundraiserIds)
+  const canRefundById = React.useMemo(() => {
+    const map = new Map<string, boolean>();
+    if (!refundChecks || donatedFundraiserIds.length === 0) return map;
+    const ids = donatedFundraiserIds.slice(0, 50);
+    ids.forEach((fid, idx) => {
+      const r = refundChecks[idx] as any;
+      const tuple = r?.result;
+      const can = Array.isArray(tuple) ? Boolean(tuple[0]) : Boolean(tuple?.canRefundResult);
+      map.set(fid.toString(), !!can);
+    });
+    return map;
+  }, [refundChecks, donatedFundraiserIds]);
+
+  // Fallback B: scan Core.DonationMade events for this user (count + sum)
+  const [eventTotals, setEventTotals] = useState<{ count: number; sumBase: bigint } | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    (async () => {
+      if (!address || !coreAddress) return;
+
+      const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL;
+      if (!rpcUrl) return;
+
+      try {
+        const provider = new JsonRpcProvider(rpcUrl);
+        const iface = new Interface(poliDaoCoreAbi as any);
+
+        const ev = (iface as any).getEvent?.('DonationMade')
+          ?? (iface.fragments.find((f: any) => f.type === 'event' && f.name === 'DonationMade'));
+        if (!ev) return;
+        const topic = (iface as any).getEventTopic
+          ? (iface as any).getEventTopic(ev)
+          : (iface as any).getEventTopic?.('DonationMade');
+
+        const startBlockEnv = process.env.NEXT_PUBLIC_CORE_START_BLOCK;
+        const fromBlock = startBlockEnv ? BigInt(startBlockEnv) : 0n;
+
+        // fetch all DonationMade logs, filter by donor locally (robust across ABI variants)
+        const logs = await provider.getLogs({
+          address: coreAddress as string,
+          fromBlock,
+          toBlock: 'latest',
+          topics: [topic],
+        });
+
+        let count = 0;
+        let sumBase = 0n;
+        for (const log of logs) {
+          try {
+            const decoded = iface.parseLog(log as any);
+            const args = decoded.args as any;
+            const donor = (args?.donor ?? args?.[1] ?? '').toLowerCase?.();
+            const amountRaw = (args?.amount ?? args?.[3] ?? 0n) as bigint;
+            if (donor && donor === address.toLowerCase()) {
+              count += 1;
+              sumBase += (amountRaw ?? 0n);
+            }
+          } catch {
+            // ignore decode error
+          }
+        }
+        if (!disposed) setEventTotals({ count, sumBase });
+      } catch {
+        if (!disposed) setEventTotals(null);
+      }
+    })();
+    return () => { disposed = true; };
+  }, [address, coreAddress]);
+
   // KPIs: totals and available refunds count
   const [totalDonationsCount, setTotalDonationsCount] = useState<number>(0);
   const [totalDonationsSum, setTotalDonationsSum] = useState<string>('0');
   const [availableRefundsCount, setAvailableRefundsCount] = useState<number>(0);
 
+  // Primary source: Router.listUserDonations
   useEffect(() => {
-    // count from listUserDonations (length)
     const ids = (userDonationsTuple as any)?.[0] as bigint[] | undefined;
     const amounts = (userDonationsTuple as any)?.[1] as bigint[] | undefined;
-    setTotalDonationsCount(Array.isArray(ids) ? ids.length : 0);
 
-    // sum amounts (assume USDC 6 decimals as platform-default)
-    if (Array.isArray(amounts)) {
+    if (Array.isArray(ids) && Array.isArray(amounts) && ids.length === amounts.length && ids.length > 0) {
+      setTotalDonationsCount(ids.length);
       const sum = amounts.reduce((acc, v) => acc + (v ?? 0n), 0n);
-      const human = Number(sum) / 1_000_000; // USDC
+      const human = Number(sum) / 1_000_000; // assume USDC 6 decimals
       setTotalDonationsSum(`${human.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC`);
-    } else {
-      setTotalDonationsSum('0');
+      return;
     }
+
+    // If Router returns nothing usable, clear (fallbacks will fill)
+    setTotalDonationsCount(0);
+    setTotalDonationsSum('0');
   }, [userDonationsTuple]);
 
+  // Fallback preference: Core events (accurate count) → per-campaign getDonationAmount (coverage)
   useEffect(() => {
-    if (!refundChecks) {
+    // Use events if have any matches
+    if (eventTotals && (eventTotals.count > 0 || eventTotals.sumBase > 0n)) {
+      setTotalDonationsCount(eventTotals.count);
+      const human = Number(eventTotals.sumBase) / 1_000_000; // assume USDC 6 decimals
+      setTotalDonationsSum(`${human.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC`);
+      return;
+    }
+
+    // Else aggregate per-campaign results
+    if (donationAmountResults && donationAmountResults.length > 0) {
+      let sum = 0n;
+      let nonZero = 0;
+      for (const r of donationAmountResults) {
+        const v = (r as any)?.result as bigint | undefined;
+        if (typeof v === 'bigint') {
+          sum += v;
+          if (v > 0n) nonZero += 1; // fixed parentheses
+        }
+      }
+      if (sum > 0n || nonZero > 0) {
+        setTotalDonationsCount(nonZero); // approximation of "number of donations" via number of campaigns with any donation
+        const human = Number(sum) / 1_000_000; // assume USDC 6 decimals
+        setTotalDonationsSum(`${human.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC`);
+      }
+    }
+  }, [eventTotals, donationAmountResults]);
+
+  // Compute availableRefundsCount from refundChecks
+  useEffect(() => {
+    if (!refundChecks || refundChecks.length === 0) {
       setAvailableRefundsCount(0);
       return;
     }
     const count = refundChecks.reduce((acc, r) => {
-      const tuple = (r as any)?.result;
-      const can = Array.isArray(tuple) ? Boolean(tuple[0]) : Boolean((tuple as any)?.canRefundResult);
+      const res = (r as any)?.result;
+      const can = Array.isArray(res) ? Boolean(res[0]) : Boolean(res?.canRefundResult);
       return acc + (can ? 1 : 0);
     }, 0);
     setAvailableRefundsCount(count);
   }, [refundChecks]);
 
-  // Helper: format donation amount assuming USDC (6 decimals)
-  const formatUsdc = (v: bigint) =>
-    (Number(v) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 }) + ' USDC';
-
-  // Filtruj kampanie użytkownika
-  const userFundraisers = campaigns?.filter(campaign => 
-    campaign.creator.toLowerCase() === address?.toLowerCase()
-  ) || [];
-
-  // Filtruj propozycje użytkownika  
-  const userProposals = proposals?.filter(proposal => 
-    proposal.creator.toLowerCase() === address?.toLowerCase()
-  ) || [];
-
-  // Symulacja uprawnień (użyj prawdziwego hooka gdy będzie dostępny)
-  const canPropose = true; // Zastąp właściwym hookiem
-
-  // Przydatne zbiory (np. do Approvals) – PRZYWRÓCONE
-  const uniqueTokens = React.useMemo(() => {
-    return Array.from(
-      new Set(
-        (campaigns || []).map((f: any) =>
-          typeof f.token === 'string' ? f.token.toLowerCase() : f.token
-        )
-      )
-    ).filter(Boolean) as string[];
-  }, [campaigns]);
-
-  // Funkcja do formatowania tokena
-  const formatTokenAmount = (amount: bigint, token: string) => {
-    const isUSDC = token.toLowerCase().includes('usdc');
-    const decimals = isUSDC ? 6 : 18;
-    const divisor = BigInt(10 ** decimals);
-    const formatted = Number(amount) / Number(divisor);
-    const symbol = isUSDC ? 'USDC' : 'ETH';
-    return `${formatted.toLocaleString()} ${symbol}`;
-  };
-
-  // Funkcja do obliczania czasu pozostałego
-  const getTimeLeft = (endTime: bigint) => {
-    const now = Math.floor(Date.now() / 1000);
-    const timeLeft = Number(endTime) - now;
-    
-    if (timeLeft <= 0) return { text: "Zakończone", isActive: false };
-    
-    const days = Math.floor(timeLeft / (24 * 60 * 60));
-    const hours = Math.floor((timeLeft % (24 * 60 * 60)) / 3600);
-    
-    if (days > 0) {
-      return { text: `${days}d ${hours}h`, isActive: true };
-    } else {
-      return { text: `${hours}h`, isActive: true };
-    }
-  };
-
-  if (!isConnected) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-        <Header />
-        <div className="flex items-center justify-center min-h-[600px]">
-          <div className="bg-white/80 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-12 text-center max-w-md mx-4">
-            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <span className="text-4xl">👤</span>
-            </div>
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">Portfel niepołączony</h2>
-            <p className="text-gray-600 mb-8">
-              Aby zobaczyć swoje konto, musisz najpierw połączyć portfel.
-            </p>
-            <button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3 px-8 rounded-2xl transition-all duration-300 transform hover:scale-105">
-              Połącz portfel
-            </button>
-          </div>
-        </div>
-        <Footer />
-      </div>
-    );
-  }
-
-  // Kontrakty (placeholdery/env)
-  const CORE_SPENDER_ADDRESS = process.env.NEXT_PUBLIC_CORE_ADDRESS ?? '0xCoreSpender...';
-  const ROUTER_ADDRESS_ENV = process.env.NEXT_PUBLIC_ROUTER_ADDRESS;
-
-  // Error States
-  const loading = campaignsLoading || proposalsLoading;
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+    <>
       <Header />
-      
-      {/* Hero Section */}
-      <div className="relative pt-20 pb-12 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 to-purple-600/10 backdrop-blur-3xl"></div>
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-8">
-            <div className="flex items-center space-x-6">
-              {/* Avatar tile */}
-              <div className="w-24 h-24 bg-[#10b981] rounded-3xl flex items-center justify-center text-white text-2xl font-bold ring-4 ring-[#10b981]/20 shadow-lg">
-                {address?.slice(2, 4).toUpperCase()}
-              </div>
-              <div className="flex-1">
-                <h1 className="text-4xl font-bold text-green-700 mb-2">
-                  👤 Moje Konto
-                </h1>
-                <p className="text-gray-600 text-lg font-mono">
-                  {address?.slice(0, 6)}...{address?.slice(-4)}
-                </p>
-                <div className="flex items-center space-x-4 mt-4">
-                  <div className="flex items-center space-x-2">
-                    <span className="w-3 h-3 bg-[#10b981] rounded-full"></span>
-                    <span className="text-sm text-gray-700">Portfel połączony</span>
-                  </div>
-                  {canPropose && (
-                    <div className="flex items-center space-x-2">
-                      {/* changed color and label to match green/white theme */}
-                      <span className="w-3 h-3 bg-[#10b981] rounded-full"></span>
-                      <span className="text-sm text-gray-700">Uprawniony do tworzenia głosowań</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+
+      <div className="container mx-auto px-4 py-8">
+        <div className="mb-4">
+          <h1 className="text-3xl font-bold">Moje konto</h1>
         </div>
-      </div>
 
-      {/* Stats Cards */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white/70 backdrop-blur-lg rounded-2xl shadow-lg border border-white/20 p-6 text-center">
-            <div className="w-12 h-12 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <span className="text-2xl">🎯</span>
-            </div>
-            <h3 className="text-2xl font-bold text-gray-900">{userFundraisers.length}</h3>
-            <p className="text-gray-600">Moje zbiórki</p>
-          </div>
-
-          <div className="bg-white/70 backdrop-blur-lg rounded-2xl shadow-lg border border-white/20 p-6 text-center">
-            <div className="w-12 h-12 bg-purple-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <span className="text-2xl">🗳️</span>
-            </div>
-            <h3 className="text-2xl font-bold text-gray-900">{userProposals.length}</h3>
-            <p className="text-gray-600">Moje propozycje</p>
-          </div>
-
-          <div className="bg-white/70 backdrop-blur-lg rounded-2xl shadow-lg border border-white/20 p-6 text-center">
-            {/* changed icon background to green */}
-            <div className="w-12 h-12 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <span className="text-2xl">{canPropose ? "✅" : "❌"}</span>
-            </div>
-            <h3 className="text-2xl font-bold text-gray-900">
-              {canPropose ? "Tak" : "Nie"}
-            </h3>
-            {/* renamed label */}
-            <p className="text-gray-600">Uprawnienie do tworzenia głosowań</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Error States */}
-      {(campaignsError || proposalsError) && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
-            <div className="flex items-center">
-              <span className="text-red-500 text-2xl mr-3">⚠️</span>
-              <div>
-                <h3 className="font-bold text-red-800">Błąd ładowania danych</h3>
-                <p className="text-red-700 text-sm mt-1">
-                  {campaignsError?.message || proposalsError?.message || 'Nie można połączyć się z kontraktem'}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
-        
-        {/* Tabs */}
-        <div className="bg-white/70 backdrop-blur-lg rounded-t-3xl shadow-xl border border-white/20 border-b-0">
-          <div className="flex flex-wrap">
+        <div className="mb-8">
+          <div className="flex space-x-4">
             <button
               onClick={() => setActiveTab('dashboard')}
-              className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
+              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${
                 activeTab === 'dashboard'
-                  ? 'bg-[#10b981] text-white rounded-tl-3xl'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-[#10b981]/10'
-              }`}
+                  ? 'bg-[#10b981] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-[#10b981]/10 hover:text-[#10b981]'
+              } transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]`}
             >
-              🧭 Dashboard
+              Dashboard
             </button>
             <button
               onClick={() => setActiveTab('donations')}
-              className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
+              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${
                 activeTab === 'donations'
-                  ? 'bg-[#10b981] text-white'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-[#10b981]/10'
-              }`}
+                  ? 'bg-[#10b981] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-[#10b981]/10 hover:text-[#10b981]'
+              } transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]`}
             >
-              💝 Wpłaty
+              Wspierane zbiórki
             </button>
             <button
               onClick={() => setActiveTab('approvals')}
-              className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
+              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${
                 activeTab === 'approvals'
-                  ? 'bg-[#10b981] text-white'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-[#10b981]/10'
-              }`}
+                  ? 'bg-[#10b981] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-[#10b981]/10 hover:text-[#10b981]'
+              } transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]`}
             >
-              ✅ Zgody (Approvals)
+              Zatwierdzenia
             </button>
             <button
               onClick={() => setActiveTab('refunds')}
-              className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
+              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${
                 activeTab === 'refunds'
-                  ? 'bg-[#10b981] text-white'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-[#10b981]/10'
-              }`}
+                  ? 'bg-[#10b981] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-[#10b981]/10 hover:text-[#10b981]'
+              } transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]`}
             >
-              ♻️ Refundy
+              Refundacje
             </button>
             <button
               onClick={() => setActiveTab('fundraisers')}
-              className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
+              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${
                 activeTab === 'fundraisers'
-                  ? 'bg-[#10b981] text-white'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-[#10b981]/10'
-              }`}
+                  ? 'bg-[#10b981] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-[#10b981]/10 hover:text-[#10b981]'
+              } transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]`}
             >
-              🎯 Moje zbiórki
+              Fundraisingi
+            </button>
+            <button
+              onClick={() => setActiveTab('proposals')}
+              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${
+                activeTab === 'proposals'
+                  ? 'bg-[#10b981] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-[#10b981]/10 hover:text-[#10b981]'
+              } transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]`}
+            >
+              Propozycje
             </button>
             <button
               onClick={() => setActiveTab('activity')}
-              className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
+              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${
                 activeTab === 'activity'
-                  ? 'bg-[#10b981] text-white'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-[#10b981]/10'
-              }`}
+                  ? 'bg-[#10b981] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-[#10b981]/10 hover:text-[#10b981]'
+              } transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]`}
             >
-              🧾 Aktywność
+              Aktywność
             </button>
-            {canPropose && (
-              <button
-                onClick={() => setActiveTab('proposals')}
-                className={`flex-1 py-6 px-8 text-lg font-semibold transition-all duration-200 ${
-                  activeTab === 'proposals'
-                    ? 'bg-[#10b981] text-white rounded-tr-3xl'
-                    : 'text-gray-700 hover:text-gray-900 hover:bg-[#10b981]/10'
-                }`}
-              >
-                🗳️ Moje propozycje ({userProposals.length})
-              </button>
-            )}
           </div>
         </div>
 
-        {/* Tab Content */}
-        <div className="bg-white/70 backdrop-blur-lg rounded-b-3xl shadow-xl border border-white/20 border-t-0 p-8">
-          {loading ? (
-            <div className="flex items-center justify-center py-20">
-              <div className="flex items-center space-x-4">
-                <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                <span className="text-gray-600 text-lg">Ładowanie danych z blockchain...</span>
+        {activeTab === 'dashboard' && (
+          <div className="p-4 bg-white rounded-lg shadow-md">
+            <h2 className="text-xl font-semibold mb-4">Podsumowanie</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="p-4 bg-gray-100 rounded-lg">
+                <h3 className="text-lg font-semibold mb-2">Całkowita liczba darowizn</h3>
+                <p className="text-2xl font-bold">{totalDonationsCount}</p>
+              </div>
+              <div className="p-4 bg-gray-100 rounded-lg">
+                <h3 className="text-lg font-semibold mb-2">Całkowita suma darowizn</h3>
+                <p className="text-2xl font-bold">{totalDonationsSum}</p>
+              </div>
+              <div className="p-4 bg-gray-100 rounded-lg">
+                <h3 className="text-lg font-semibold mb-2">Dostępne do zwrotu</h3>
+                <p className="text-2xl font-bold">{availableRefundsCount}</p>
               </div>
             </div>
-          ) : (
-            <>
-              {/* Dashboard with real on-chain KPIs */}
-              {activeTab === 'dashboard' && (
-                <div className="space-y-8">
-                  <h2 className="text-3xl font-bold text-gray-900">🧭 Dashboard</h2>
+          </div>
+        )}
 
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <div className="bg-white/60 rounded-2xl p-6 border">
-                      <p className="text-gray-600">Łączna liczba wpłat</p>
-                      <p className="text-3xl font-bold">{totalDonationsCount}</p>
-                    </div>
-                    <div className="bg-white/60 rounded-2xl p-6 border">
-                      <p className="text-gray-600">Suma wpłat</p>
-                      <p className="text-3xl font-bold">{totalDonationsSum}</p>
-                    </div>
-                    <div className="bg-white/60 rounded-2xl p-6 border">
-                      <p className="text-gray-600">Moje zbiórki</p>
-                      <p className="text-3xl font-bold">{userFundraisers.length}</p>
-                    </div>
-                    <div className="bg-white/60 rounded-2xl p-6 border">
-                      <p className="text-gray-600">Dostępne refundy</p>
-                      <p className="text-3xl font-bold">{availableRefundsCount}</p>
-                    </div>
-                  </div>
+        {activeTab === 'donations' && (
+          <div className="p-4 bg-white rounded-lg shadow-md">
+            <h2 className="text-xl font-semibold mb-4">Moje darowizny</h2>
+            {campaignsLoading ? (
+              <p>Ładowanie...</p>
+            ) : campaignsError ? (
+              <p className="text-red-500">Błąd podczas ładowania darowizn</p>
+            ) : campaigns && campaigns.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {campaigns.map((c: any) => {
+                  const idStr = (c.id ?? 0n).toString();
+                  const donationAmount = donatedPerFundraiser.get(idStr) ?? 0n;
 
-                  <div className="bg-white/60 rounded-2xl p-6 border">
-                    <h3 className="text-xl font-semibold mb-4">Kontrakty i spender</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-gray-600">Router</p>
-                        <p className="font-mono text-gray-900">{ROUTER_ADDRESS_ENV ?? ROUTER_ADDRESS}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Core (spender do approve)</p>
-                        <p className="font-mono text-gray-900">{CORE_SPENDER_ADDRESS}</p>
-                      </div>
-                    </div>
-                    <p className="text-sm text-gray-600 mt-4">Token per kampania widoczny w szczegółach/na liście zbiórek.</p>
-                  </div>
+                  // Normalize to CampaignCard's expected shape
+                  const mappedCampaign = {
+                    campaignId: idStr,
+                    targetAmount: (c.goalAmount ?? c.target ?? 0n) as bigint,
+                    raisedAmount: (c.raisedAmount ?? c.raised ?? 0n) as bigint,
+                    creator: c.creator as string,
+                    token: c.token as string,
+                    endTime: (c.endDate ?? c.endTime ?? 0n) as bigint,
+                    isFlexible: Boolean(c.isFlexible),
+                  };
 
-                  <div className="bg-white/60 rounded-2xl p-6 border">
-                    <h3 className="text-xl font-semibold mb-4">Szybkie statusy</h3>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {userFundraisers.slice(0, 6).map((f: any) => {
-                        const timeLeft = getTimeLeft(f.endDate ?? 0n);
-                        return (
-                          <div key={f.id?.toString?.() ?? String(f.id)} className="flex items-center justify-between p-4 rounded-xl border bg-white/50">
-                            <div>
-                              <p className="font-semibold">Kampania #{f.id?.toString?.() ?? String(f.id)}</p>
-                              <p className="text-sm text-gray-600">
-                                Token: {(f.token || '').slice(0, 6)}...{(f.token || '').slice(-4)}
-                              </p>
-                            </div>
-                            {/* Status chips */}
-                            <span className={`px-3 py-1 rounded-full text-sm ${
-                              timeLeft.isActive ? 'bg-[#10b981]/10 text-[#10b981]' : 'bg-gray-100 text-gray-800'
-                            }`}>{timeLeft.text}</span>
-                          </div>
-                        );
-                      })}
-                      {userFundraisers.length === 0 && (
-                        <p className="text-gray-600">Brak danych o statusach – utwórz zbiórkę lub dokonaj wpłaty.</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
+                  // Always provide metadata with image to avoid undefined errors
+                  const metadata = {
+                    title:
+                      (c.title && String(c.title).trim().length > 0)
+                        ? c.title
+                        : c.isFlexible
+                          ? `Elastyczna kampania #${idStr}`
+                          : `Zbiórka #${idStr}`,
+                    description:
+                      donationAmount > 0n
+                        ? `Twoje wpłaty: ${(Number(donationAmount) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC`
+                        : `Kampania utworzona przez ${String(c.creator).slice(0, 6)}...${String(c.creator).slice(-4)}`,
+                    image: "/images/zbiorka.png",
+                  };
 
-              {/* NOWE: Moje wpłaty (Donations) */}
-              {activeTab === 'donations' && (
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-3xl font-bold text-gray-900">💝 Moje wpłaty</h2>
-                    <div className="flex gap-3">
-                      <button disabled className="bg-blue-100 text-blue-700 font-medium py-2 px-4 rounded-xl cursor-not-allowed">
-                        🔎 Filtr statusu (wkrótce)
-                      </button>
-                      <button disabled className="bg-purple-100 text-purple-700 font-medium py-2 px-4 rounded-xl cursor-not-allowed">
-                        ↻ Odśwież (wkrótce)
-                      </button>
-                    </div>
-                  </div>
+                  const isRefundable = canRefundById.get(idStr) ?? false;
 
-                  <div className="bg-white/60 rounded-2xl p-6 border">
-                    <p className="text-gray-600">Lista wpłat z eventów Core.DonationMade lub odczyt Core.getDonationAmount(fid, user).</p>
-                    <div className="mt-4">
-                      <button disabled className="bg-green-100 text-green-800 font-medium py-2 px-4 rounded-xl cursor-not-allowed mr-2">
-                        💰 Donate teraz (ERC20)
-                      </button>
-                      <button disabled className="bg-green-100 text-green-800 font-medium py-2 px-4 rounded-xl cursor-not-allowed">
-                        📦 Batch donate (opcjonalnie)
-                      </button>
-                    </div>
-                    <p className="text-sm text-gray-500 mt-3">
-                      Pre-check: whitelista tokena, saldo, decimals; approve dla Core; Router.donateFrom(fid, user, amount).
+                  return (
+                    <CampaignCard
+                      key={idStr}
+                      campaign={mappedCampaign}
+                      metadata={metadata}
+                      // Optional props if supported by CampaignCard
+                      donationAmount={donationAmount}
+                      isRefundable={isRefundable}
+                      showDetails
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              <p>Nie masz jeszcze żadnych darowizn.</p>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'approvals' && (
+          <div className="p-4 bg-white rounded-lg shadow-md">
+            <h2 className="text-xl font-semibold mb-4">Zatwierdzenia</h2>
+            <p>Tu będą wyświetlane propozycje zatwierdzenia przez Ciebie.</p>
+          </div>
+        )}
+
+        {activeTab === 'refunds' && (
+          <div className="p-4 bg-white rounded-lg shadow-md">
+            <h2 className="text-xl font-semibold mb-4">Refundacje</h2>
+            <p>Tu będą wyświetlane dostępne zwroty dla Twoich darowizn.</p>
+          </div>
+        )}
+
+        {activeTab === 'fundraisers' && (
+          <div className="p-4 bg-white rounded-lg shadow-md">
+            <h2 className="text-xl font-semibold mb-4">Moje fundraisingi</h2>
+            <p>Tu będą wyświetlane Twoje aktywne fundraisingi.</p>
+          </div>
+        )}
+
+        {activeTab === 'proposals' && (
+          <div className="p-4 bg-white rounded-lg shadow-md">
+            <h2 className="text-xl font-semibold mb-4">Moje propozycje</h2>
+            {proposalsLoading ? (
+              <p>Ładowanie...</p>
+            ) : proposalsError ? (
+              <p className="text-red-500">Błąd podczas ładowania propozycji</p>
+            ) : proposals && proposals.length > 0 ? (
+              <div className="space-y-4">
+                {proposals.map((proposal: Proposal) => (
+                  <div key={proposal.id.toString()} className="p-4 bg-gray-100 rounded-lg">
+                    <h3 className="text-lg font-semibold">{proposal.question}</h3>
+                    <p className="text-sm text-gray-500">
+                      Tak: {proposal.yesVotes.toString()} | Nie: {proposal.noVotes.toString()}
                     </p>
                   </div>
-                </div>
-              )}
+                ))}
+              </div>
+            ) : (
+              <p>Nie masz jeszcze żadnych propozycji.</p>
+            )}
+          </div>
+        )}
 
-              {/* NOWE: Menedżer zgód (Approvals) */}
-              {activeTab === 'approvals' && (
-                <div className="space-y-6">
-                  <h2 className="text-3xl font-bold text-gray-900">✅ Zgody (Approvals)</h2>
-                  <p className="text-gray-600">Per token: balanceOf(user), allowance(user → Core). Przyciski poniżej są placeholderami.</p>
-                  <div className="space-y-4">
-                    {uniqueTokens.length > 0 ? uniqueTokens.map((t) => (
-                      <div key={t} className="flex items-center justify-between p-4 rounded-xl border bg-white/50">
-                        <div>
-                          <p className="font-semibold">Token: {t.slice(0, 8)}...{t.slice(-6)}</p>
-                          <p className="text-sm text-gray-600">Core (spender): {CORE_SPENDER_ADDRESS.slice(0, 8)}...{CORE_SPENDER_ADDRESS.slice(-6)}</p>
-                        </div>
-                        <div className="flex gap-2">
-                          <button disabled className="bg-blue-100 text-blue-800 py-2 px-3 rounded-lg cursor-not-allowed">Approve</button>
-                          <button disabled className="bg-blue-100 text-blue-800 py-2 px-3 rounded-lg cursor-not-allowed">Increase</button>
-                          <button disabled className="bg-blue-100 text-blue-800 py-2 px-3 rounded-lg cursor-not-allowed">Max</button>
-                          <button disabled className="bg-red-100 text-red-800 py-2 px-3 rounded-lg cursor-not-allowed">Revoke (0)</button>
-                        </div>
-                      </div>
-                    )) : (
-                      <p className="text-gray-600">Brak tokenów powiązanych ze zbiórkami użytkownika.</p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* NOWE: Moje refundy (Refunds) */}
-              {activeTab === 'refunds' && (
-                <div className="space-y-6">
-                  <h2 className="text-3xl font-bold text-gray-900">♻️ Moje refundy</h2>
-                  <p className="text-gray-600">Widok eligibility: Core.canRefund(fid, user). Poniżej placeholdery.</p>
-                  <div className="space-y-4">
-                    {userFundraisers.length > 0 ? userFundraisers.map((f: any) => (
-                      <div key={f.id?.toString?.() ?? String(f.id)} className="flex items-center justify-between p-4 rounded-xl border bg-white/50">
-                        <div>
-                          <p className="font-semibold">Kampania #{f.id?.toString?.() ?? String(f.id)}</p>
-                          <p className="text-sm text-gray-600">Token: {(f.token || '').slice(0, 6)}...{(f.token || '').slice(-4)}</p>
-                        </div>
-                        <div className="flex gap-2">
-                          <button disabled className="bg-orange-100 text-orange-800 py-2 px-3 rounded-lg cursor-not-allowed">Sprawdź możliwość</button>
-                          <button disabled className="bg-green-100 text-green-800 py-2 px-3 rounded-lg cursor-not-allowed">Odbierz zwrot</button>
-                        </div>
-                      </div>
-                    )) : (
-                      <p className="text-gray-600">Brak kampanii z wpłatami kwalifikującymi się do refundu.</p>
-                    )}
-                  </div>
-                  <div className="bg-white/60 rounded-2xl p-6 border">
-                    <h3 className="font-semibold mb-2">Historia refundów</h3>
-                    <p className="text-sm text-gray-600">Źródło: eventy modułu refundów (np. ClaimRefund/RefundStarted). (wkrótce)</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Fundraisers tab: render using CampaignCard + donors count from Analytics */}
-              {activeTab === 'fundraisers' && (
-                <div>
-                  <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-3xl font-bold text-gray-900">🎯 Moje zbiórki</h2>
-                    <a 
-                      href="/create-campaign"
-                      className="bg-gradient-to-r from-[#10b981] to-blue-600 hover:from-[#10b981] hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-2xl transition-all duration-300 transform hover:scale-105 inline-block"
-                    >
-                      ➕ Utwórz zbiórkę
-                    </a>
-                  </div>
-
-                  {userFundraisers.length > 0 ? (
-                    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                      {userFundraisers.map((fund: any, idx: number) => {
-                        const mappedCampaign = {
-                          campaignId: fund.id.toString(),
-                          targetAmount: fund.goalAmount ?? 0n,
-                          raisedAmount: fund.raisedAmount ?? 0n,
-                          creator: fund.creator,
-                          token: fund.token,
-                          endTime: fund.endDate ?? 0n,
-                          isFlexible: fund.isFlexible
-                        };
-                        const donorsCount = donorsCountById.get(fund.id.toString()) ?? 0;
-                        const metadata = {
-                          title: fund.title && fund.title.length > 0
-                            ? fund.title
-                            : fund.isFlexible ? `Elastyczna kampania #${fund.id}` : `Zbiórka #${fund.id}`,
-                          description: fund.description && fund.description.length > 0
-                            ? fund.description.slice(0, 140)
-                            : `Donatorów: ${donorsCount.toLocaleString('pl-PL')}`,
-                          image: "/images/zbiorka.png"
-                        };
-                        return (
-                          <div key={fund.id.toString()} className="bg-white/60 rounded-2xl border hover:shadow-lg transition-all duration-300">
-                            <CampaignCard campaign={mappedCampaign} metadata={metadata} />
-                            <div className="px-4 pb-4 -mt-2">
-                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-[#10b981]/10 text-[#10b981]">
-                                👥 Donatorzy: {donorsCount.toLocaleString('pl-PL')}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="text-center py-20">
-                      <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <span className="text-4xl">🎯</span>
-                      </div>
-                      <h3 className="text-2xl font-bold text-gray-900 mb-4">Brak zbiórek</h3>
-                      <p className="text-gray-600 mb-8 max-w-md mx-auto">
-                        Nie utworzyłeś jeszcze żadnych zbiórek. Rozpocznij swoją pierwszą kampanię już dziś!
-                      </p>
-                      <a 
-                        href="/create-campaign"
-                        className="bg-gradient-to-r from-[#10b981] to-blue-600 hover:from-[#10b981] hover:to-blue-700 text-white font-semibold py-4 px-8 rounded-2xl transition-all duration-300 transform hover:scale-105 inline-block"
-                      >
-                        🚀 Utwórz pierwszą zbiórkę
-                      </a>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* NOWE: Aktywność (Activity log) */}
-              {activeTab === 'activity' && (
-                <div className="space-y-6">
-                  <h2 className="text-3xl font-bold text-gray-900">🧾 Aktywność</h2>
-                  <p className="text-gray-600">
-                    Subskrypcje eventów: Core (FundraiserCreated, DonationMade, FundsWithdrawn, FundraiserSuspended),
-                    Extension (FundraiserExtended, LocationUpdated), Refunds (ClaimRefund/RefundStarted).
-                  </p>
-                  <div className="bg-white/60 rounded-2xl p-6 border">
-                    <p className="text-gray-600">Timeline Twoich akcji i zdarzeń kampanii (wkrótce).</p>
-                    <button disabled className="mt-4 bg-blue-100 text-blue-800 py-2 px-4 rounded-xl cursor-not-allowed">🔄 Załaduj historię</button>
-                  </div>
-                </div>
-              )}
-
-              {/* Proposals Tab (zostaje jak było) */}
-              {activeTab === 'proposals' && canPropose && (
-                <div>
-                  <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-3xl font-bold text-gray-900">🗳️ Moje propozycje</h2>
-                    <button className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-2xl transition-all duration-300 transform hover:scale-105">
-                      ➕ Utwórz propozycję
-                    </button>
-                  </div>
-
-                  {userProposals.length > 0 ? (
-                    <div className="space-y-6">
-                      {userProposals.map((proposal) => {
-                        const timeLeft = getTimeLeft(proposal.endTime);
-                        const totalVotes = Number(proposal.yesVotes) + Number(proposal.noVotes);
-                        const yesPercentage = totalVotes > 0 ? (Number(proposal.yesVotes) / totalVotes) * 100 : 0;
-                        const noPercentage = totalVotes > 0 ? (Number(proposal.noVotes) / totalVotes) * 100 : 0;
-
-                        return (
-                          <div key={proposal.id.toString()} className="bg-white/60 rounded-2xl p-6 border border-gray-200 hover:shadow-lg transition-all duration-300">
-                            <div className="flex items-start justify-between mb-4">
-                              <div className="flex-1">
-                                <h3 className="text-xl font-bold text-gray-900 mb-2">
-                                  🗳️ Propozycja #{proposal.id.toString()}
-                                </h3>
-                                <p className="text-gray-700 text-lg">{proposal.question}</p>
-                              </div>
-                              <span className={`px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ml-4 ${
-                                timeLeft.isActive 
-                                  ? 'bg-[#10b981]/10 text-[#10b981]' 
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}>
-                                {timeLeft.text}
-                              </span>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                              <div>
-                                <p className="text-sm text-gray-600 mb-2">Wyniki głosowania:</p>
-                                <div className="space-y-2">
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-green-700 font-medium">✅ TAK</span>
-                                    <span className="text-green-700 font-bold">
-                                      {proposal.yesVotes.toString()} ({yesPercentage.toFixed(1)}%)
-                                    </span>
-                                  </div>
-                                  <div className="w-full bg-gray-200 rounded-full h-2">
-                                    <div 
-                                      className="bg-green-500 h-2 rounded-full transition-all duration-500"
-                                      style={{ width: `${yesPercentage}%` }}
-                                    />
-                                  </div>
-                                </div>
-                                
-                                <div className="space-y-2 mt-3">
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-red-700 font-medium">❌ NIE</span>
-                                    <span className="text-red-700 font-bold">
-                                      {proposal.noVotes.toString()} ({noPercentage.toFixed(1)}%)
-                                    </span>
-                                  </div>
-                                  <div className="w-full bg-gray-200 rounded-full h-2">
-                                    <div 
-                                      className="bg-red-500 h-2 rounded-full transition-all duration-500"
-                                      style={{ width: `${noPercentage}%` }}
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center justify-center">
-                                <div className="text-center">
-                                  <p className="text-3xl font-bold text-gray-900">{totalVotes}</p>
-                                  <p className="text-gray-600">Łączne głosy</p>
-                                  <button className="mt-4 bg-purple-100 hover:bg-purple-200 text-purple-800 font-medium py-2 px-6 rounded-xl transition-colors">
-                                    📊 Szczegóły
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="text-center py-20">
-                      <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <span className="text-4xl">🗳️</span>
-                      </div>
-                      <h3 className="text-2xl font-bold text-gray-900 mb-4">Brak propozycji</h3>
-                      <p className="text-gray-600 mb-8 max-w-md mx-auto">
-                        Nie utworzyłeś jeszcze żadnych propozycji do głosowania. Zaproponuj pierwszy temat do dyskusji!
-                      </p>
-                      <button className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-semibold py-4 px-8 rounded-2xl transition-all duration-300 transform hover:scale-105">
-                        🚀 Utwórz pierwszą propozycję
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ...existing code... komunikat o braku uprawnień do propozycji */}
-              {!canPropose && (
-                <div className="text-center py-20">
-                  <div className="w-24 h-24 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <span className="text-4xl">🔒</span>
-                  </div>
-                  {/* renamed heading */}
-                  <h3 className="text-2xl font-bold text-gray-900 mb-4">Brak uprawnień do tworzenia głosowań</h3>
-                  <p className="text-gray-600 mb-8 max-w-md mx-auto">
-                    Obecnie nie masz uprawnień do tworzenia propozycji głosowania. 
-                    Skontaktuj się z administratorami DAO, aby uzyskać dostęp.
-                  </p>
-                  <a 
-                    href="/contact"
-                    className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white font-semibold py-4 px-8 rounded-2xl transition-all duration-300 transform hover:scale-105 inline-block"
-                  >
-                    📧 Skontaktuj się z nami
-                  </a>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+        {activeTab === 'activity' && (
+          <div className="p-4 bg-white rounded-lg shadow-md">
+            <h2 className="text-xl font-semibold mb-4">Aktywność</h2>
+            <p>Tu będzie wyświetlana Twoja aktywność na platformie.</p>
+          </div>
+        )}
       </div>
 
       <Footer />
-    </div>
+    </>
   );
 }
