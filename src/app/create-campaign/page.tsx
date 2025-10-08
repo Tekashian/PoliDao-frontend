@@ -3,12 +3,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, usePublicClient, useChainId } from 'wagmi';
-import { parseUnits } from 'viem';
+import { parseUnits, decodeErrorResult, parseEventLogs } from 'viem';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { ROUTER_ADDRESS, DEFAULT_TOKEN_ADDRESS } from '../../blockchain/contracts';
-import { decodeErrorResult } from 'viem';
-import { USDC_ABI } from '../../blockchain/usdcContractAbi';
 import { poliDaoRouterAbi } from '../../blockchain/routerAbi';
 
 // USDC ma 6 miejsc po przecinku
@@ -102,8 +100,12 @@ export default function CreateCampaignPage() {
     if (step === 1) {
       if (!formData.title.trim()) newErrors.title = 'Tytuł jest wymagany';
       if (formData.title.length < 10) newErrors.title = 'Tytuł musi mieć co najmniej 10 znaków';
+      // NEW: enforce sane max aligned with contract error guards
+      if (formData.title.length > 100) newErrors.title = 'Tytuł nie może przekraczać 100 znaków';
       if (!formData.description.trim()) newErrors.description = 'Opis jest wymagany';
       if (formData.description.length < 50) newErrors.description = 'Opis musi mieć co najmniej 50 znaków';
+      // NEW: enforce max desc length
+      if (formData.description.length > 2000) newErrors.description = 'Opis nie może przekraczać 2000 znaków';
       if (!formData.beneficiary.trim()) newErrors.beneficiary = 'Wybierz kto jest beneficjentem';
       if (formData.location.length > 80) newErrors.location = 'Lokalizacja maks 80 znaków';
     }
@@ -181,7 +183,6 @@ export default function CreateCampaignPage() {
       const now = Math.floor(Date.now() / 1000);
       const endDate = BigInt(now + parseInt(formData.duration) * 24 * 60 * 60);
       const metadataHash = '';
-      // NEW: pick decimals from selected token if available (fallback 6)
       const selectedAddr = (selectedTokenAddress || networkUsdc) as `0x${string}` | null;
       const selected = tokensList.find(t => t.address.toLowerCase() === (selectedAddr || '').toLowerCase());
       const decimalsUsed = selected?.decimals ?? 6;
@@ -190,6 +191,24 @@ export default function CreateCampaignPage() {
       const images: string[] = [];
       const videos: string[] = [];
       const location = formData.location || '';
+
+      // NEW: pre-check token whitelist for friendlier UX (simulate would revert anyway)
+      try {
+        if (publicClient) {
+          const whitelisted = await publicClient.readContract({
+            address: ROUTER_ADDRESS,
+            abi: poliDaoRouterAbi as any,
+            functionName: 'isTokenWhitelisted',
+            args: [effectiveToken]
+          });
+          if (whitelisted === false) {
+            setFriendlyError('Wybrany token nie jest dozwolony (nie znajduje się na whitelist).');
+            return;
+          }
+        }
+      } catch {
+        // ignore if function not available (fallback to simulate)
+      }
 
       // 1) Pre-simulation
       try {
@@ -224,7 +243,7 @@ export default function CreateCampaignPage() {
             setFriendlyError(mapError(simErr?.shortMessage || simErr?.message || 'Błąd symulacji'));
           }
         } catch {
-          setFriendlyError(mapError(simErr?.shortMessage || simErr?.message || 'Błąd symulacji'));
+            setFriendlyError(mapError(simErr?.shortMessage || simErr?.message || 'Błąd symulacji'));
         }
         return;
       }
@@ -253,10 +272,26 @@ export default function CreateCampaignPage() {
     }
   };
 
-  // After success – derive createdId via getFundraiserCount and probing details (no event in Router ABI)
+  // After success – parse FundraiserCreated event to get id (fallback to count-probe)
   useEffect(() => {
     const run = async () => {
-      if (!isSuccess || createdId || !publicClient) return;
+      if (!isSuccess || createdId || !publicClient || !hash) return;
+      try {
+        const receipt = await publicClient.getTransactionReceipt({ hash });
+        const events = parseEventLogs({
+          abi: poliDaoRouterAbi as any,
+          logs: receipt.logs,
+          eventName: 'FundraiserCreated'
+        });
+        const first = events?.[0];
+        const evtId = (first?.args as any)?.fundraiserId as bigint | undefined;
+        if (evtId != null) {
+          setCreatedId(evtId);
+          return;
+        }
+      } catch {
+        // fallback below
+      }
       try {
         const total: any = await publicClient.readContract({
           address: ROUTER_ADDRESS,
@@ -264,7 +299,6 @@ export default function CreateCampaignPage() {
           functionName: 'getFundraiserCount',
         });
         if (typeof total === 'bigint') {
-          // Try candidates: (count - 1) and count, to cover base-0 and base-1
           const candidates = [];
           if (total > 0n) candidates.push(total - 1n);
           candidates.push(total);
@@ -284,7 +318,7 @@ export default function CreateCampaignPage() {
       } catch {/* ignore */}
     };
     run();
-  }, [isSuccess, createdId, publicClient]);
+  }, [isSuccess, createdId, publicClient, hash]);
 
   // Auto-redirect po uzyskaniu createdId (placeholder – gdy będzie dekodowanie logów z viem publicClient)
   useEffect(() => {
@@ -335,15 +369,19 @@ export default function CreateCampaignPage() {
     return () => { cancelled = true; };
   }, [address, publicClient]);
 
-  // FIX: resolve token info (USDC Sepolia) and populate dropdown
+  // FIX: resolve token info (USDC Sepolia) and populate dropdown + merge Router whitelist
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!publicClient) return;
 
       const list: TokenInfo[] = [];
+      const seen = new Set<string>();
 
       const pushToken = async (addr: `0x${string}`) => {
+        const low = addr.toLowerCase();
+        if (seen.has(low) || low === ZERO_ADDRESS.toLowerCase()) return;
+        seen.add(low);
         let symbol = 'TOKEN';
         let decimals: number | undefined = undefined;
         try {
@@ -365,16 +403,31 @@ export default function CreateCampaignPage() {
         list.push({ address: addr, symbol, decimals });
       };
 
+      // Router whitelist
+      try {
+        const whitelisted = await publicClient.readContract({
+          address: ROUTER_ADDRESS,
+          abi: poliDaoRouterAbi as any,
+          functionName: 'getWhitelistedTokens',
+        }) as `0x${string}`[] | undefined;
+        if (Array.isArray(whitelisted)) {
+          for (const addr of whitelisted) {
+            await pushToken(addr as `0x${string}`);
+          }
+        }
+      } catch {
+        // ignore if not available
+      }
+
+      // Network USDC
       const netUsdc = getUsdcAddress(chainId);
-      if (netUsdc && netUsdc.toLowerCase() !== ZERO_ADDRESS) {
+      if (netUsdc) {
         await pushToken(netUsdc as `0x${string}`);
       }
 
-      if (DEFAULT_TOKEN_ADDRESS && (DEFAULT_TOKEN_ADDRESS as string).toLowerCase() !== ZERO_ADDRESS) {
-        const sameAsNet = netUsdc && (DEFAULT_TOKEN_ADDRESS as string).toLowerCase() === netUsdc.toLowerCase();
-        if (!sameAsNet) {
-          await pushToken(DEFAULT_TOKEN_ADDRESS as unknown as `0x${string}`);
-        }
+      // DEFAULT_TOKEN_ADDRESS
+      if (DEFAULT_TOKEN_ADDRESS) {
+        await pushToken(DEFAULT_TOKEN_ADDRESS as unknown as `0x${string}`);
       }
 
       if (cancelled) return;

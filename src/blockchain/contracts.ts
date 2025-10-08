@@ -4,9 +4,7 @@ import { ethers } from 'ethers';
 import routerAbi from './routerAbi';
 
 // Router-only source of truth
-export const ROUTER_ADDRESS =
-  (process.env.NEXT_PUBLIC_ROUTER_ADDRESS as `0x${string}`) ||
-  ('0x0000000000000000000000000000000000000000' as const);
+export const ROUTER_ADDRESS = '0x7869BdF04c5bD165241887469B8b319C6aed3FA7' as `0x${string}`;
 
 export const ROUTER_ABI = routerAbi;
 
@@ -150,11 +148,18 @@ export async function fetchFundraisersPage(provider: ethers.AbstractProvider, pa
   return { total, items };
 }
 
-// Statystyki platformy
+// Statystyki platformy - zastąp getPlatformStats -> getHealthStatus
 export async function fetchPlatformStats(provider: ethers.AbstractProvider) {
   const router = getRouterContract(provider);
-  const stats = await router.getPlatformStats();
-  return { totalFundraisers: stats[0] as bigint, totalDonations: stats[1] as bigint };
+  const [count, health] = await Promise.all([
+    router.getFundraiserCount(),
+    router.getHealthStatus(), // returns: [isHealthy, lastTransaction, successRate, totalTx, failedTx]
+  ]);
+  return {
+    totalFundraisers: count as bigint,
+    // Mapujemy totalTx jako zastępstwo "totalDonations" (brak bezpośredniej funkcji w nowym ABI)
+    totalDonations: (Array.isArray(health) ? health[3] : health.totalTx) as bigint,
+  };
 }
 
 // Status użytkownika

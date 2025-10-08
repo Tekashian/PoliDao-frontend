@@ -39,7 +39,6 @@ import { formatUnits, parseUnits } from "viem";
 import { Interface, JsonRpcProvider } from 'ethers';
 import { poliDaoRouterAbi } from '../../../blockchain/routerAbi';
 import { ROUTER_ADDRESS } from '../../../blockchain/contracts';
-import { poliDaoCoreAbi } from '../../../blockchain/coreAbi';
 import { poliDaoAnalyticsAbi } from '../../../blockchain/analyticsAbi';
 
 // usuwamy helper i typ progresu z contracts – progres tylko z Routera via wagmi
@@ -330,53 +329,51 @@ export default function CampaignPage() {
   const ETHERSCAN_BASE = 'https://sepolia.etherscan.io';
 
   // NEW: read single-donation limit (prefer security.effectiveDonationLimit)
-  const { data: donationLimitRaw } = useReadContract({
+  // const { data: donationLimitRaw } = useReadContract({
+  //   address: ROUTER_ADDRESS,
+  //   abi: poliDaoRouterAbi,
+  //   functionName: 'currentDonationLimit',
+  //   chainId: sepolia.id,
+  // });
+
+  // const { data: securityInfo } = useReadContract({
+  //   address: ROUTER_ADDRESS,
+  //   abi: poliDaoRouterAbi,
+  //   functionName: 'getSecurityInfo',
+  //   chainId: sepolia.id,
+  // });
+
+  // const donationLimitBaseUnits = useMemo(() => {
+  //   if (Array.isArray(securityInfo) && securityInfo[0] === true && typeof securityInfo[1] === 'bigint') {
+  //     return securityInfo[1] as bigint;
+  //   }
+  //   if (typeof donationLimitRaw === 'bigint') return donationLimitRaw as bigint;
+  //   return null;
+  // }, [securityInfo, donationLimitRaw]);
+
+  // const donationLimitHuman = useMemo(() => {
+  //   if (!donationLimitBaseUnits) return null;
+  //   try {
+  //     return Number(formatUnits(donationLimitBaseUnits, decimalsKey));
+  //   } catch {
+  //     return null;
+  //   }
+  // }, [donationLimitBaseUnits, decimalsKey]);
+
+  // NEW: read spender (the actual transferFrom spender)
+  const { data: spenderAddress } = useReadContract({
     address: ROUTER_ADDRESS,
     abi: poliDaoRouterAbi,
-    functionName: 'currentDonationLimit',
+    functionName: 'spenderAddress',
     chainId: sepolia.id,
   });
 
-  const { data: securityInfo } = useReadContract({
-    address: ROUTER_ADDRESS,
-    abi: poliDaoRouterAbi,
-    functionName: 'getSecurityInfo',
-    chainId: sepolia.id,
-  });
-
-  const donationLimitBaseUnits = useMemo(() => {
-    // getSecurityInfo returns [hasSecurity, effectiveDonationLimit, configuredSecurityLimit]
-    if (Array.isArray(securityInfo) && securityInfo[0] === true && typeof securityInfo[1] === 'bigint') {
-      return securityInfo[1] as bigint;
-    }
-    if (typeof donationLimitRaw === 'bigint') return donationLimitRaw as bigint;
-    return null;
-  }, [securityInfo, donationLimitRaw]);
-
-  const donationLimitHuman = useMemo(() => {
-    if (!donationLimitBaseUnits) return null;
-    try {
-      return Number(formatUnits(donationLimitBaseUnits, decimalsKey));
-    } catch {
-      return null;
-    }
-  }, [donationLimitBaseUnits, decimalsKey]);
-
-  // NEW: read Core address (the actual spender calling transferFrom)
-  const { data: coreAddress } = useReadContract({
-    address: ROUTER_ADDRESS,
-    abi: poliDaoRouterAbi,
-    functionName: 'coreContract',
-    chainId: sepolia.id,
-  });
-
-  // NEW: discover Analytics module from Core, then read donors count and donors list
+  // NEW: discover Analytics module directly from Router
   const { data: analyticsAddress } = useReadContract({
-    address: coreAddress as `0x${string}` | undefined,
-    abi: poliDaoCoreAbi,
+    address: ROUTER_ADDRESS,
+    abi: poliDaoRouterAbi,
     functionName: 'analyticsModule',
     chainId: sepolia.id,
-    query: { enabled: !!coreAddress },
   });
 
   const { data: donorsCountData, refetch: refetchDonorsCount } = useReadContract({
@@ -473,9 +470,9 @@ export default function CampaignPage() {
     return { avgDonation: avg, maxDonation: max, series14: buckets };
   }, [donations]);
 
-  // Historia wpłat z eventów Core (DonationMade) – poprawne źródło
+  // Historia wpłat z eventów (Router: DonationMade)
   useEffect(() => {
-    if (selectedIdKey < 0 || !coreAddress) return;
+    if (selectedIdKey < 0) return;
 
     const rpcUrl =
       process.env.NEXT_PUBLIC_RPC_URL ||
@@ -492,7 +489,7 @@ export default function CampaignPage() {
     const fetchDonationLogs = async () => {
       try {
         const provider = new JsonRpcProvider(rpcUrl);
-        const iface = new Interface(poliDaoCoreAbi as any);
+        const iface = new Interface(poliDaoRouterAbi as any);
 
         const ev = (iface as any).getEvent?.('DonationMade') ?? (iface.fragments.find((f: any) => f.type === 'event' && f.name === 'DonationMade'));
         if (!ev) {
@@ -501,14 +498,16 @@ export default function CampaignPage() {
         }
         const topic = (iface as any).getEventTopic ? (iface as any).getEventTopic(ev) : (iface as any).getEventTopic?.('DonationMade');
 
-        const startBlockEnv = process.env.NEXT_PUBLIC_CORE_START_BLOCK;
+        const startBlockEnv =
+          process.env.NEXT_PUBLIC_ROUTER_START_BLOCK ||
+          process.env.NEXT_PUBLIC_CORE_START_BLOCK; // fallback
         const fromBlock = startBlockEnv ? BigInt(startBlockEnv) : 0n;
 
-        // NEW: filter by indexed fundraiserId topic to avoid fetching unrelated logs
+        // Filter by fundraiserId topic
         const fundraiserTopic = '0x' + BigInt(selectedIdKey).toString(16).padStart(64, '0');
 
         const logs = await provider.getLogs({
-          address: coreAddress as string,
+          address: ROUTER_ADDRESS as string,
           fromBlock,
           toBlock: 'latest',
           topics: [topic, fundraiserTopic],
@@ -546,7 +545,7 @@ export default function CampaignPage() {
 
         if (!disposed) setDonations(items);
       } catch (err) {
-        console.warn('Błąd pobierania logów donacji (Core):', err);
+        console.warn('Błąd pobierania logów donacji (Router):', err);
         if (!disposed) setDonations([]);
       }
     };
@@ -557,7 +556,7 @@ export default function CampaignPage() {
       disposed = true;
       clearInterval(interval);
     };
-  }, [selectedIdKey, chainKey, decimalsKey, coreAddress]);
+  }, [selectedIdKey, chainKey, decimalsKey]);
 
   // Contract write hooks
   const { 
@@ -603,10 +602,10 @@ export default function CampaignPage() {
     functionName: "allowance",
     args: [
       address || ZERO_ADDR,
-      (coreAddress as `0x${string}`) || ZERO_ADDR,
+      (spenderAddress as `0x${string}`) || ZERO_ADDR,
     ],
     chainId: sepolia.id,
-    query: { enabled: !!campaignData?.token && !!address && !!coreAddress },
+    query: { enabled: !!campaignData?.token && !!address && !!spenderAddress },
   });
 
   // Handle updates
@@ -636,8 +635,8 @@ export default function CampaignPage() {
       setSnackbar({ open: true, message: 'Brak ID zbiórki.', severity: 'error' });
       return;
     }
-    if (!coreAddress) {
-      setSnackbar({ open: true, message: 'Nie udało się pobrać adresu Core. Spróbuj ponownie.', severity: 'error' });
+    if (!spenderAddress) {
+      setSnackbar({ open: true, message: 'Nie udało się pobrać adresu spendera. Spróbuj ponownie.', severity: 'error' });
       return;
     }
 
@@ -646,23 +645,14 @@ export default function CampaignPage() {
       const amount = parseUnits(donateAmount, decimals as any);
       setPendingDonationAmount(amount);
 
-      // NEW: enforce single-donation limit
-      if (donationLimitBaseUnits && amount > donationLimitBaseUnits) {
-        const lim = donationLimitHuman ?? 0;
-        setSnackbar({
-          open: true,
-          message: `Przekroczono limit pojedynczej wpłaty: ${lim.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} ${displayTokenSymbol}`,
-          severity: 'error'
-        });
-        return;
-      }
+      // Removed donation limit checks (currentDonationLimit/getSecurityInfo no longer used)
 
       if (userBalance && amount > (userBalance as bigint)) {
         setSnackbar({ open: true, message: 'Niewystarczający balans tokenów!', severity: 'error' });
         return;
       }
 
-      // CHANGED: approve Core (spender), not Router
+      // Approve spenderAddress (was Core)
       if (!allowance || amount > (allowance as bigint)) {
         setNeedsApproval(true);
         setSnackbar({ open: true, message: 'Najpierw zatwierdź wydatkowanie tokenów', severity: 'info' });
@@ -670,13 +660,12 @@ export default function CampaignPage() {
           address: campaignData.token,
           abi: ERC20_ABI,
           functionName: "approve",
-          args: [coreAddress as `0x${string}`, amount],
+          args: [spenderAddress as `0x${string}`, amount],
           chainId: sepolia.id,
         });
-        return; // donate uruchomi się po isApprovalSuccess
+        return;
       }
 
-      // donate bezpośrednio (gdy allowance wystarczające)
       await writeContract({
         address: ROUTER_ADDRESS,
         abi: poliDaoRouterAbi,
@@ -723,9 +712,9 @@ export default function CampaignPage() {
         setDonateOpen(false);
         setDonateAmount("");
         setNeedsApproval(false);
-        refetchProgress(); // Router.getFundraiserProgress
-        refetchDonorsCount?.(); // Analytics.getDonorsCount
-        refetchDonors?.();      // Analytics.getDonors
+        refetchProgress();
+        refetchDonorsCount?.();
+        refetchDonors?.();
       }, 1200);
     }
   }, [isDonationSuccess, refetchProgress, refetchDonorsCount, refetchDonors]);
@@ -1136,11 +1125,6 @@ export default function CampaignPage() {
                     💰 Dostępne: {(userBalance ? Number(formatUnits(userBalance as any, decimals)) : 0).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} {displayTokenSymbol}
                   </p>
                 )}
-                {donationLimitHuman != null && (
-                  <p className="mt-1 text-xs text-gray-500">
-                    ⛔ Limit pojedynczej wpłaty: {donationLimitHuman.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} {displayTokenSymbol}
-                  </p>
-                )}
               </div>
 
               <div className="px-6 py-4">
@@ -1270,11 +1254,6 @@ export default function CampaignPage() {
           {!campaignData.isFlexible && (
             <Alert severity="info" sx={{ mb: 2 }}>
               To jest zbiórka z celem. Środki mogą zostać zwrócone jeśli cel nie zostanie osiągnięty.
-            </Alert>
-          )}
-          {donationLimitHuman != null && (
-            <Alert severity="info" sx={{ mb: 2 }}>
-              Limit pojedynczej wpłaty: {donationLimitHuman.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} {displayTokenSymbol}
             </Alert>
           )}
         </DialogContent>
