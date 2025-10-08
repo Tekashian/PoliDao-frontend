@@ -40,7 +40,7 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
   return (
     <Link 
       href={`/campaigns/${campaign.campaignId}`} 
-      className="block w-full max-w-sm bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow"
+      className="block w-full max-w-full bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow"
     >
       <div className="relative w-full h-60">
         <Image

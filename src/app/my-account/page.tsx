@@ -67,12 +67,37 @@ export default function AccountPage() {
     error: proposalsError 
   } = useGetAllProposals();
 
-// NEW: user's own campaigns
+// NEW: user's own campaigns (sorted: closest to target -> furthest)
   const myCampaigns = React.useMemo(() => {
     if (!campaigns || !address) return [];
-    return (campaigns as any[]).filter(
+    const mine = (campaigns as any[]).filter(
       (f: any) => f?.creator?.toLowerCase?.() === address?.toLowerCase?.()
     );
+
+    // Sort by remaining to goal ascending; campaigns without a valid target go last.
+    const BIG_SENTINEL = 10n ** 40n; // for unknown/zero targets
+    const norm = (c: any) => {
+      const target = (c.goalAmount ?? c.target ?? 0n) as bigint;
+      const raised = (c.raisedAmount ?? c.raised ?? 0n) as bigint;
+      const end = (c.endDate ?? c.endTime ?? 0n) as bigint;
+      const hasTarget = target > 0n;
+      // Remaining cannot be negative (overshoot treated as 0 = reached/over goal -> first)
+      const remaining = hasTarget ? (target > raised ? target - raised : 0n) : BIG_SENTINEL;
+      return { remaining, hasTarget, end };
+    };
+
+    return mine
+      .slice()
+      .sort((a: any, b: any) => {
+        const A = norm(a);
+        const B = norm(b);
+        if (A.remaining !== B.remaining) return A.remaining < B.remaining ? -1 : 1; // closest first
+        if (A.hasTarget !== B.hasTarget) return A.hasTarget ? -1 : 1;               // with target before no-target
+        if (A.end !== B.end) return A.end < B.end ? -1 : 1;                          // earlier end first
+        const aid = (a.id ?? 0n) as bigint;
+        const bid = (b.id ?? 0n) as bigint;
+        return aid < bid ? -1 : aid > bid ? 1 : 0;                                    // stable fallback
+      });
   }, [campaigns, address]);
 
   // Resolve Core and Analytics module
@@ -794,7 +819,7 @@ export default function AccountPage() {
 
         {activeTab === 'fundraisers' && (
           <div className="p-4 bg-white rounded-lg shadow-md">
-            <h2 className="text-xl font-semibold mb-4">Twoje zbiórki</h2>
+            <h2 className="text-xl font-semibold mb-4 text-center">Twoje zbiórki</h2>
             {!address ? (
               <p>Połącz portfel, aby zobaczyć swoje zbiórki.</p>
             ) : campaignsLoading ? (
@@ -802,43 +827,13 @@ export default function AccountPage() {
             ) : campaignsError ? (
               <p className="text-red-500">Błąd podczas ładowania zbiórek</p>
             ) : myCampaigns.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {myCampaigns.map((c: any) => {
-                  const idStr = (c.id ?? 0n).toString();
-                  const mappedCampaign = {
-                    campaignId: idStr,
-                    targetAmount: (c.goalAmount ?? c.target ?? 0n) as bigint,
-                    raisedAmount: (c.raisedAmount ?? c.raised ?? 0n) as bigint,
-                    creator: c.creator as string,
-                    token: c.token as string,
-                    endTime: (c.endDate ?? c.endTime ?? 0n) as bigint,
-                    isFlexible: Boolean(c.isFlexible),
-                  };
-                  const metadata = {
-                    title:
-                      (c.title && String(c.title).trim().length > 0)
-                        ? c.title
-                        : c.isFlexible
-                          ? `Elastyczna kampania #${idStr}`
-                          : `Zbiórka #${idStr}`,
-                    description:
-                      c.description && String(c.description).trim().length > 0
-                        ? String(c.description).slice(0, 140)
-                        : `Kampania utworzona przez ${String(c.creator).slice(0, 6)}...${String(c.creator).slice(-4)}`,
-                    image: "/images/zbiorka.png",
-                  };
-                  return (
-                    <div
-                      key={idStr}
-                      className="cursor-pointer hover:scale-[1.01] transition-transform"
-                      onClick={() => router.push(`/campaigns/${idStr}`)}
-                      title="Przejdź do strony zbiórki"
-                    >
-                      <CampaignCard campaign={mappedCampaign} metadata={metadata} />
-                    </div>
-                  );
-                })}
-              </div>
+              <div className="flex flex-wrap justify-center gap-6">
+                 {myCampaigns.map((c) => (
+                  <div key={String(c.id)} className="w-full sm:w-[24rem] flex-none">
+                     <MyCampaignCard campaign={c} />
+                   </div>
+                 ))}
+               </div>
             ) : (
               <p>Nie utworzyłeś jeszcze żadnej zbiórki.</p>
             )}
@@ -936,5 +931,75 @@ export default function AccountPage() {
 
       <Footer />
     </>
+  );
+}
+
+function MyCampaignCard({ campaign }: { campaign: any }) {
+  const router = useRouter();
+  const idStr = (campaign.id ?? 0n).toString();
+
+  // Normalize to CampaignCard's expected shape
+  const mappedCampaign = {
+    campaignId: idStr,
+    targetAmount: (campaign.goalAmount ?? campaign.target ?? 0n) as bigint,
+    raisedAmount: (campaign.raisedAmount ?? campaign.raised ?? 0n) as bigint,
+    creator: campaign.creator as string,
+    token: campaign.token as string,
+    endTime: (campaign.endDate ?? campaign.endTime ?? 0n) as bigint,
+    isFlexible: Boolean(campaign.isFlexible),
+  };
+
+  // Czy cel osiągnięty (tylko wtedy pokaż overlay)
+  const isReached =
+    mappedCampaign.targetAmount > 0n &&
+    mappedCampaign.raisedAmount >= mappedCampaign.targetAmount;
+
+  // Metadata for display
+  const metadata = {
+    title:
+      (campaign.title && String(campaign.title).trim().length > 0)
+        ? campaign.title
+        : campaign.isFlexible
+          ? `Elastyczna kampania #${idStr}`
+          : `Zbiórka #${idStr}`,
+    description:
+      `Kampania utworzona przez ${String(campaign.creator).slice(0, 6)}...${String(campaign.creator).slice(-4)}`,
+    image: "/images/zbiorka.png",
+  };
+
+  return (
+    <div
+      className="relative group cursor-pointer transition-transform"
+      onClick={() => router.push(`/campaigns/${idStr}`)}
+      title="Przejdź do strony zbiórki"
+    >
+      <CampaignCard campaign={mappedCampaign} metadata={metadata} />
+
+      {/* Overlay i CTA wyłącznie dla osiągniętego celu – na obszarze zdjęcia */}
+      {isReached && (
+        <div className="pointer-events-none absolute left-0 right-0 top-0 h-60 z-10 rounded-t-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          {/* subtelny zielony gradient */}
+          <div className="absolute inset-0 bg-gradient-to-t from-[#10b981]/35 via-[#10b981]/10 to-transparent" />
+          {/* lekki neon na krawędzi zdjęcia */}
+          <div className="absolute inset-0 rounded-t-xl ring-1 ring-[#10b981]/40 shadow-[inset_0_0_22px_rgba(16,185,129,0.45)]" />
+          {/* przycisk */}
+          <div className="absolute inset-x-0 bottom-3 flex justify-center">
+            <button
+              className="pointer-events-auto px-4 py-2 rounded-full bg-[#10b981] text-white text-sm font-semibold ring-1 ring-white/20 shadow-[0_0_14px_rgba(16,185,129,0.65)] hover:shadow-[0_0_26px_rgba(16,185,129,0.95)] transition-shadow"
+              aria-label="Cel osiągnięty – przejdź do zbiórki"
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(`/campaigns/${idStr}`);
+              }}
+            >
+              Cel osiągnięty
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* delikatny ogólny hover dla kart */}
+      <div className="absolute inset-0 rounded-lg transition-opacity duration-200 opacity-0 group-hover:opacity-100 bg-gradient-to-t from-black/30 via-black/10 to-transparent" />
+    </div>
   );
 }
