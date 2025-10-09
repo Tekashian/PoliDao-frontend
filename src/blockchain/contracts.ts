@@ -2,16 +2,17 @@
 
 import { ethers } from 'ethers';
 import routerAbi from './routerAbi';
+import coreAbi from './coreAbi';
 
 // Router-only source of truth
-export const ROUTER_ADDRESS = '0x7869BdF04c5bD165241887469B8b319C6aed3FA7' as `0x${string}`;
+export const ROUTER_ADDRESS = '0xb350df632d19f57107a94748c0e32e3FFe865041' as `0x${string}`;
 
 export const ROUTER_ABI = routerAbi;
 
 // Backward-compatible config for wagmi hooks/components
 export const polidaoContractConfig = {
   address: ROUTER_ADDRESS,
-  abi: ROUTER_ABI,
+  abi: ROUTER_ABI, // restore ABI so reads like coreContract() work
 } as const;
 
 // Legacy alias so old imports keep working (recommended to migrate to ROUTER_ABI)
@@ -25,6 +26,25 @@ export const DEFAULT_TOKEN_ADDRESS =
 // Fabryka kontraktu Router
 export function getRouterContract(providerOrSigner: ethers.Signer | ethers.AbstractProvider) {
   return new ethers.Contract(ROUTER_ADDRESS, routerAbi, providerOrSigner);
+}
+
+// Helper: resolve Core address via Router (read-only)
+export async function getCoreAddress(
+  providerOrSigner: ethers.Signer | ethers.AbstractProvider
+): Promise<`0x${string}`> {
+  const router = getRouterContract(providerOrSigner);
+  const coreAddr: string = await router.coreContract();
+  return coreAddr as `0x${string}`;
+}
+
+// Helper: resolve Core.spenderAddress via Router -> Core (for ERC20 approvals before donate)
+export async function getCoreSpenderAddress(
+  providerOrSigner: ethers.Signer | ethers.AbstractProvider
+): Promise<`0x${string}`> {
+  const coreAddr = await getCoreAddress(providerOrSigner);
+  const core = new ethers.Contract(coreAddr, coreAbi, providerOrSigner);
+  const spender: string = await core.spenderAddress();
+  return spender as `0x${string}`;
 }
 
 // Typy pomocnicze

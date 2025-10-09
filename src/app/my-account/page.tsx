@@ -114,6 +114,14 @@ export default function AccountPage() {
     query: { enabled: !!coreAddress }
   });
 
+  // NEW: Core spender used for ERC20 approvals (required for donate on new contracts)
+  const { data: coreSpender } = useReadContract({
+    address: coreAddress as `0x${string}` | undefined,
+    abi: poliDaoCoreAbi,
+    functionName: 'spenderAddress',
+    query: { enabled: !!coreAddress }
+  });
+
 // --- Governance proposals (prefer governanceModule if present) ---
   const { data: governanceAddress } = useReadContract({
     address: coreAddress as `0x${string}` | undefined,
@@ -284,7 +292,7 @@ export default function AccountPage() {
     return set;
   }, [donatedPerFundraiser, donationAmountResults, campaigns]);
 
-  // --- Approvals: read-only list of ERC20 allowances granted to Core ---
+  // --- Approvals: read-only list of ERC20 allowances granted to Core SPENDER ---
   // Candidate tokens: from campaigns user donated to (fallback to all campaign tokens)
   const tokensOfInterest = React.useMemo(() => {
     const set = new Set<string>();
@@ -304,16 +312,17 @@ export default function AccountPage() {
     return Array.from(set).slice(0, 25) as `0x${string}`[];
   }, [campaigns, donatedIdsSet]);
 
-  // Owner->Core allowances for tokensOfInterest
+  // Owner->Spender allowances for tokensOfInterest
   const allowancesContracts = React.useMemo(() => {
-    if (!address || !coreAddress || tokensOfInterest.length === 0) return [];
+    if (!address || (!coreAddress && !coreSpender) || tokensOfInterest.length === 0) return [];
+    const spender = (coreSpender as `0x${string}`) ?? (coreAddress as `0x${string}`);
     return tokensOfInterest.map((t) => ({
       address: t as `0x${string}`,
       abi: ERC20_ABI,
       functionName: 'allowance',
-      args: [address as `0x${string}`, coreAddress as `0x${string}`],
+      args: [address as `0x${string}`, spender],
     }));
-  }, [address, coreAddress, tokensOfInterest]);
+  }, [address, coreAddress, coreSpender, tokensOfInterest]);
 
   const { data: allowances } = useReadContracts({
     contracts: allowancesContracts,
@@ -786,7 +795,7 @@ export default function AccountPage() {
             ) : allowancesContracts.length === 0 ? (
               <p>Brak tokenów do sprawdzenia.</p>
             ) : approvals.length === 0 ? (
-              <p>Brak aktywnych zgód dla kontraktu rdzeniowego.</p>
+              <p>Brak aktywnych zgód dla adresu wydającego (spender).</p>
             ) : (
               <div className="space-y-3">
                 {approvals.map((a) => (
@@ -796,13 +805,14 @@ export default function AccountPage() {
                         {a.symbol} — {a.token.slice(0, 6)}...{a.token.slice(-4)}
                       </p>
                       <p className="text-xs text-gray-500">
-                        Zgoda dla: {String(coreAddress).slice(0, 6)}...{String(coreAddress).slice(-4)}
+                        {/* show real spender (fallback to core) */}
+                        Zgoda dla: {(coreSpender ?? coreAddress)?.toString().slice(0, 6)}...{(coreSpender ?? coreAddress)?.toString().slice(-4)}
                       </p>
                       <p className="text-xs text-gray-600">
                         Kwota: {a.allowanceHuman.toLocaleString('pl-PL', { maximumFractionDigits: 6 })} {a.symbol}
                       </p>
                     </div>
-                    {/* Cofanie wyłączone – tylko wyświetlamy pozwolenia */}
+                    {/* read-only */}
                   </div>
                 ))}
               </div>
