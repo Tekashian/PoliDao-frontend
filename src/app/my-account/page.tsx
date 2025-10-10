@@ -50,7 +50,7 @@ interface Proposal {
 export default function AccountPage() {
   const { address, isConnected } = useAccount();
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'donations' | 'approvals' | 'refunds' | 'fundraisers' | 'votes'
+    'dashboard' | 'donations' | 'fundraisers' | 'votes'
   >('dashboard');
   const router = useRouter();
 
@@ -620,10 +620,7 @@ export default function AccountPage() {
       <Header />
 
       <div className="container mx-auto px-4 py-8">
-        <div className="mb-4">
-          <h1 className="text-3xl font-bold">Moje konto</h1>
-        </div>
-
+        {/* Tabs */}
         <div className="mb-8">
           <div className="flex space-x-4">
             <button
@@ -645,26 +642,6 @@ export default function AccountPage() {
               } transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]`}
             >
               Wspierane zbiórki
-            </button>
-            <button
-              onClick={() => setActiveTab('approvals')}
-              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${
-                activeTab === 'approvals'
-                  ? 'bg-[#10b981] text-white shadow-md'
-                  : 'bg-gray-100 text-gray-700 hover:bg-[#10b981]/10 hover:text-[#10b981]'
-              } transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]`}
-            >
-              Zatwierdzenia
-            </button>
-            <button
-              onClick={() => setActiveTab('refunds')}
-              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${
-                activeTab === 'refunds'
-                  ? 'bg-[#10b981] text-white shadow-md'
-                  : 'bg-gray-100 text-gray-700 hover:bg-[#10b981]/10 hover:text-[#10b981]'
-              } transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]`}
-            >
-              Refundacje
             </button>
             <button
               onClick={() => setActiveTab('fundraisers')}
@@ -764,14 +741,41 @@ export default function AccountPage() {
                       const isRefundable = canRefundById.get(idStr) ?? false;
 
                       return (
-                        <CampaignCard
+                        <div
                           key={idStr}
-                          campaign={mappedCampaign}
-                          metadata={metadata}
-                          donationAmount={donationAmount}
-                          isRefundable={isRefundable}
-                          showDetails
-                        />
+                          className="relative group cursor-pointer transition-transform"
+                          onClick={() => router.push(`/campaigns/${idStr}`)}
+                          title="Przejdź do strony zbiórki"
+                        >
+                          <CampaignCard
+                            campaign={mappedCampaign}
+                            metadata={metadata}
+                            donationAmount={donationAmount}
+                            isRefundable={isRefundable}
+                            showDetails
+                          />
+
+                          {/* Czerwony overlay i CTA – jak w 'Twoje zbiórki', tylko w czerwieni */}
+                          <div className="pointer-events-none absolute left-0 right-0 top-0 h-60 z-10 rounded-t-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                            <div className="absolute inset-0 bg-gradient-to-t from-[#ef4444]/35 via-[#ef4444]/10 to-transparent" />
+                            <div className="absolute inset-0 rounded-t-xl ring-1 ring-[#ef4444]/40 shadow-[inset_0_0_22px_rgba(239,68,68,0.45)]" />
+                            <div className="absolute inset-x-0 bottom-3 flex justify-center">
+                              <button
+                                className="pointer-events-auto px-4 py-2 rounded-full bg-[#ef4444] text-white text-sm font-semibold ring-1 ring-white/20 shadow-[0_0_14px_rgba(239,68,68,0.65)] hover:shadow-[0_0_26px_rgba(239,68,68,0.95)] transition-shadow"
+                                aria-label="Cofnij wsparcie – przejdź do zbiórki"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  router.push(`/campaigns/${idStr}`);
+                                }}
+                              >
+                                Cofnij wsparcie
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* delikatny ogólny hover dla kart */}
+                          <div className="absolute inset-0 rounded-lg transition-opacity duration-200 opacity-0 group-hover:opacity-100 bg-gradient-to-t from-black/30 via-black/10 to-transparent" />
+                        </div>
                       );
                     })}
                   </div>
@@ -782,48 +786,6 @@ export default function AccountPage() {
             ) : (
               <p>Nie masz jeszcze żadnych darowizn.</p>
             )}
-          </div>
-        )}
-
-        {activeTab === 'approvals' && (
-          <div className="p-4 bg-white rounded-lg shadow-md">
-            <h2 className="text-xl font-semibold mb-4">Zatwierdzenia (approvals)</h2>
-            {!address ? (
-              <p>Zaloguj się, aby zobaczyć zatwierdzenia.</p>
-            ) : !coreAddress ? (
-              <p>Ładowanie konfiguracji kontraktu...</p>
-            ) : allowancesContracts.length === 0 ? (
-              <p>Brak tokenów do sprawdzenia.</p>
-            ) : approvals.length === 0 ? (
-              <p>Brak aktywnych zgód dla adresu wydającego (spender).</p>
-            ) : (
-              <div className="space-y-3">
-                {approvals.map((a) => (
-                  <div key={a.token} className="flex items-center justify-between bg-gray-50 rounded-md p-3 border border-gray-100">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-800">
-                        {a.symbol} — {a.token.slice(0, 6)}...{a.token.slice(-4)}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {/* show real spender (fallback to core) */}
-                        Zgoda dla: {(coreSpender ?? coreAddress)?.toString().slice(0, 6)}...{(coreSpender ?? coreAddress)?.toString().slice(-4)}
-                      </p>
-                      <p className="text-xs text-gray-600">
-                        Kwota: {a.allowanceHuman.toLocaleString('pl-PL', { maximumFractionDigits: 6 })} {a.symbol}
-                      </p>
-                    </div>
-                    {/* read-only */}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'refunds' && (
-          <div className="p-4 bg-white rounded-lg shadow-md">
-            <h2 className="text-xl font-semibold mb-4">Refundacje</h2>
-            <p>Tu będą wyświetlane dostępne zwroty dla Twoich darowizn.</p>
           </div>
         )}
 
@@ -999,7 +961,7 @@ function MyCampaignCard({ campaign }: { campaign: any }) {
               aria-label="Cel osiągnięty – przejdź do zbiórki"
               onClick={(e) => {
                 e.stopPropagation();
-                router.push(`/campaigns/${idStr}`);
+                router.push(`/idStr`);
               }}
             >
               Cel osiągnięty
