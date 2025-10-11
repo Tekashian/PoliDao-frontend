@@ -13,10 +13,8 @@ import Footer from '../../components/Footer';
 import { useGetAllProposals } from '../../hooks/usePoliDao';
 import { useFundraisersModular } from '../../hooks/useFundraisersModular';
 import CampaignCard from '../../components/CampaignCard';
-// Fallback B: event scan
 import { Interface, JsonRpcProvider } from 'ethers';
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
-// Add write hooks for revoke
 import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { useRouter } from 'next/navigation';
 
@@ -454,9 +452,22 @@ export default function AccountPage() {
     return map;
   }, [refundChecks, donatedFundraiserIds]);
 
-  // Fallback B: scan Core.DonationMade events for this user (count + sum)
+  // NEW: keep refund reason for UX
+  const canRefundReasonById = React.useMemo(() => {
+    const map = new Map<string, string>();
+    if (!refundChecks || donatedFundraiserIds.length === 0) return map;
+    const ids = donatedFundraiserIds.slice(0, 50);
+    ids.forEach((fid, idx) => {
+      const r = refundChecks[idx] as any;
+      const tuple = r?.result;
+      const reason = Array.isArray(tuple) ? String(tuple[1] ?? '') : String(tuple?.reason ?? '');
+      map.set(fid.toString(), reason);
+    });
+    return map;
+  }, [refundChecks, donatedFundraiserIds]);
+
+  // --- RESTORED: DonationMade event scan state + effect (was missing) ---
   const [eventTotals, setEventTotals] = useState<{ count: number; sumBase: bigint } | null>(null);
-  // NEW: full donation history for the user (all campaigns)
   const [donationHistory, setDonationHistory] = useState<
     { fundraiserId: bigint; amount: bigint; timestamp: number; txHash: string }[]
   >([]);
@@ -476,9 +487,17 @@ export default function AccountPage() {
         const provider = new JsonRpcProvider(rpcUrl);
         const iface = new Interface(poliDaoCoreAbi as any);
 
-        const ev = (iface as any).getEvent?.('DonationMade')
-          ?? (iface.fragments.find((f: any) => f.type === 'event' && f.name === 'DonationMade'));
-        if (!ev) { if (!disposed) { setEventTotals(null); setDonationHistory([]); setHistoryLoading(false); } return; }
+        const ev =
+          (iface as any).getEvent?.('DonationMade') ??
+          (iface.fragments.find((f: any) => f.type === 'event' && f.name === 'DonationMade'));
+        if (!ev) {
+          if (!disposed) {
+            setEventTotals(null);
+            setDonationHistory([]);
+            setHistoryLoading(false);
+          }
+          return;
+        }
         const topic = (iface as any).getEventTopic
           ? (iface as any).getEventTopic(ev)
           : (iface as any).getEventTopic?.('DonationMade');
@@ -486,7 +505,6 @@ export default function AccountPage() {
         const startBlockEnv = process.env.NEXT_PUBLIC_CORE_START_BLOCK;
         const fromBlock = startBlockEnv ? BigInt(startBlockEnv) : 0n;
 
-        // fetch all DonationMade logs and filter by donor
         const logs = await provider.getLogs({
           address: coreAddress as string,
           fromBlock,
@@ -510,7 +528,6 @@ export default function AccountPage() {
               count += 1;
               sumBase += (amountRaw ?? 0n);
 
-              // block timestamp (cached by blockNumber)
               const bn = Number(log.blockNumber ?? 0);
               let ts = blockTsCache.get(bn);
               if (ts == null) {
@@ -522,15 +539,14 @@ export default function AccountPage() {
                 fundraiserId,
                 amount: amountRaw ?? 0n,
                 timestamp: ts,
-                txHash: log.transactionHash || ''
+                txHash: log.transactionHash || '',
               });
             }
           } catch {
-            // ignore
+            // ignore parse errors
           }
         }
 
-        // sort newest first
         entries.sort((a, b) => b.timestamp - a.timestamp);
 
         if (!disposed) {
@@ -546,7 +562,9 @@ export default function AccountPage() {
         }
       }
     })();
-    return () => { disposed = true; };
+    return () => {
+      disposed = true;
+    };
   }, [address, coreAddress]);
 
   // KPIs: totals and available refunds count
@@ -614,6 +632,264 @@ export default function AccountPage() {
     }, 0);
     setAvailableRefundsCount(count);
   }, [refundChecks]);
+
+  // NEW: refund modal state and actions
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [refundCtx, setRefundCtx] = useState<{
+    fid: bigint;
+    donated: bigint;
+    title: string;
+    isRefundable: boolean;
+    reason: string;
+  } | null>(null);
+  const [refundInput, setRefundInput] = useState<string>('');
+  const [refundUi, setRefundUi] = useState<string>('');
+
+  // NEW: withdraw modal state and actions
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawCtx, setWithdrawCtx] = useState<{
+    fid: bigint;
+    title: string;
+    raised: bigint;
+    goal: bigint;
+    isFlexible: boolean;
+  } | null>(null);
+  const [withdrawInput, setWithdrawInput] = useState<string>('');
+  const [withdrawUi, setWithdrawUi] = useState<string>('');
+
+  // NEW: write states for refunds and withdrawals
+  const { writeContractAsync } = useWriteContract();
+  const [pendingRefund, setPendingRefund] = useState<{ id: bigint; hash: `0x${string}` } | null>(null);
+  const { isLoading: isRefundMining, isSuccess: isRefundSuccess } = useWaitForTransactionReceipt({
+    hash: pendingRefund?.hash,
+  });
+  const [pendingWithdraw, setPendingWithdraw] = useState<{ id: bigint; hash: `0x${string}` } | null>(null);
+  const { isLoading: isWithdrawMining, isSuccess: isWithdrawSuccess } = useWaitForTransactionReceipt({
+    hash: pendingWithdraw?.hash,
+  });
+
+  // NEW: trigger re-read from chain after state-changing tx
+  const [chainRefresh, setChainRefresh] = useState(0);
+
+  useEffect(() => {
+    if (isRefundSuccess && pendingRefund) {
+      setAvailableRefundsCount((c) => Math.max(0, c - 1));
+      setRefundUi('Zwrot potwierdzony.');
+      setPendingRefund(null);
+      setChainRefresh((v) => v + 1); // refresh reads
+      setTimeout(() => setRefundOpen(false), 900);
+    }
+  }, [isRefundSuccess, pendingRefund]);
+
+  useEffect(() => {
+    if (isWithdrawSuccess && pendingWithdraw) {
+      setWithdrawUi('Wypłata potwierdzona.');
+      setPendingWithdraw(null);
+      setChainRefresh((v) => v + 1); // refresh reads
+      setTimeout(() => setWithdrawOpen(false), 900);
+    }
+  }, [isWithdrawSuccess, pendingWithdraw]);
+
+  function toBaseUnits(amount: string, decimals = 6): bigint {
+    const s = amount.trim().replace(',', '.');
+    if (!/^\d+(\.\d{0,18})?$/.test(s)) throw new Error('Nieprawidłowa kwota');
+    const [intPart, fracPartRaw] = s.split('.');
+    const frac = (fracPartRaw || '').padEnd(decimals, '0').slice(0, decimals);
+    return BigInt(intPart || '0') * (10n ** BigInt(decimals)) + BigInt(frac || '0');
+  }
+
+  const openRefundDialog = (fid: bigint) => {
+    const idStr = fid.toString();
+    const donated = donatedPerFundraiser.get(idStr) ?? 0n;
+    const camp = (campaigns as any[])?.find((x) => x?.id?.toString?.() === idStr);
+    const title =
+      camp?.title && String(camp.title).trim().length > 0
+        ? camp.title
+        : camp?.isFlexible
+          ? `Elastyczna kampania #${idStr}`
+          : `Zbiórka #${idStr}`;
+    const isRefundable = canRefundById.get(idStr) ?? false;
+    const reason = canRefundReasonById.get(idStr) || '';
+    setRefundCtx({ fid, donated, title, isRefundable, reason });
+    setRefundInput('');
+    setRefundUi('');
+    setRefundOpen(true);
+  };
+
+  // NEW: open withdraw dialog for creator
+  const openWithdrawDialog = (fid: bigint) => {
+    const idStr = fid.toString();
+    const camp = (campaigns as any[])?.find((x) => x?.id?.toString?.() === idStr);
+    const title =
+      camp?.title && String(camp.title).trim().length > 0
+        ? camp.title
+        : camp?.isFlexible
+          ? `Elastyczna kampania #${idStr}`
+          : `Zbiórka #${idStr}`;
+    const raised = BigInt(camp?.raisedAmount ?? camp?.raised ?? 0n);
+    const goal = BigInt(camp?.goalAmount ?? camp?.target ?? 0n);
+    const isFlexible = Boolean(camp?.isFlexible);
+    setWithdrawCtx({ fid, title, raised, goal, isFlexible });
+    setWithdrawInput('');
+    setWithdrawUi('');
+    setWithdrawOpen(true);
+  };
+
+  const doFullRefund = async () => {
+    if (!refundCtx) return;
+    try {
+      setRefundUi('');
+      if (refundCtx.isRefundable) {
+        // pełny zwrot dostępny – użyj claimRefund
+        const txHash = await writeContractAsync({
+          address: ROUTER_ADDRESS,
+          abi: poliDaoRouterAbi,
+          functionName: 'claimRefund',
+          args: [refundCtx.fid],
+        });
+        setPendingRefund({ id: refundCtx.fid, hash: txHash });
+      } else {
+        // spróbaj pełnego zwrotu z harmonogramem – poproś o całą kwotę wpłaty
+        const txHash = await writeContractAsync({
+          address: ROUTER_ADDRESS,
+          abi: poliDaoRouterAbi,
+          functionName: 'refundWithSchedule',
+          args: [refundCtx.fid, refundCtx.donated],
+        });
+        setPendingRefund({ id: refundCtx.fid, hash: txHash });
+      }
+      setRefundUi('Zwrot zainicjowany. Oczekiwanie na potwierdzenie...');
+    } catch (err: any) {
+      setRefundUi(err?.shortMessage || err?.message || 'Nie udało się wykonać zwrotu.');
+    }
+  };
+
+  const doCustomRefund = async () => {
+    if (!refundCtx) return;
+    try {
+      const requested = toBaseUnits(refundInput || '0', 6);
+      if (requested <= 0n) {
+        setRefundUi('Kwota musi być większa niż 0.');
+        return;
+      }
+      const txHash = await writeContractAsync({
+        address: ROUTER_ADDRESS,
+        abi: poliDaoRouterAbi,
+        functionName: 'refundWithSchedule',
+        args: [refundCtx.fid, requested],
+      });
+      setPendingRefund({ id: refundCtx.fid, hash: txHash });
+      setRefundUi('Zwrot zainicjowany. Oczekiwanie na potwierdzenie...');
+    } catch (err: any) {
+      setRefundUi(err?.shortMessage || err?.message || 'Nie udało się wykonać zwrotu.');
+    }
+  };
+
+  // NEW: withdraw actions
+  const doFullWithdraw = async () => {
+    if (!withdrawCtx) return;
+    try {
+      setWithdrawUi('');
+      // If goal reached, try full withdraw now
+      if (withdrawCtx.goal > 0n && withdrawCtx.raised >= withdrawCtx.goal) {
+        const txHash = await writeContractAsync({
+          address: ROUTER_ADDRESS,
+          abi: poliDaoRouterAbi,
+          functionName: 'withdrawFunds',
+          args: [withdrawCtx.fid],
+        });
+        setPendingWithdraw({ id: withdrawCtx.fid, hash: txHash });
+      } else {
+        // Flexible or not fully eligible – request full raised, contract will tranche if needed
+        const requested = withdrawCtx.raised;
+        if (requested <= 0n) {
+          setWithdrawUi('Brak środków do wypłaty.');
+          return;
+        }
+        const txHash = await writeContractAsync({
+          address: ROUTER_ADDRESS,
+          abi: poliDaoRouterAbi,
+          functionName: 'withdrawWithSchedule',
+          args: [withdrawCtx.fid, requested],
+        });
+        setPendingWithdraw({ id: withdrawCtx.fid, hash: txHash });
+      }
+      setWithdrawUi('Wypłata zainicjowana. Oczekiwanie na potwierdzenie...');
+    } catch (err: any) {
+      setWithdrawUi(err?.shortMessage || err?.message || 'Nie udało się wykonać wypłaty.');
+    }
+  };
+
+  const doCustomWithdraw = async () => {
+    if (!withdrawCtx) return;
+    try {
+      const requested = toBaseUnits(withdrawInput || '0', 6);
+      if (requested <= 0n) {
+        setWithdrawUi('Kwota musi być większa niż 0.');
+        return;
+      }
+      const txHash = await writeContractAsync({
+        address: ROUTER_ADDRESS,
+        abi: poliDaoRouterAbi,
+        functionName: 'withdrawWithSchedule',
+        args: [withdrawCtx.fid, requested],
+      });
+      setPendingWithdraw({ id: withdrawCtx.fid, hash: txHash });
+      setWithdrawUi('Wypłata zainicjowana. Oczekiwanie na potwierdzenie...');
+    } catch (err: any) {
+      setWithdrawUi(err?.shortMessage || err?.message || 'Nie udało się wykonać wypłaty.');
+    }
+  };
+
+  // NEW: on-chain success detection for user's campaigns
+  const myCampaignIds = React.useMemo(
+    () => myCampaigns.map((c: any) => BigInt(c.id ?? c.campaignId ?? 0n)),
+    [myCampaigns]
+  );
+
+  const progressCalls = React.useMemo(() => {
+    if (myCampaignIds.length === 0) return [];
+    return myCampaignIds.map((fid) => ({
+      address: ROUTER_ADDRESS,
+      abi: poliDaoRouterAbi,
+      functionName: 'getFundraiserProgress' as const,
+      args: [fid],
+    }));
+  }, [myCampaignIds, chainRefresh]);
+
+  const { data: progressResults } = useReadContracts({
+    contracts: progressCalls,
+    query: { enabled: progressCalls.length > 0 },
+  });
+
+  const withdrawFlagsCalls = React.useMemo(() => {
+    if (!coreAddress || myCampaignIds.length === 0) return [];
+    return myCampaignIds.map((fid) => ({
+      address: coreAddress as `0x${string}`,
+      abi: poliDaoCoreAbi,
+      functionName: 'withdrawalsStarted' as const,
+      args: [fid],
+    }));
+  }, [coreAddress, myCampaignIds, chainRefresh]);
+
+  const { data: withdrawFlags } = useReadContracts({
+    contracts: withdrawFlagsCalls,
+    query: { enabled: withdrawFlagsCalls.length > 0 },
+  });
+
+  const successById = React.useMemo(() => {
+    const map = new Map<string, boolean>();
+    if (!progressResults || !withdrawFlags) return map;
+    myCampaignIds.forEach((fid, idx) => {
+      const pr = (progressResults[idx] as any)?.result;
+      const raised = pr?.raised ?? pr?.[0] ?? 0n;
+      const goal = pr?.goal ?? pr?.[1] ?? 0n;
+      const started = Boolean((withdrawFlags[idx] as any)?.result ?? false);
+      const success = started && BigInt(raised) >= BigInt(goal) && BigInt(goal) > 0n;
+      map.set(fid.toString(), success);
+    });
+    return map;
+  }, [progressResults, withdrawFlags, myCampaignIds]);
 
   return (
     <>
@@ -739,7 +1015,7 @@ export default function AccountPage() {
                       };
 
                       const isRefundable = canRefundById.get(idStr) ?? false;
-
+                      const isPending = pendingRefund?.id === BigInt(idStr) || isRefundMining;
                       return (
                         <div
                           key={idStr}
@@ -755,20 +1031,23 @@ export default function AccountPage() {
                             showDetails
                           />
 
-                          {/* Czerwony overlay i CTA – jak w 'Twoje zbiórki', tylko w czerwieni */}
+                          {/* Czerwony overlay i CTA – refund */}
                           <div className="pointer-events-none absolute left-0 right-0 top-0 h-60 z-10 rounded-t-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                             <div className="absolute inset-0 bg-gradient-to-t from-[#ef4444]/35 via-[#ef4444]/10 to-transparent" />
                             <div className="absolute inset-0 rounded-t-xl ring-1 ring-[#ef4444]/40 shadow-[inset_0_0_22px_rgba(239,68,68,0.45)]" />
                             <div className="absolute inset-x-0 bottom-3 flex justify-center">
                               <button
-                                className="pointer-events-auto px-4 py-2 rounded-full bg-[#ef4444] text-white text-sm font-semibold ring-1 ring-white/20 shadow-[0_0_14px_rgba(239,68,68,0.65)] hover:shadow-[0_0_26px_rgba(239,68,68,0.95)] transition-shadow"
-                                aria-label="Cofnij wsparcie – przejdź do zbiórki"
+                                className={`pointer-events-auto px-4 py-2 rounded-full text-white text-sm font-semibold ring-1 ring-white/20 transition-shadow
+                                  ${isRefundable ? 'bg-[#ef4444] shadow-[0_0_14px_rgba(239,68,68,0.65)] hover:shadow-[0_0_26px_rgba(239,68,68,0.95)]' : 'bg-[#ef4444]/60'}
+                                  ${isPending ? 'opacity-70 cursor-wait' : ''}`}
+                                aria-label="Cofnij wsparcie"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  router.push(`/campaigns/${idStr}`);
+                                  openRefundDialog(BigInt(idStr));
                                 }}
+                                disabled={isPending}
                               >
-                                Cofnij wsparcie
+                                {isPending ? 'Cofanie...' : 'Cofnij wsparcie'}
                               </button>
                             </div>
                           </div>
@@ -800,11 +1079,15 @@ export default function AccountPage() {
               <p className="text-red-500">Błąd podczas ładowania zbiórek</p>
             ) : myCampaigns.length > 0 ? (
               <div className="flex flex-wrap justify-center gap-6">
-                 {myCampaigns.map((c) => (
-                  <div key={String(c.id)} className="w-full sm:w-[24rem] flex-none">
-                     <MyCampaignCard campaign={c} />
-                   </div>
-                 ))}
+                 {myCampaigns.map((c) => {
+                   const idStr = (c.id ?? 0n).toString();
+                   const success = successById.get(idStr) ?? false;
+                   return (
+                    <div key={String(c.id)} className="w-full sm:w-[24rem] flex-none">
+                      <MyCampaignCard campaign={c} onWithdraw={(id) => openWithdrawDialog(BigInt(id))} success={success} />
+                    </div>
+                   );
+                 })}
                </div>
             ) : (
               <p>Nie utworzyłeś jeszcze żadnej zbiórki.</p>
@@ -901,16 +1184,178 @@ export default function AccountPage() {
         </DialogActions>
       </Dialog>
 
+      {/* NEW: Refund modal – styled to match app */}
+      <Dialog open={refundOpen} onClose={() => setRefundOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#ef4444]/10 text-[#ef4444]">↩</span>
+            <span>Cofnij wsparcie</span>
+          </div>
+        </DialogTitle>
+        <DialogContent dividers>
+          {!refundCtx ? (
+            <p>Ładowanie...</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-xl bg-gray-50 p-4 ring-1 ring-gray-100 shadow-sm">
+                <p className="text-sm text-gray-500">Zbiórka</p>
+                <p className="text-base font-semibold">{refundCtx.title}</p>
+                <div className="mt-3 flex items-center justify-between">
+                  <span className="text-sm text-gray-500">Twoje wpłaty</span>
+                  <span className="text-sm font-semibold text-gray-900">
+                    {(Number(refundCtx.donated) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC
+                  </span>
+                </div>
+                <div className="mt-3">
+                  {refundCtx.isRefundable ? (
+                    <span className="inline-flex items-center rounded-full bg-[#10b981]/10 px-2.5 py-1 text-xs font-semibold text-[#10b981] ring-1 ring-[#10b981]/20">
+                      Pełny zwrot dostępny
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full bg-[#ef4444]/10 px-2.5 py-1 text-xs font-semibold text-[#ef4444] ring-1 ring-[#ef4444]/20">
+                      {refundCtx.reason || 'Zwrot nie jest aktualnie dostępny'}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl p-4 ring-1 ring-gray-100 bg-white">
+                <button
+                  onClick={doFullRefund}
+                  disabled={isRefundMining || (pendingRefund && refundCtx && pendingRefund.id === refundCtx.fid)}
+                  className={`w-full px-4 py-2 rounded-lg text-white text-sm font-semibold shadow transition
+                    ${refundCtx.isRefundable ? 'bg-[#ef4444] hover:shadow-[0_0_22px_rgba(239,68,68,0.45)]' : 'bg-[#ef4444] hover:shadow-[0_0_22px_rgba(239,68,68,0.45)]'}
+                    ${isRefundMining ? 'opacity-70 cursor-wait' : ''}`}
+                >
+                  {isRefundMining ? 'Przetwarzanie...' : 'Zwrot pełny teraz'}
+                </button>
+
+                <div className="mt-4">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Lub zwróć wybraną kwotę (USDC)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="np. 12.34"
+                      value={refundInput}
+                      onChange={(e) => setRefundInput(e.target.value)}
+                      className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#10b981]/30"
+                    />
+                    <button
+                      onClick={doCustomRefund}
+                      disabled={isRefundMining}
+                      className={`px-4 py-2 rounded-lg text-white text-sm font-semibold bg-[#10b981] hover:shadow-[0_0_18px_rgba(16,185,129,0.35)] transition ${isRefundMining ? 'opacity-70 cursor-wait' : ''}`}
+                    >
+                      Zwróć kwotę
+                    </button>
+                  </div>
+                </div>
+
+                {refundUi && (
+                  <p className="mt-3 text-xs text-gray-600">{refundUi}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRefundOpen(false)}>Zamknij</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* NEW: Withdraw modal – styled to match app */}
+      <Dialog open={withdrawOpen} onClose={() => setWithdrawOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#10b981]/10 text-[#10b981]">⬇</span>
+            <span>Wypłać środki</span>
+          </div>
+        </DialogTitle>
+        <DialogContent dividers>
+          {!withdrawCtx ? (
+            <p>Ładowanie...</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-xl bg-gray-50 p-4 ring-1 ring-gray-100 shadow-sm">
+                <p className="text-sm text-gray-500">Zbiórka</p>
+                <p className="text-base font-semibold">{withdrawCtx.title}</p>
+                <div className="mt-3 flex items-center justify-between">
+                  <span className="text-sm text-gray-500">Zebrano</span>
+                  <span className="text-sm font-semibold text-gray-900">
+                    {(Number(withdrawCtx.raised) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC
+                  </span>
+                </div>
+                <div className="mt-3">
+                  {withdrawCtx.goal > 0n && withdrawCtx.raised >= withdrawCtx.goal ? (
+                    <span className="inline-flex items-center rounded-full bg-[#10b981]/10 px-2.5 py-1 text-xs font-semibold text-[#10b981] ring-1 ring-[#10b981]/20">
+                      Cel osiągnięty — pełna wypłata dostępna
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+                      Wypłata częściowa — kontrakt podzieli na transze
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl p-4 ring-1 ring-gray-100 bg-white">
+                <button
+                  onClick={doFullWithdraw}
+                  disabled={isWithdrawMining || (pendingWithdraw && withdrawCtx && pendingWithdraw.id === withdrawCtx.fid)}
+                  className={`w-full px-4 py-2 rounded-lg text-white text-sm font-semibold shadow transition
+                    ${withdrawCtx.goal > 0n && withdrawCtx.raised >= withdrawCtx.goal ? 'bg-[#10b981]' : 'bg-[#10b981]'}
+                    ${isWithdrawMining ? 'opacity-70 cursor-wait' : 'hover:shadow-[0_0_22px_rgba(16,185,129,0.35)]'}`}
+                >
+                  {isWithdrawMining ? 'Przetwarzanie...' : 'Wypłać całość teraz'}
+                </button>
+
+                <div className="mt-4">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Lub wypłać wybraną kwotę (USDC)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="np. 250.00"
+                      value={withdrawInput}
+                      onChange={(e) => setWithdrawInput(e.target.value)}
+                      className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#10b981]/30"
+                    />
+                    <button
+                      onClick={doCustomWithdraw}
+                      disabled={isWithdrawMining}
+                      className={`px-4 py-2 rounded-lg text-white text-sm font-semibold bg-[#10b981] transition ${isWithdrawMining ? 'opacity-70 cursor-wait' : 'hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]'}`}
+                    >
+                      Wypłać kwotę
+                    </button>
+                  </div>
+                </div>
+
+                {withdrawUi && (
+                  <p className="mt-3 text-xs text-gray-600">{withdrawUi}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setWithdrawOpen(false)}>Zamknij</Button>
+        </DialogActions>
+      </Dialog>
+
       <Footer />
     </>
   );
 }
 
-function MyCampaignCard({ campaign }: { campaign: any }) {
+// Extend MyCampaignCard to accept success flag and gray out if finished
+function MyCampaignCard({ campaign, onWithdraw, success }: { campaign: any, onWithdraw?: (id: string) => void, success?: boolean }) {
   const router = useRouter();
   const idStr = (campaign.id ?? 0n).toString();
 
-  // Normalize to CampaignCard's expected shape
   const mappedCampaign = {
     campaignId: idStr,
     targetAmount: (campaign.goalAmount ?? campaign.target ?? 0n) as bigint,
@@ -921,12 +1366,10 @@ function MyCampaignCard({ campaign }: { campaign: any }) {
     isFlexible: Boolean(campaign.isFlexible),
   };
 
-  // Czy cel osiągnięty (tylko wtedy pokaż overlay)
   const isReached =
     mappedCampaign.targetAmount > 0n &&
     mappedCampaign.raisedAmount >= mappedCampaign.targetAmount;
 
-  // Metadata for display
   const metadata = {
     title:
       (campaign.title && String(campaign.title).trim().length > 0)
@@ -941,36 +1384,45 @@ function MyCampaignCard({ campaign }: { campaign: any }) {
 
   return (
     <div
-      className="relative group cursor-pointer transition-transform"
+      className={`relative group cursor-pointer transition-transform ${success ? 'grayscale opacity-80' : ''}`}
       onClick={() => router.push(`/campaigns/${idStr}`)}
       title="Przejdź do strony zbiórki"
     >
       <CampaignCard campaign={mappedCampaign} metadata={metadata} />
 
-      {/* Overlay i CTA wyłącznie dla osiągniętego celu – na obszarze zdjęcia */}
-      {isReached && (
-        <div className="pointer-events-none absolute left-0 right-0 top-0 h-60 z-10 rounded-t-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          {/* subtelny zielony gradient */}
-          <div className="absolute inset-0 bg-gradient-to-t from-[#10b981]/35 via-[#10b981]/10 to-transparent" />
-          {/* lekki neon na krawędzi zdjęcia */}
-          <div className="absolute inset-0 rounded-t-xl ring-1 ring-[#10b981]/40 shadow-[inset_0_0_22px_rgba(16,185,129,0.45)]" />
-          {/* przycisk */}
-          <div className="absolute inset-x-0 bottom-3 flex justify-center">
-            <button
-              className="pointer-events-auto px-4 py-2 rounded-full bg-[#10b981] text-white text-sm font-semibold ring-1 ring-white/20 shadow-[0_0_14px_rgba(16,185,129,0.65)] hover:shadow-[0_0_26px_rgba(16,185,129,0.95)] transition-shadow"
-              aria-label="Cel osiągnięty – przejdź do zbiórki"
-              onClick={(e) => {
-                e.stopPropagation();
-                router.push(`/idStr`);
-              }}
-            >
-              Cel osiągnięty
-            </button>
+      {/* If finished successfully, show grey badge and no CTA */}
+      {success ? (
+        <div className="pointer-events-none absolute left-0 right-0 top-0 h-60 z-10 rounded-t-xl overflow-hidden opacity-100">
+          <div className="absolute inset-0 bg-gradient-to-t from-gray-500/30 via-gray-300/10 to-transparent" />
+          <div className="absolute left-3 top-3">
+            <span className="inline-flex items-center rounded-full bg-gray-800/80 text-white text-xs font-semibold px-2.5 py-1 ring-1 ring-white/10 shadow">
+              Zakończona sukcesem
+            </span>
           </div>
         </div>
+      ) : (
+        // Otherwise, show withdraw CTA when goal reached
+        isReached && (
+          <div className="pointer-events-none absolute left-0 right-0 top-0 h-60 z-10 rounded-t-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <div className="absolute inset-0 bg-gradient-to-t from-[#10b981]/35 via-[#10b981]/10 to-transparent" />
+            <div className="absolute inset-0 rounded-t-xl ring-1 ring-[#10b981]/40 shadow-[inset_0_0_22px_rgba(16,185,129,0.45)]" />
+            <div className="absolute inset-x-0 bottom-3 flex justify-center">
+              <button
+                className="pointer-events-auto px-4 py-2 rounded-full bg-[#10b981] text-white text-sm font-semibold ring-1 ring-white/20 shadow-[0_0_14px_rgba(16,185,129,0.65)] hover:shadow-[0_0_26px_rgba(16,185,129,0.95)] transition-shadow"
+                aria-label="Wypłać środki – kampania osiągnęła cel"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onWithdraw) onWithdraw(idStr);
+                  else router.push(`/campaigns/${idStr}`);
+                }}
+              >
+                Wypłać środki
+              </button>
+            </div>
+          </div>
+        )
       )}
 
-      {/* delikatny ogólny hover dla kart */}
       <div className="absolute inset-0 rounded-lg transition-opacity duration-200 opacity-0 group-hover:opacity-100 bg-gradient-to-t from-black/30 via-black/10 to-transparent" />
     </div>
   );

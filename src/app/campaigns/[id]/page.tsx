@@ -36,7 +36,7 @@ import Image from 'next/image';
 import { useAppKitAccount, useAppKitNetwork } from "@reown/appkit/react";
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useReadContracts } from "wagmi";
 import { formatUnits, parseUnits } from "viem";
-import { Interface, JsonRpcProvider } from 'ethers';
+import { Interface, JsonRpcProvider, keccak256, toUtf8Bytes } from 'ethers';
 import { poliDaoRouterAbi } from '../../../blockchain/routerAbi';
 import { ROUTER_ADDRESS } from '../../../blockchain/contracts';
 import { poliDaoAnalyticsAbi } from '../../../blockchain/analyticsAbi';
@@ -386,6 +386,15 @@ export default function CampaignPage() {
     query: { enabled: !!coreAddress },
   });
 
+  // NEW: resolve Updates module (needed to read events)
+  const { data: updatesModuleAddress } = useReadContract({
+    address: coreAddress as `0x${string}` | undefined,
+    abi: poliDaoCoreAbi,
+    functionName: 'updatesModule',
+    chainId: sepolia.id,
+    query: { enabled: !!coreAddress },
+  });
+
   const { data: donorsCountData, refetch: refetchDonorsCount } = useReadContract({
     address: analyticsAddress as `0x${string}` | undefined,
     abi: poliDaoAnalyticsAbi,
@@ -604,6 +613,13 @@ export default function CampaignPage() {
     data: approvalHash 
   } = useWriteContract();
 
+  // NEW: writer for posting updates
+  const {
+	writeContract: writeUpdate,
+	isPending: isPostingUpdate,
+	data: updateHash
+} = useWriteContract();
+
   // Wait for transaction confirmations
   const { 
     isLoading: isDonationConfirming, 
@@ -617,6 +633,14 @@ export default function CampaignPage() {
     isSuccess: isApprovalSuccess 
   } = useWaitForTransactionReceipt({
     hash: approvalHash,
+  });
+
+  // NEW: wait for update tx
+  const {
+    isLoading: isUpdateConfirming,
+    isSuccess: isUpdateSuccess
+  } = useWaitForTransactionReceipt({
+    hash: updateHash,
   });
 
   // Check user's token balance – unchanged
@@ -676,15 +700,130 @@ export default function CampaignPage() {
   }, [spenderCandidates]);
 
   // Handle updates
-  const handleAddUpdate = () => {
+  // REPLACE Core.postUpdate with Router.routeModule(UPDATES_KEY, data)
+  const handleAddUpdate = async () => {
     const trimmed = newUpdateText.trim();
     if (!trimmed) return;
-    setUpdates(prev => [{ content: trimmed, timestamp: Date.now() }, ...prev ]);
-    setNewUpdateText('');
-    setSnackbar({ open: true, message: 'Aktualność została dodana!', severity: 'success' });
+    if (!isConnected) {
+      setSnackbar({ open: true, message: 'Najpierw połącz portfel!', severity: 'error' });
+      return;
+    }
+    if (!isOwner) {
+      setSnackbar({ open: true, message: 'Tylko twórca kampanii może dodawać aktualności.', severity: 'error' });
+      return;
+    }
+    if (chainId !== sepolia.id) {
+      setSnackbar({ open: true, message: 'Przełącz sieć na Sepolia.', severity: 'error' });
+      return;
+    }
+    try {
+      // Optimistic UI
+      setUpdates(prev => [{ content: trimmed, timestamp: Date.now() }, ...prev ]);
+      setNewUpdateText('');
+      setSnackbar({ open: true, message: 'Wysyłanie aktualności...', severity: 'info' });
+
+      // Encode Updates.postUpdate(uint256,address,string)
+      const uiface = new Interface(['function postUpdate(uint256,address,string)']);
+      const calldata = uiface.encodeFunctionData('postUpdate', [
+        BigInt(campaignData!.id),
+        address as `0x${string}`,
+        trimmed
+      ]) as `0x${string}`;
+
+      await writeUpdate({
+        address: ROUTER_ADDRESS,
+        abi: poliDaoRouterAbi,
+        functionName: 'routeModule',
+        args: [UPDATES_KEY, calldata],
+        chainId: sepolia.id,
+      });
+    } catch (err: any) {
+      setSnackbar({ open: true, message: `Błąd zapisu aktualności: ${err?.message || 'nieznany błąd'}`, severity: 'error' });
+    }
   };
 
-  // Enhanced donation flow – przez Router (approve first if needed)
+  // NEW: react on confirmed update – notify and let poller refresh list
+  useEffect(() => {
+    if (isUpdateSuccess) {
+      setSnackbar({ open: true, message: 'Aktualność zapisana na blockchainie!', severity: 'success' });
+      // optional visual ping
+      setLastRefreshTime(Date.now());
+    }
+  }, [isUpdateSuccess]);
+
+  // NEW: Updates reader — fetch UpdatePosted events from Updates module
+  useEffect(() => {
+    if (selectedIdKey < 0 || !updatesModuleAddress) return;
+
+    const rpcUrl =
+      process.env.NEXT_PUBLIC_RPC_URL ||
+      process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL;
+
+    if (!rpcUrl) {
+      console.warn('Brak RPC URL. Ustaw NEXT_PUBLIC_RPC_URL lub NEXT_PUBLIC_SEPOLIA_RPC_URL w .env');
+      return;
+    }
+
+    let disposed = false;
+
+    const fetchUpdates = async () => {
+      try {
+        const provider = new JsonRpcProvider(rpcUrl);
+
+        // Correct event signature per ABI:
+        // UpdatePosted(uint256 indexed updateId, uint256 indexed fundraiserId, address indexed author, string content, uint8 updateType)
+        const uiface = new Interface([
+          'event UpdatePosted(uint256 indexed updateId, uint256 indexed fundraiserId, address indexed author, string content, uint8 updateType)'
+        ] as any);
+
+        const ev = (uiface as any).getEvent?.('UpdatePosted') ?? (uiface.fragments.find((f: any) => f.type === 'event' && f.name === 'UpdatePosted'));
+        if (!ev) return;
+        const topic0 = (uiface as any).getEventTopic ? (uiface as any).getEventTopic(ev) : (uiface as any).getEventTopic?.('UpdatePosted');
+
+        const fundraiserTopic = '0x' + BigInt(selectedIdKey).toString(16).padStart(64, '0');
+        const startBlockEnv = process.env.NEXT_PUBLIC_UPDATES_START_BLOCK || process.env.NEXT_PUBLIC_CORE_START_BLOCK;
+        const fromBlock = startBlockEnv ? BigInt(startBlockEnv) : 0n;
+
+        // topics: [signature, updateId(any), fundraiserId(we filter), author(any)]
+        const logs = await provider.getLogs({
+          address: updatesModuleAddress as string,
+          fromBlock,
+          toBlock: 'latest',
+          topics: [topic0, null, fundraiserTopic, null],
+        });
+
+        const entries = await Promise.all(
+          logs.map(async (log) => {
+            try {
+              const decoded = uiface.parseLog(log as any);
+              const args = decoded.args as any;
+              const block = await provider.getBlock(log.blockHash!);
+              const tsMs = block?.timestamp ? Number(block.timestamp) * 1000 : Date.now();
+              const content = String(args?.content ?? '');
+              return { content, timestamp: tsMs } as Update;
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        const list = entries.filter((x): x is Update => !!x).sort((a, b) => b.timestamp - a.timestamp);
+        if (!disposed) setUpdates(list);
+      } catch (err) {
+        console.warn('Błąd pobierania aktualności:', err);
+        if (!disposed) setUpdates((prev) => prev);
+      }
+    };
+
+    fetchUpdates();
+    const interval = setInterval(fetchUpdates, 20000);
+    return () => {
+      disposed = true;
+      clearInterval(interval);
+    };
+  }, [selectedIdKey, updatesModuleAddress, chainKey]);
+
+  // ADD: donation handler inside component
   const handleDonate = async () => {
     if (!isConnected || !campaignData) {
       setSnackbar({ open: true, message: 'Najpierw połącz portfel!', severity: 'error' });
@@ -711,20 +850,19 @@ export default function CampaignPage() {
       return;
     }
 
-    const decimals = Number(tokenDecimals ?? 6);
-    const amount = parseUnits(donateAmount, decimals as any);
-    setPendingDonationAmount(amount);
-
-    if (userBalance && amount > (userBalance as bigint)) {
-      setSnackbar({ open: true, message: 'Niewystarczający balans tokenów!', severity: 'error' });
-      return;
-    }
-
     try {
+      const decimals = Number(tokenDecimals ?? 6);
+      const amount = parseUnits(donateAmount, decimals as any);
+      setPendingDonationAmount(amount);
+
+      if (userBalance && amount > (userBalance as bigint)) {
+        setSnackbar({ open: true, message: 'Niewystarczający balans tokenów!', severity: 'error' });
+        return;
+      }
+
       const readySpender = bestSpenderWithAllowance(amount);
 
       if (!readySpender) {
-        // Approve FIRST (Core.spenderAddress -> Core)
         setNeedsApproval(true);
         setSnackbar({ open: true, message: 'Najpierw zatwierdź wydatkowanie tokenów', severity: 'info' });
         await writeApproval({
@@ -734,7 +872,7 @@ export default function CampaignPage() {
           args: [firstSpenderToApprove as `0x${string}`, amount],
           chainId: sepolia.id,
         });
-        return;
+        return; // Donate will run after approval confirmation
       }
 
       await writeContract({
@@ -750,7 +888,7 @@ export default function CampaignPage() {
     }
   };
 
-  // Po udanym approve – automatycznie wykonaj donate z zapamiętaną kwotą
+  // ADD: auto-donate after approve confirms (inside component)
   useEffect(() => {
     const doDonateAfterApprove = async () => {
       if (!isApprovalSuccess) return;
@@ -775,7 +913,7 @@ export default function CampaignPage() {
     doDonateAfterApprove();
   }, [isApprovalSuccess, campaignData, pendingDonationAmount, refetchAllowancesMulti, writeContract]);
 
-  // Po udanej wpłacie – odśwież progres + donors Analytics
+  // ADD: refresh after donation confirms (inside component)
   useEffect(() => {
     if (isDonationSuccess) {
       setSnackbar({ open: true, message: 'Wpłata została potwierdzona! Odświeżanie danych...', severity: 'success' });
@@ -1024,9 +1162,10 @@ export default function CampaignPage() {
                   />
                   <button
                     onClick={handleAddUpdate}
-                    className="w-full py-2 text-base font-medium text-white bg-[#10b981] hover:bg-[#10b981] rounded-md transform transition-transform hover:scale-105 shadow-md hover:shadow-[0_0_18px_rgba(16,185,129,0.45)]"
+                    disabled={isPostingUpdate || isUpdateConfirming}
+                    className="w-full py-2 text-base font-medium text-white bg-[#10b981] hover:bg-[#10b981] rounded-md transform transition-transform hover:scale-105 shadow-md hover:shadow-[0_0_18px_rgba(16,185,129,0.45)] disabled:opacity-50"
                   >
-                    Dodaj
+                    {isPostingUpdate || isUpdateConfirming ? 'Zapisywanie...' : 'Dodaj'}
                   </button>
                 </div>
               )}
@@ -1324,7 +1463,7 @@ export default function CampaignPage() {
           
           {!campaignData.isFlexible && (
             <Alert severity="info" sx={{ mb: 2 }}>
-              To jest zbiórka z celem. Środki mogą zostać zwrócone jeśli cel nie zostanie osiągnięty.
+              To jest zbiórka z celem. Środki mogą być zwrócone jeśli cel nie zostanie osiągnięty.
             </Alert>
           )}
         </DialogContent>
@@ -1411,3 +1550,108 @@ export default function CampaignPage() {
     </div>
   );
 }
+
+// Enhanced donation flow – approve Core/Spender if needed, then donate via Router
+// const handleDonate = async () => {
+// 	if (!isConnected || !campaignData) {
+// 		setSnackbar({ open: true, message: 'Najpierw połącz portfel!', severity: 'error' });
+// 		return;
+// 	}
+// 	if (chainId !== sepolia.id) {
+// 		setSnackbar({ open: true, message: 'Przełącz sieć na Sepolia i spróbuj ponownie.', severity: 'error' });
+// 		return;
+// 	}
+// 	if (!donateAmount || isNaN(Number(donateAmount)) || Number(donateAmount) <= 0) {
+// 		setSnackbar({ open: true, message: 'Wprowadź poprawną kwotę!', severity: 'error' });
+// 		return;
+// 	}
+// 	if (!campaignData.id) {
+// 		setSnackbar({ open: true, message: 'Brak ID zbiórki.', severity: 'error' });
+// 		return;
+// 	}
+// 	if (!campaignData.token) {
+// 		setSnackbar({ open: true, message: 'Brak adresu tokena zbiórki.', severity: 'error' });
+// 		return;
+// 	}
+// 	if (!firstSpenderToApprove && spenderCandidates.length === 0) {
+// 		setSnackbar({ open: true, message: 'Nie udało się wyznaczyć adresu spendera (Core).', severity: 'error' });
+// 		return;
+// 	}
+
+// 	try {
+// 		const decimals = Number(tokenDecimals ?? 6);
+// 		const amount = parseUnits(donateAmount, decimals as any);
+// 		setPendingDonationAmount(amount);
+
+// 		if (userBalance && amount > (userBalance as bigint)) {
+// 			setSnackbar({ open: true, message: 'Niewystarczający balans tokenów!', severity: 'error' });
+// 			return;
+// 		}
+
+// 		const readySpender = bestSpenderWithAllowance(amount);
+
+// 		if (!readySpender) {
+// 			setNeedsApproval(true);
+// 			setSnackbar({ open: true, message: 'Najpierw zatwierdź wydatkowanie tokenów', severity: 'info' });
+// 			await writeApproval({
+// 				address: campaignData.token,
+// 				abi: ERC20_ABI,
+// 				functionName: "approve",
+// 				args: [firstSpenderToApprove as `0x${string}`, amount],
+// 				chainId: sepolia.id,
+// 			});
+// 			return; // Donate will run after approval confirmation
+// 		}
+
+// 		await writeContract({
+// 			address: ROUTER_ADDRESS,
+// 			abi: poliDaoRouterAbi,
+// 			functionName: "donate",
+// 			args: [BigInt(campaignData.id), amount],
+// 			chainId: sepolia.id,
+// 		});
+// 	} catch (error: any) {
+// 		console.error("Transaction failed:", error);
+// 		setSnackbar({ open: true, message: `Wystąpił błąd: ${error.message || 'Nieznany błąd'}`, severity: 'error' });
+// 	}
+// };
+
+// ADD: auto-donate after approve confirms (inside component)
+// useEffect(() => {
+// 	const doDonateAfterApprove = async () => {
+// 		if (!isApprovalSuccess) return;
+// 		if (!campaignData || pendingDonationAmount === null) return;
+// 		try {
+// 			await refetchAllowancesMulti?.();
+// 			await writeContract({
+// 				address: ROUTER_ADDRESS,
+// 				abi: poliDaoRouterAbi,
+// 				functionName: "donate",
+// 				args: [BigInt(campaignData.id), pendingDonationAmount],
+// 				chainId: sepolia.id,
+// 			});
+// 			setNeedsApproval(false);
+// 		} catch (err: any) {
+// 			console.error('Donate after approve failed:', err);
+// 			setSnackbar({ open: true, message: `Donate nie powiódł się: ${err?.message || 'nieznany błąd'}`, severity: 'error' });
+// 		} finally {
+// 			setPendingDonationAmount(null);
+// 		}
+// 	};
+// 	doDonateAfterApprove();
+// }, [isApprovalSuccess, campaignData, pendingDonationAmount, refetchAllowancesMulti, writeContract]);
+
+// ADD: refresh after donation confirms (inside component)
+// useEffect(() => {
+// 	if (isDonationSuccess) {
+// 		setSnackbar({ open: true, message: 'Wpłata została potwierdzona! Odświeżanie danych...', severity: 'success' });
+// 		setTimeout(() => {
+// 			setDonateOpen(false);
+// 			setDonateAmount("");
+// 			setNeedsApproval(false);
+// 			refetchProgress();
+// 			refetchDonorsCount?.();
+// 			refetchDonors?.();
+// 		}, 1200);
+// 	}
+// }, [isDonationSuccess, refetchProgress, refetchDonorsCount, refetchDonors]);
