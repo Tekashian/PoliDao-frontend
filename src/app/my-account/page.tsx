@@ -13,7 +13,7 @@ import Footer from '../../components/Footer';
 import { useGetAllProposals } from '../../hooks/usePoliDao';
 import { useFundraisersModular } from '../../hooks/useFundraisersModular';
 import CampaignCard from '../../components/CampaignCard';
-import { Interface, JsonRpcProvider } from 'ethers';
+import { Interface, JsonRpcProvider, keccak256, toUtf8Bytes } from 'ethers';
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
 import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { useRouter } from 'next/navigation';
@@ -109,6 +109,14 @@ export default function AccountPage() {
     address: coreAddress as `0x${string}` | undefined,
     abi: poliDaoCoreAbi,
     functionName: 'analyticsModule',
+    query: { enabled: !!coreAddress }
+  });
+
+  // NEW: Storage address for precise KPI via Transfer(to=Storage) filter
+  const { data: storageAddress } = useReadContract({
+    address: coreAddress as `0x${string}` | undefined,
+    abi: poliDaoCoreAbi,
+    functionName: 'storageContract',
     query: { enabled: !!coreAddress }
   });
 
@@ -474,6 +482,9 @@ export default function AccountPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // NEW: trigger re-read from chain after state-changing tx (moved up to avoid TDZ)
+  const [chainRefresh, setChainRefresh] = useState(0);
+
   useEffect(() => {
     let disposed = false;
     (async () => {
@@ -571,69 +582,88 @@ export default function AccountPage() {
   const [totalDonationsCount, setTotalDonationsCount] = useState<number>(0);
   const [totalDonationsSum, setTotalDonationsSum] = useState<string>('0');
   const [availableRefundsCount, setAvailableRefundsCount] = useState<number>(0);
+  // NEW: mark when KPI got overridden by Transfer scan
+  const [kpiOverride, setKpiOverride] = useState(false);
 
-  // Primary source: Router.listUserDonations
+  // REMOVE: Router-based KPI and per-campaign fallback; rely only on Core DonationMade events
   useEffect(() => {
-    const ids = (userDonationsTuple as any)?.[0] as bigint[] | undefined;
-    const amounts = (userDonationsTuple as any)?.[1] as bigint[] | undefined;
-
-    if (Array.isArray(ids) && Array.isArray(amounts) && ids.length === amounts.length && ids.length > 0) {
-      setTotalDonationsCount(ids.length);
-      const sum = amounts.reduce((acc, v) => acc + (v ?? 0n), 0n);
-      const human = Number(sum) / 1_000_000; // assume USDC 6 decimals
-      setTotalDonationsSum(`${human.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC`);
-      return;
-    }
-
-    // If Router returns nothing usable, clear (fallbacks will fill)
-    setTotalDonationsCount(0);
-    setTotalDonationsSum('0');
-  }, [userDonationsTuple]);
-
-  // Fallback preference: Core events (accurate count) → per-campaign getDonationAmount (coverage)
-  useEffect(() => {
-    // Use events if have any matches
-    if (eventTotals && (eventTotals.count > 0 || eventTotals.sumBase > 0n)) {
+    if (kpiOverride) return; // keep transfer-based KPI if available
+    if (eventTotals) {
       setTotalDonationsCount(eventTotals.count);
       const human = Number(eventTotals.sumBase) / 1_000_000; // assume USDC 6 decimals
       setTotalDonationsSum(`${human.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC`);
-      return;
+    } else {
+      setTotalDonationsCount(0);
+      setTotalDonationsSum('0');
     }
+  }, [eventTotals, kpiOverride]);
 
-    // Else aggregate per-campaign results
-    if (donationAmountResults && donationAmountResults.length > 0) {
-      let sum = 0n;
-      let nonZero = 0;
-      for (const r of donationAmountResults) {
-        const v = (r as any)?.result as bigint | undefined;
-        if (typeof v === 'bigint') {
-          sum += v;
-          if (v > 0n) nonZero += 1; // fixed parentheses
-        }
-      }
-      if (sum > 0n || nonZero > 0) {
-        setTotalDonationsCount(nonZero); // approximation of "number of donations" via number of campaigns with any donation
-        const human = Number(sum) / 1_000_000; // assume USDC 6 decimals
-        setTotalDonationsSum(`${human.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC`);
-      }
-    }
-  }, [eventTotals, donationAmountResults]);
-
-  // Compute availableRefundsCount from refundChecks
+  // NEW: compute KPI strictly from ERC20 Transfer logs with to == Storage and from == user
   useEffect(() => {
-    if (!refundChecks || refundChecks.length === 0) {
-      setAvailableRefundsCount(0);
-      return;
-    }
-    const count = refundChecks.reduce((acc, r) => {
-      const res = (r as any)?.result;
-      const can = Array.isArray(res) ? Boolean(res[0]) : Boolean(res?.canRefundResult);
-      return acc + (can ? 1 : 0);
-    }, 0);
-    setAvailableRefundsCount(count);
-  }, [refundChecks]);
+    let disposed = false;
+    (async () => {
+      if (!address || !storageAddress) return;
+      if (!tokensOfInterest || tokensOfInterest.length === 0) return;
 
-  // NEW: refund modal state and actions
+      const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL;
+      if (!rpcUrl) return;
+
+      try {
+        const provider = new JsonRpcProvider(rpcUrl);
+        const transferTopic = keccak256(toUtf8Bytes('Transfer(address,address,uint256)'));
+        const fromTopic = '0x' + address.slice(2).padStart(64, '0').toLowerCase();
+        const toTopic = '0x' + (storageAddress as string).slice(2).padStart(64, '0').toLowerCase();
+
+        // Optional: start block env for Storage/Router
+        const startBlockEnv =
+          process.env.NEXT_PUBLIC_STORAGE_START_BLOCK ||
+          process.env.NEXT_PUBLIC_CORE_START_BLOCK ||
+          '0';
+        const fromBlock = BigInt(startBlockEnv);
+
+        // Scan per token to avoid chain-wide query
+        const logsPerToken = await Promise.all(
+          tokensOfInterest.map((token) =>
+            provider.getLogs({
+              address: token as string,
+              fromBlock,
+              toBlock: 'latest',
+              topics: [transferTopic, fromTopic, toTopic],
+            })
+          )
+        );
+
+        // Sum amounts (data field) and count all matches
+        let totalBase = 0n;
+        let totalCount = 0;
+        for (const logs of logsPerToken) {
+          totalCount += logs.length;
+          for (const log of logs) {
+            // ERC20 Transfer packs amount in data; parse as BigInt
+            const amount = BigInt(log.data || '0x0');
+            totalBase += amount;
+          }
+        }
+
+        if (disposed) return;
+
+        // Update KPI if we found any transfer; assumes 6 decimals (USDC)
+        if (totalCount > 0 || totalBase > 0n) {
+          setKpiOverride(true);
+          setTotalDonationsCount(totalCount);
+          const human = Number(totalBase) / 1_000_000;
+          setTotalDonationsSum(`${human.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC`);
+        }
+      } catch {
+        // ignore; fall back to eventTotals effect
+      }
+    })();
+    return () => {
+      disposed = true;
+    };
+  }, [address, storageAddress, tokensOfInterest, chainRefresh]);
+
+  // --- Refunds/Withdrawals: state and actions ---
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundCtx, setRefundCtx] = useState<{
     fid: bigint;
@@ -667,9 +697,6 @@ export default function AccountPage() {
   const { isLoading: isWithdrawMining, isSuccess: isWithdrawSuccess } = useWaitForTransactionReceipt({
     hash: pendingWithdraw?.hash,
   });
-
-  // NEW: trigger re-read from chain after state-changing tx
-  const [chainRefresh, setChainRefresh] = useState(0);
 
   useEffect(() => {
     if (isRefundSuccess && pendingRefund) {
@@ -891,6 +918,19 @@ export default function AccountPage() {
     return map;
   }, [progressResults, withdrawFlags, myCampaignIds]);
 
+  // NEW: map of latest progress (raised/goal) by fundraiser id (same source as campaigns/[id]): Router.getFundraiserProgress
+  const progressById = React.useMemo(() => {
+    const map = new Map<string, { raised: bigint; goal: bigint }>();
+    if (!progressResults) return map;
+    myCampaignIds.forEach((fid, idx) => {
+      const pr = (progressResults[idx] as any)?.result;
+      const raised = BigInt(pr?.raised ?? pr?.[0] ?? 0n);
+      const goal = BigInt(pr?.goal ?? pr?.[1] ?? 0n);
+      map.set(fid.toString(), { raised, goal });
+    });
+    return map;
+  }, [progressResults, myCampaignIds]);
+
   return (
     <>
       <Header />
@@ -1082,9 +1122,15 @@ export default function AccountPage() {
                  {myCampaigns.map((c) => {
                    const idStr = (c.id ?? 0n).toString();
                    const success = successById.get(idStr) ?? false;
+                   const prog = progressById.get(idStr);
                    return (
                     <div key={String(c.id)} className="w-full sm:w-[24rem] flex-none">
-                      <MyCampaignCard campaign={c} onWithdraw={(id) => openWithdrawDialog(BigInt(id))} success={success} />
+                      <MyCampaignCard
+                        campaign={c}
+                        progress={prog}
+                        onWithdraw={(id) => openWithdrawDialog(BigInt(id))}
+                        success={success}
+                      />
                     </div>
                    );
                  })}
@@ -1352,14 +1398,26 @@ export default function AccountPage() {
 }
 
 // Extend MyCampaignCard to accept success flag and gray out if finished
-function MyCampaignCard({ campaign, onWithdraw, success }: { campaign: any, onWithdraw?: (id: string) => void, success?: boolean }) {
+function MyCampaignCard({
+  campaign,
+  onWithdraw,
+  success,
+  progress
+}: {
+  campaign: any,
+  onWithdraw?: (id: string) => void,
+  success?: boolean,
+  // NEW: latest progress from Router.getFundraiserProgress
+  progress?: { raised: bigint; goal: bigint }
+}) {
   const router = useRouter();
   const idStr = (campaign.id ?? 0n).toString();
 
+  // Normalize and override with progress when available
   const mappedCampaign = {
     campaignId: idStr,
-    targetAmount: (campaign.goalAmount ?? campaign.target ?? 0n) as bigint,
-    raisedAmount: (campaign.raisedAmount ?? campaign.raised ?? 0n) as bigint,
+    targetAmount: (progress?.goal ?? (campaign.goalAmount ?? campaign.target ?? 0n)) as bigint,
+    raisedAmount: (progress?.raised ?? (campaign.raisedAmount ?? campaign.raised ?? 0n)) as bigint,
     creator: campaign.creator as string,
     token: campaign.token as string,
     endTime: (campaign.endDate ?? campaign.endTime ?? 0n) as bigint,
