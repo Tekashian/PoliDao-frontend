@@ -5,7 +5,7 @@ import routerAbi from './routerAbi';
 import coreAbi from './coreAbi';
 
 // Router-only source of truth
-export const ROUTER_ADDRESS = '0xb350df632d19f57107a94748c0e32e3FFe865041' as `0x${string}`;
+export const ROUTER_ADDRESS = '0x80917Fa1677f37dfC45Fb311125A76Bcb76DD50f' as `0x${string}`;
 
 export const ROUTER_ABI = routerAbi;
 
