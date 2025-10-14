@@ -5,9 +5,11 @@ import routerAbi from './routerAbi';
 import coreAbi from './coreAbi';
 
 // Router-only source of truth
-export const ROUTER_ADDRESS = '0x80917Fa1677f37dfC45Fb311125A76Bcb76DD50f' as `0x${string}`;
-
+export const ROUTER_ADDRESS = '0x3238a26109e9d054E132b1DDE13C6d23F4DD6356' as `0x${string}`;
 export const ROUTER_ABI = routerAbi;
+
+// NEW: fixed Core address (from sepolia.json)
+export const CORE_ADDRESS = '0x3Bec2751E82B0c9aeA68458a689304bEd291Fbb5' as `0x${string}`;
 
 // Backward-compatible config for wagmi hooks/components
 export const polidaoContractConfig = {
@@ -28,23 +30,16 @@ export function getRouterContract(providerOrSigner: ethers.Signer | ethers.Abstr
   return new ethers.Contract(ROUTER_ADDRESS, routerAbi, providerOrSigner);
 }
 
-// Helper: resolve Core address via Router (read-only)
+// NEW: Fabryka kontraktu Core
+export function getCoreContract(providerOrSigner: ethers.Signer | ethers.AbstractProvider) {
+  return new ethers.Contract(CORE_ADDRESS, coreAbi, providerOrSigner);
+}
+
+// Helper: resolve Core address via Router (read-only) – now returns fixed address
 export async function getCoreAddress(
   providerOrSigner: ethers.Signer | ethers.AbstractProvider
 ): Promise<`0x${string}`> {
-  const router = getRouterContract(providerOrSigner);
-  const coreAddr: string = await router.coreContract();
-  return coreAddr as `0x${string}`;
-}
-
-// Helper: resolve Core.spenderAddress via Router -> Core (for ERC20 approvals before donate)
-export async function getCoreSpenderAddress(
-  providerOrSigner: ethers.Signer | ethers.AbstractProvider
-): Promise<`0x${string}`> {
-  const coreAddr = await getCoreAddress(providerOrSigner);
-  const core = new ethers.Contract(coreAddr, coreAbi, providerOrSigner);
-  const spender: string = await core.spenderAddress();
-  return spender as `0x${string}`;
+  return CORE_ADDRESS;
 }
 
 // Typy pomocnicze
@@ -104,24 +99,37 @@ export async function fetchFundraiserProgress(
   };
 }
 
-// Liczba kampanii
+// Liczba kampanii – READ FROM CORE
 export async function fetchFundraiserCount(provider: ethers.AbstractProvider) {
-  const router = getRouterContract(provider);
-  const count: bigint = await router.getFundraiserCount();
+  const core = getCoreContract(provider);
+  const count: bigint = await core.getFundraiserCount();
   return count;
 }
 
-// Pojedyncza kampania (details + progress)
+// Pojedyncza kampania (details + basicInfo) – READ FROM CORE
 export async function fetchFundraiser(provider: ethers.AbstractProvider, id: bigint | number) {
-  const router = getRouterContract(provider);
-  const [details, progress] = await Promise.all([
-    router.getFundraiserDetails(id),
-    router.getFundraiserProgress(id),
+  const core = getCoreContract(provider);
+  const [details, basic] = await Promise.all([
+    core.getFundraiserDetails(id),
+    core.getFundraiserBasicInfo(id),
   ]);
+  // Map details as before
+  const mappedDetails = details as FundraiserDetails;
+  // Optional: you can use basic.raised/basic.goal if needed
+  const progress: FundraiserProgress = {
+    raised: (basic?.[2] ?? basic?.raised ?? mappedDetails.raisedAmount ?? 0n) as bigint,
+    goal: (basic?.[3] ?? basic?.goal ?? mappedDetails.goalAmount ?? 0n) as bigint,
+    percentage: 0n,
+    donorsCount: 0n,
+    timeLeft: 0n,
+    refundDeadline: 0n,
+    isSuspended: Boolean((details as any)?.isSuspended ?? false),
+    suspensionTime: 0n,
+  };
   return {
     id: BigInt(id),
-    details: details as FundraiserDetails,
-    progress: progress as FundraiserProgress,
+    details: mappedDetails,
+    progress,
   };
 }
 
@@ -134,26 +142,19 @@ export async function fetchFundraiserSafe(provider: ethers.AbstractProvider, id:
   }
 }
 
-// Wykryj bazę ID (0/1)
-async function detectIdBase(provider: ethers.AbstractProvider) {
-  const router = getRouterContract(provider);
-  try {
-    await router.getFundraiserDetails(0);
-    return 0;
-  } catch {
-    return 1;
-  }
-}
-
-// Lista ID wg strony
-export async function listFundraiserIds(provider: ethers.AbstractProvider, page: number, pageSize: number) {
+// Lista ID wg strony – build 1..count using Core.getFundraiserCount()
+export async function listFundraiserIds(
+  provider: ethers.AbstractProvider,
+  page: number,
+  pageSize: number
+) {
   const totalBig = await fetchFundraiserCount(provider);
   const total = Number(totalBig);
   if (total <= 0) return { ids: [] as number[], total };
 
-  const base = await detectIdBase(provider);
-  const start = base + page * pageSize;
-  const end = Math.min(start + pageSize - 1, base + total - 1);
+  // Assume IDs are 1..count (as per new Core)
+  const start = 1 + page * pageSize;
+  const end = Math.min(start + pageSize - 1, total);
   const ids = Array.from({ length: Math.max(end - start + 1, 0) }, (_, i) => start + i);
   return { ids, total };
 }
@@ -168,7 +169,7 @@ export async function fetchFundraisersPage(provider: ethers.AbstractProvider, pa
   return { total, items };
 }
 
-// Statystyki platformy - zastąp getPlatformStats -> getHealthStatus
+// Statystyki platformy - zastąp getPlatformStats -> getHealthStatus (from Router)
 export async function fetchPlatformStats(provider: ethers.AbstractProvider) {
   const router = getRouterContract(provider);
   const [count, health] = await Promise.all([
@@ -182,7 +183,7 @@ export async function fetchPlatformStats(provider: ethers.AbstractProvider) {
   };
 }
 
-// Status użytkownika
+// Status użytkownika – can remain on Router or migrate later
 export async function fetchUserStatus(provider: ethers.AbstractProvider, user: string) {
   const router = getRouterContract(provider);
   const s = await router.getUserStatus(user);

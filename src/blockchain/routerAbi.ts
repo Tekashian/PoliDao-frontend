@@ -1,5 +1,5 @@
 // src/blockchain/routerAbi.ts
-// Router ABI (updated)
+// Router ABI (updated to new deployment)
 
 export const poliDaoRouterAbi = [
   {"inputs":[{"internalType":"address","name":"_coreContract","type":"address"}],"stateMutability":"nonpayable","type":"constructor"},
