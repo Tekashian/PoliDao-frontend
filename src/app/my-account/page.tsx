@@ -71,6 +71,9 @@ export default function AccountPage() {
   // NEW: public client for simulateContract
   const publicClient = usePublicClient();
 
+  // FIX: define chainRefresh early (used by many hooks below)
+  const [chainRefresh, setChainRefresh] = useState(0);
+
   // Używaj istniejących hooków
   const { 
     fundraisers: campaigns, 
@@ -217,6 +220,28 @@ export default function AccountPage() {
         return aid < bid ? -1 : aid > bid ? 1 : 0;                                    // stable fallback
       });
   }, [campaigns, address]);
+
+  // NEW: ids of user's campaigns (used by Storage/Router reads)
+  const myCampaignIds = React.useMemo(
+    () => myCampaigns.map((c: any) => BigInt(c.id ?? c.campaignId ?? 0n)),
+    [myCampaigns]
+  );
+
+  // NEW: Router progress fallback (used when Storage progress is unavailable)
+  const progressCalls = React.useMemo(() => {
+    if (myCampaignIds.length === 0) return [];
+    return myCampaignIds.map((fid) => ({
+      address: ROUTER_ADDRESS,
+      abi: poliDaoRouterAbi,
+      functionName: 'getFundraiserProgress' as const,
+      args: [fid],
+    }));
+  }, [myCampaignIds, chainRefresh]);
+
+  const { data: progressResults } = useReadContracts({
+    contracts: progressCalls,
+    query: { enabled: progressCalls.length > 0 },
+  });
 
   // --- Governance proposals (prefer governanceModule if present) ---
   const { data: governanceAddress } = useReadContract({
@@ -571,9 +596,6 @@ export default function AccountPage() {
   >([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
-
-  // NEW: trigger re-read from chain after state-changing tx (moved up to avoid TDZ)
-  const [chainRefresh, setChainRefresh] = useState(0);
 
   useEffect(() => {
     let disposed = false;
@@ -1160,57 +1182,132 @@ export default function AccountPage() {
     }
   };
 
-  // NEW: on-chain success detection and progress for user's campaigns (used in "Twoje zbiórki")
-  const myCampaignIds = React.useMemo(
-    () => myCampaigns.map((c: any) => BigInt(c.id ?? c.campaignId ?? 0n)),
-    [myCampaigns]
-  );
+  // ADD: Withdraw handlers (used by Withdraw modal and overlay)
+  const doFullWithdraw = async () => {
+    if (!withdrawCtx) return;
+    try {
+      setWithdrawUi('');
+      // If goal reached, do full withdraw now
+      if (withdrawCtx.goal > 0n && withdrawCtx.raised >= withdrawCtx.goal) {
+        const txHash = await writeContractAsync({
+          address: ROUTER_ADDRESS,
+          abi: poliDaoRouterAbi,
+          functionName: 'withdrawFunds',
+          args: [withdrawCtx.fid],
+        });
+        setPendingWithdraw({ id: withdrawCtx.fid, hash: txHash });
+        setWithdrawUi('Wypłata zainicjowana. Oczekiwanie na potwierdzenie...');
+        return;
+      }
+      // Partial — simulate schedule and withdraw allowed part
+      const requested = withdrawCtx.raised;
+      if (requested <= 0n) {
+        setWithdrawUi('Brak środków do wypłaty.');
+        return;
+      }
+      const sim = await simulateWithdrawSchedule(withdrawCtx.fid, requested);
+      if (!sim || sim.allowedNow === 0n) {
+        const when = sim?.nextAt ? new Date(Number(sim.nextAt) * 1000).toLocaleString('pl-PL') : '';
+        setWithdrawUi(sim ? `Wypłata w transzach niedostępna teraz. Spróbuj po: ${when}` : 'Wypłata chwilowo niedostępna (Security).');
+        return;
+      }
+      const txHash = await writeContractAsync({
+        address: ROUTER_ADDRESS,
+        abi: poliDaoRouterAbi,
+        functionName: 'withdrawWithSchedule',
+        args: [withdrawCtx.fid, requested],
+      });
+      setPendingWithdraw({ id: withdrawCtx.fid, hash: txHash });
+      setWithdrawUi('Wypłata zainicjowana. Oczekiwanie na potwierdzenie...');
+    } catch (err: any) {
+      setWithdrawUi(err?.shortMessage || err?.message || 'Nie udało się wykonać wypłaty.');
+    }
+  };
 
-  const progressCalls = React.useMemo(() => {
-    if (myCampaignIds.length === 0) return [];
+  const doCustomWithdraw = async () => {
+    if (!withdrawCtx) return;
+    try {
+      const requested = toBaseUnits(withdrawInput || '0', 6);
+      if (requested <= 0n) {
+        setWithdrawUi('Kwota musi być większa niż 0.');
+        return;
+      }
+      const sim = await simulateWithdrawSchedule(withdrawCtx.fid, requested);
+      if (!sim || sim.allowedNow === 0n) {
+        const when = sim?.nextAt ? new Date(Number(sim.nextAt) * 1000).toLocaleString('pl-PL') : '';
+        setWithdrawUi(sim ? `Wypłata w transzach niedostępna teraz. Spróbuj po: ${when}` : 'Wypłata chwilowo niedostępna (Security).');
+        return;
+      }
+      const txHash = await writeContractAsync({
+        address: ROUTER_ADDRESS,
+        abi: poliDaoRouterAbi,
+        functionName: 'withdrawWithSchedule',
+        args: [withdrawCtx.fid, requested],
+      });
+      setPendingWithdraw({ id: withdrawCtx.fid, hash: txHash });
+      setWithdrawUi('Wypłata zainicjowana. Oczekiwanie na potwierdzenie...');
+    } catch (err: any) {
+      setWithdrawUi(err?.shortMessage || err?.message || 'Nie udało się wykonać wypłaty.');
+    }
+  };
+
+  // --- Diagnostics: read fundraiser data directly from Storage for user's campaigns
+  const storageFundraiserCalls = React.useMemo(() => {
+    if (!storageAddress || myCampaignIds.length === 0) return [];
     return myCampaignIds.map((fid) => ({
-      address: ROUTER_ADDRESS,
-      abi: poliDaoRouterAbi,
-      functionName: 'getFundraiserProgress' as const,
+      address: storageAddress as `0x${string}`,
+      abi: poliDaoStorageAbi,
+      functionName: 'fundraisers' as const,
       args: [fid],
     }));
-  }, [myCampaignIds, chainRefresh]);
+  }, [storageAddress, myCampaignIds, chainRefresh]);
 
-  const { data: progressResults } = useReadContracts({
-    contracts: progressCalls,
-    query: { enabled: progressCalls.length > 0 },
+  const { data: storageFundraiserResults } = useReadContracts({
+    contracts: storageFundraiserCalls,
+    query: { enabled: storageFundraiserCalls.length > 0 },
   });
 
-  const withdrawFlagsCalls = React.useMemo(() => {
-    if (!coreAddress || myCampaignIds.length === 0) return [];
-    return myCampaignIds.map((fid) => ({
-      address: coreAddress as `0x${string}`,
-      abi: poliDaoCoreAbi,
-      functionName: 'withdrawalsStarted' as const,
-      args: [fid],
-    }));
-  }, [coreAddress, myCampaignIds, chainRefresh]);
-
-  const { data: withdrawFlags } = useReadContracts({
-    contracts: withdrawFlagsCalls,
-    query: { enabled: withdrawFlagsCalls.length > 0 },
-  });
-
-  const successById = React.useMemo(() => {
-    const map = new Map<string, boolean>();
-    if (!progressResults || !withdrawFlags) return map;
+  const storageProgressById = React.useMemo(() => {
+    const map = new Map<string, { raised: bigint; goal: bigint; end?: bigint; isFlexible?: boolean; fundsWithdrawn?: boolean }>();
+    if (!storageFundraiserResults) return map;
     myCampaignIds.forEach((fid, idx) => {
-      const pr = (progressResults[idx] as any)?.result;
-      const raised = pr?.raised ?? pr?.[0] ?? 0n;
-      const goal = pr?.goal ?? pr?.[1] ?? 0n;
-      const started = Boolean((withdrawFlags[idx] as any)?.result ?? false);
-      const success = started && BigInt(raised) >= BigInt(goal) && BigInt(goal) > 0n;
-      map.set(fid.toString(), success);
+      const r = (storageFundraiserResults[idx] as any)?.result;
+      if (!r) return;
+      // Support both named and indexed tuple access
+      const goal = BigInt(r?.goalAmount ?? r?.[0] ?? 0n);
+      const raised = BigInt(r?.raisedAmount ?? r?.[1] ?? 0n);
+      const end = BigInt(r?.endDate ?? r?.[2] ?? 0n);
+      const fundsWithdrawn = Boolean(r?.fundsWithdrawn ?? r?.[10] ?? false);
+      const isFlexible = Boolean(r?.isFlexible ?? r?.[11] ?? false);
+      map.set(fid.toString(), { raised, goal, end, isFlexible, fundsWithdrawn });
     });
     return map;
-  }, [progressResults, withdrawFlags, myCampaignIds]);
+  }, [storageFundraiserResults, myCampaignIds]);
 
+  // UPDATED: prefer Storage-provided success, fallback to Router-based flags if missing
+  const successById = React.useMemo(() => {
+    // Prefer Storage
+    if (storageProgressById.size > 0) {
+      const m = new Map<string, boolean>();
+      storageProgressById.forEach((p, key) => {
+        const success = Boolean(p.fundsWithdrawn); // only gray-out after withdrawal, not just goal reached
+        m.set(key, success);
+      });
+      return m;
+    }
+    // Fallback: unknown -> not success (keep CTA visible)
+    return new Map<string, boolean>();
+  }, [storageProgressById]);
+
+  // UPDATED: prefer Storage-provided raised/goal for rendering in "Twoje zbiórki"
   const progressById = React.useMemo(() => {
+    if (storageProgressById.size > 0) {
+      const m = new Map<string, { raised: bigint; goal: bigint }>();
+      storageProgressById.forEach((p, key) => {
+        m.set(key, { raised: p.raised, goal: p.goal });
+      });
+      return m;
+    }
     const map = new Map<string, { raised: bigint; goal: bigint }>();
     if (!progressResults) return map;
     myCampaignIds.forEach((fid, idx) => {
@@ -1220,7 +1317,7 @@ export default function AccountPage() {
       map.set(fid.toString(), { raised, goal });
     });
     return map;
-  }, [progressResults, myCampaignIds]);
+  }, [storageProgressById, progressResults, myCampaignIds]);
 
   return (
     <>
@@ -1483,7 +1580,7 @@ export default function AccountPage() {
               {donationHistory.map((d, idx) => {
                 const fid = d.fundraiserId.toString();
                 const camp = (campaigns as any[])?.find(x => x?.id?.toString?.() === fid);
-                const title = camp?.title && String(camp.title).trim().length > 0
+                const title = camp?.title && String(camp.title).trim().length >  0
                   ? camp.title
                   : camp?.isFlexible
                     ? `Elastyczna kampania #${fid}`
@@ -1518,6 +1615,7 @@ export default function AccountPage() {
           )}
         </DialogContent>
         <DialogActions>
+         
           <Button onClick={() => setHistoryOpen(false)}>Zamknij</Button>
         </DialogActions>
       </Dialog>
