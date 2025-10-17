@@ -17,6 +17,23 @@ import { Interface, JsonRpcProvider, keccak256, toUtf8Bytes } from 'ethers';
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
 import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { useRouter } from 'next/navigation';
+// NEW: simulate contracts preflight
+import { usePublicClient } from 'wagmi';
+// NEW: storage ABI
+import { poliDaoStorageAbi } from '../../blockchain/storageAbi';
+
+// NEW: minimal Security ABI for diagnostics (no tx)
+const SECURITY_ABI = [
+  { name: 'payoutLimitUSDC', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { name: 'getSecurityLevel', type: 'function', stateMutability: 'view', inputs: [], outputs: [
+    { name: 'level', type: 'uint8' }, { name: 'lastChanged', type: 'uint256' }, { name: 'reason', type: 'string' }
+  ] },
+  { name: 'checkRateLimit', type: 'function', stateMutability: 'view', inputs: [
+    { name: 'user', type: 'address' }, { name: 'functionName', type: 'string' }
+  ], outputs: [
+    { name: 'isWithinLimit', type: 'bool' }, { name: 'remainingCalls', type: 'uint256' }, { name: 'windowReset', type: 'uint256' }
+  ] },
+] as const;
 
 // Minimal ERC20 ABI for approvals
 const ERC20_ABI = [
@@ -51,6 +68,8 @@ export default function AccountPage() {
     'dashboard' | 'donations' | 'fundraisers' | 'votes'
   >('dashboard');
   const router = useRouter();
+  // NEW: public client for simulateContract
+  const publicClient = usePublicClient();
 
   // Używaj istniejących hooków
   const { 
@@ -65,7 +84,108 @@ export default function AccountPage() {
     error: proposalsError 
   } = useGetAllProposals();
 
-// NEW: user's own campaigns (sorted: closest to target -> furthest)
+  // Resolve Core and Analytics module
+  const { data: coreAddress } = useReadContract({
+    address: ROUTER_ADDRESS,
+    abi: poliDaoRouterAbi,
+    functionName: 'coreContract'
+  });
+
+  // Security module from Router (single definition)
+  const { data: securityAddress } = useReadContract({
+    address: ROUTER_ADDRESS,
+    abi: poliDaoRouterAbi,
+    functionName: 'security',
+  });
+
+  // ADD: analytics and storage modules (used later)
+  const { data: analyticsAddress } = useReadContract({
+    address: coreAddress as `0x${string}` | undefined,
+    abi: poliDaoCoreAbi,
+    functionName: 'analyticsModule',
+    query: { enabled: !!coreAddress }
+  });
+
+  const { data: storageAddress } = useReadContract({
+    address: coreAddress as `0x${string}` | undefined,
+    abi: poliDaoCoreAbi,
+    functionName: 'storageContract',
+    query: { enabled: !!coreAddress }
+  });
+
+  // ADD: spenderAddress (used in allowances)
+  const { data: coreSpender } = useReadContract({
+    address: coreAddress as `0x${string}` | undefined,
+    abi: poliDaoCoreAbi,
+    functionName: 'spenderAddress',
+    query: { enabled: !!coreAddress }
+  });
+
+  // Security diagnostics reads (single set)
+  const { data: payoutLimitUSDC } = useReadContract({
+    address: securityAddress as `0x${string}` | undefined,
+    abi: SECURITY_ABI,
+    functionName: 'payoutLimitUSDC',
+    query: { enabled: !!securityAddress },
+  });
+  const { data: securityLevelTuple } = useReadContract({
+    address: securityAddress as `0x${string}` | undefined,
+    abi: SECURITY_ABI,
+    functionName: 'getSecurityLevel',
+    query: { enabled: !!securityAddress },
+  });
+  const { data: refundRateLimit } = useReadContract({
+    address: securityAddress as `0x${string}` | undefined,
+    abi: SECURITY_ABI,
+    functionName: 'checkRateLimit',
+    args: [(address || '0x0000000000000000000000000000000000000000') as `0x${string}`, 'refund'],
+    query: { enabled: !!securityAddress && !!address },
+  });
+  const { data: withdrawRateLimit } = useReadContract({
+    address: securityAddress as `0x${string}` | undefined,
+    abi: SECURITY_ABI,
+    functionName: 'checkRateLimit',
+    args: [(address || '0x0000000000000000000000000000000000000000') as `0x${string}`, 'withdrawFunds'],
+    query: { enabled: !!securityAddress && !!address },
+  });
+
+  // Security memos (single set)
+  const trancheLimitHuman = React.useMemo(
+    () => (typeof payoutLimitUSDC === 'bigint' ? Number(payoutLimitUSDC) / 1_000_000 : undefined),
+    [payoutLimitUSDC]
+  );
+  const secLevelName = React.useMemo(() => {
+    const lv = (securityLevelTuple as any)?.[0] as number | undefined;
+    return lv === 0 ? 'NORMAL' : lv === 1 ? 'ELEVATED' : lv === 2 ? 'CRITICAL' : lv != null ? `LEVEL ${lv}` : '—';
+  }, [securityLevelTuple]);
+  const secLevelReason = React.useMemo(
+    () => (((securityLevelTuple as any)?.[2] as string) || ''),
+    [securityLevelTuple]
+  );
+  const refundRateInfo = React.useMemo(() => {
+    const t = refundRateLimit as any;
+    if (!t) return { text: '—' };
+    const windowReset = t[2] as bigint;
+    if (!windowReset || windowReset === 0n) return { text: 'Brak limitu (nie ustawiono)' };
+    const remaining = t[1] as bigint;
+    const isWithin = !!t[0];
+    return {
+      text: `${isWithin ? 'W limicie' : 'Przekroczono limit'} — pozostało: ${remaining?.toString?.() ?? '0'}, reset: ${new Date(Number(windowReset) * 1000).toLocaleString('pl-PL')}`,
+    };
+  }, [refundRateLimit]);
+  const withdrawRateInfo = React.useMemo(() => {
+    const t = withdrawRateLimit as any;
+    if (!t) return { text: '—' };
+    const windowReset = t[2] as bigint;
+    if (!windowReset || windowReset === 0n) return { text: 'Brak limitu (nie ustawiono)' };
+    const remaining = t[1] as bigint;
+    const isWithin = !!t[0];
+    return {
+      text: `${isWithin ? 'W limicie' : 'Przekroczono limit'} — pozostało: ${remaining?.toString?.() ?? '0'}, reset: ${new Date(Number(windowReset) * 1000).toLocaleString('pl-PL')}`,
+    };
+  }, [withdrawRateLimit]);
+
+  // NEW: user's own campaigns (sorted: closest to target -> furthest)
   const myCampaigns = React.useMemo(() => {
     if (!campaigns || !address) return [];
     const mine = (campaigns as any[]).filter(
@@ -98,37 +218,7 @@ export default function AccountPage() {
       });
   }, [campaigns, address]);
 
-  // Resolve Core and Analytics module
-  const { data: coreAddress } = useReadContract({
-    address: ROUTER_ADDRESS,
-    abi: poliDaoRouterAbi,
-    functionName: 'coreContract'
-  });
-
-  const { data: analyticsAddress } = useReadContract({
-    address: coreAddress as `0x${string}` | undefined,
-    abi: poliDaoCoreAbi,
-    functionName: 'analyticsModule',
-    query: { enabled: !!coreAddress }
-  });
-
-  // NEW: Storage address for precise KPI via Transfer(to=Storage) filter
-  const { data: storageAddress } = useReadContract({
-    address: coreAddress as `0x${string}` | undefined,
-    abi: poliDaoCoreAbi,
-    functionName: 'storageContract',
-    query: { enabled: !!coreAddress }
-  });
-
-  // NEW: Core spender used for ERC20 approvals (required for donate on new contracts)
-  const { data: coreSpender } = useReadContract({
-    address: coreAddress as `0x${string}` | undefined,
-    abi: poliDaoCoreAbi,
-    functionName: 'spenderAddress',
-    query: { enabled: !!coreAddress }
-  });
-
-// --- Governance proposals (prefer governanceModule if present) ---
+  // --- Governance proposals (prefer governanceModule if present) ---
   const { data: governanceAddress } = useReadContract({
     address: coreAddress as `0x${string}` | undefined,
     abi: poliDaoCoreAbi,
@@ -671,6 +761,16 @@ export default function AccountPage() {
     title: string;
     isRefundable: boolean;
     reason: string;
+    // NEW: schedule info (preflight)
+    allowedNow?: bigint;
+    nextAt?: bigint;
+    remaining?: bigint;
+    // NEW: diagnostics from Storage/Core
+    token?: `0x${string}`;
+    donationStorage?: bigint;
+    withdrawalsStarted?: boolean;
+    raised?: bigint;
+    goal?: bigint;
   } | null>(null);
   const [refundInput, setRefundInput] = useState<string>('');
   const [refundUi, setRefundUi] = useState<string>('');
@@ -683,6 +783,10 @@ export default function AccountPage() {
     raised: bigint;
     goal: bigint;
     isFlexible: boolean;
+    // NEW: schedule info (preflight)
+    allowedNow?: bigint;
+    nextAt?: bigint;
+    remaining?: bigint;
   } | null>(null);
   const [withdrawInput, setWithdrawInput] = useState<string>('');
   const [withdrawUi, setWithdrawUi] = useState<string>('');
@@ -717,6 +821,7 @@ export default function AccountPage() {
     }
   }, [isWithdrawSuccess, pendingWithdraw]);
 
+  // Helpers
   function toBaseUnits(amount: string, decimals = 6): bigint {
     const s = amount.trim().replace(',', '.');
     if (!/^\d+(\.\d{0,18})?$/.test(s)) throw new Error('Nieprawidłowa kwota');
@@ -725,7 +830,107 @@ export default function AccountPage() {
     return BigInt(intPart || '0') * (10n ** BigInt(decimals)) + BigInt(frac || '0');
   }
 
-  const openRefundDialog = (fid: bigint) => {
+  // Simulate helpers
+  async function simulateRefundSchedule(fid: bigint, amount: bigint) {
+    try {
+      if (!publicClient || !address) return null;
+      const res = await publicClient.simulateContract({
+        address: ROUTER_ADDRESS,
+        abi: poliDaoRouterAbi,
+        functionName: 'refundWithSchedule',
+        args: [fid, amount],
+        account: address as `0x${string}`,
+      });
+      const [allowedNow, nextAt, remaining] = res.result as readonly [bigint, bigint, bigint];
+      return { allowedNow, nextAt, remaining };
+    } catch {
+      return null;
+    }
+  }
+  async function simulateWithdrawSchedule(fid: bigint, amount: bigint) {
+    try {
+      if (!publicClient || !address) return null;
+      const res = await publicClient.simulateContract({
+        address: ROUTER_ADDRESS,
+        abi: poliDaoRouterAbi,
+        functionName: 'withdrawWithSchedule',
+        args: [fid, amount],
+        account: address as `0x${string}`,
+      });
+      const [allowedNow, nextAt, remaining] = res.result as readonly [bigint, bigint, bigint];
+      return { allowedNow, nextAt, remaining };
+    } catch {
+      return null;
+    }
+  }
+
+  // ADD: diagnostics loader used by openRefundDialog/doQuickRefund
+  async function loadRefundDiagnostics(fid: bigint) {
+    try {
+      if (!publicClient) return {};
+      const reads: Promise<any>[] = [];
+
+      // Storage reads (donations + token)
+      if (storageAddress && address) {
+        reads.push(
+          publicClient.readContract({
+            address: storageAddress as `0x${string}`,
+            abi: poliDaoStorageAbi,
+            functionName: 'donations',
+            args: [fid, address as `0x${string}`],
+          }).catch(() => null)
+        );
+        reads.push(
+          publicClient.readContract({
+            address: storageAddress as `0x${string}`,
+            abi: poliDaoStorageAbi,
+            functionName: 'fundraiserTokens',
+            args: [fid],
+          }).catch(() => null)
+        );
+      } else {
+        reads.push(Promise.resolve(null), Promise.resolve(null));
+      }
+
+      // Core reads (withdrawalsStarted + basic info)
+      if (coreAddress) {
+        reads.push(
+          publicClient.readContract({
+            address: coreAddress as `0x${string}`,
+            abi: poliDaoCoreAbi,
+            functionName: 'withdrawalsStarted',
+            args: [fid],
+          }).catch(() => null)
+        );
+        reads.push(
+          publicClient.readContract({
+            address: coreAddress as `0x${string}`,
+            abi: poliDaoCoreAbi,
+            functionName: 'getFundraiserBasicInfo',
+            args: [fid],
+          }).catch(() => null)
+        );
+      } else {
+        reads.push(Promise.resolve(null), Promise.resolve(null));
+      }
+
+      const [donationStorage, token, withdrawalsStarted, basic] = await Promise.all(reads);
+      const raised = basic ? BigInt((basic as any)[2] ?? 0n) : undefined;
+      const goal = basic ? BigInt((basic as any)[3] ?? 0n) : undefined;
+
+      return {
+        donationStorage: donationStorage != null ? BigInt(donationStorage) : undefined,
+        token: token as `0x${string}` | undefined,
+        withdrawalsStarted: withdrawalsStarted != null ? Boolean(withdrawalsStarted) : undefined,
+        raised,
+        goal,
+      };
+    } catch {
+      return {};
+    }
+  }
+
+  const openRefundDialog = async (fid: bigint) => {
     const idStr = fid.toString();
     const donated = donatedPerFundraiser.get(idStr) ?? 0n;
     const camp = (campaigns as any[])?.find((x) => x?.id?.toString?.() === idStr);
@@ -741,10 +946,20 @@ export default function AccountPage() {
     setRefundInput('');
     setRefundUi('');
     setRefundOpen(true);
+    // NEW: preflight and enrich context
+    const sim = await simulateRefundSchedule(fid, donated);
+    if (sim) {
+      setRefundCtx((prev) =>
+        prev ? { ...prev, allowedNow: sim.allowedNow, nextAt: sim.nextAt, remaining: sim.remaining } : prev
+      );
+    }
+    // NEW: load diagnostics from Storage/Core
+    const diag = await loadRefundDiagnostics(fid);
+    setRefundCtx((prev) => (prev ? { ...prev, ...diag } : prev));
   };
 
   // NEW: open withdraw dialog for creator
-  const openWithdrawDialog = (fid: bigint) => {
+  const openWithdrawDialog = async (fid: bigint) => {
     const idStr = fid.toString();
     const camp = (campaigns as any[])?.find((x) => x?.id?.toString?.() === idStr);
     const title =
@@ -760,14 +975,41 @@ export default function AccountPage() {
     setWithdrawInput('');
     setWithdrawUi('');
     setWithdrawOpen(true);
+    // NEW: preflight and enrich context (for flexible/partial withdrawals)
+    const sim = await simulateWithdrawSchedule(fid, raised);
+    if (sim) {
+      setWithdrawCtx((prev) => prev ? { ...prev, allowedNow: sim.allowedNow, nextAt: sim.nextAt, remaining: sim.remaining } : prev);
+    }
   };
 
   const doFullRefund = async () => {
     if (!refundCtx) return;
     try {
       setRefundUi('');
+
+      // Prefer router's `refund` if present in ABI
+      const abi = poliDaoRouterAbi as any[];
+      const refundFn = abi?.find?.(
+        (f: any) => f?.type === 'function' && f?.name === 'refund'
+      );
+
+      if (refundFn) {
+        const inputsLen = Array.isArray(refundFn.inputs) ? refundFn.inputs.length : 0;
+        const args = inputsLen >= 2 ? [refundCtx.fid, refundCtx.donated] : [refundCtx.fid];
+
+        const txHash = await writeContractAsync({
+          address: ROUTER_ADDRESS,
+          abi: poliDaoRouterAbi,
+          functionName: 'refund',
+          args,
+        });
+        setPendingRefund({ id: refundCtx.fid, hash: txHash });
+        setRefundUi('Zwrot zainicjowany. Oczekiwanie na potwierdzenie...');
+        return;
+      }
+
+      // Fallback (stare kontrakty)
       if (refundCtx.isRefundable) {
-        // pełny zwrot dostępny – użyj claimRefund
         const txHash = await writeContractAsync({
           address: ROUTER_ADDRESS,
           abi: poliDaoRouterAbi,
@@ -775,8 +1017,15 @@ export default function AccountPage() {
           args: [refundCtx.fid],
         });
         setPendingRefund({ id: refundCtx.fid, hash: txHash });
+        setRefundUi('Zwrot zainicjowany. Oczekiwanie na potwierdzenie...');
       } else {
-        // spróbaj pełnego zwrotu z harmonogramem – poproś o całą kwotę wpłaty
+        // NEW: simulate first – avoid no-op if Security blocks tranche now
+        const sim = await simulateRefundSchedule(refundCtx.fid, refundCtx.donated);
+        if (!sim || sim.allowedNow === 0n) {
+          const when = sim?.nextAt ? new Date(Number(sim.nextAt) * 1000).toLocaleString('pl-PL') : '';
+          setRefundUi(sim ? `Zwrot w transzach niedostępny teraz. Spróbuj po: ${when}` : 'Zwrot chwilowo niedostępny (Security).');
+          return;
+        }
         const txHash = await writeContractAsync({
           address: ROUTER_ADDRESS,
           abi: poliDaoRouterAbi,
@@ -784,10 +1033,29 @@ export default function AccountPage() {
           args: [refundCtx.fid, refundCtx.donated],
         });
         setPendingRefund({ id: refundCtx.fid, hash: txHash });
+        setRefundUi('Zwrot zainicjowany (harmonogram). Oczekiwanie na potwierdzenie...');
       }
-      setRefundUi('Zwrot zainicjowany. Oczekiwanie na potwierdzenie...');
     } catch (err: any) {
-      setRefundUi(err?.shortMessage || err?.message || 'Nie udało się wykonać zwrotu.');
+      // Last-resort fallback if refund path fails
+      try {
+        // NEW: simulate first
+        const sim = await simulateRefundSchedule(refundCtx.fid, refundCtx.donated);
+        if (!sim || sim.allowedNow === 0n) {
+          const when = sim?.nextAt ? new Date(Number(sim.nextAt) * 1000).toLocaleString('pl-PL') : '';
+          setRefundUi(sim ? `Zwrot w transzach niedostępny teraz. Spróbuj po: ${when}` : (err?.shortMessage || err?.message || 'Nie udało się wykonać zwrotu.'));
+          return;
+        }
+        const txHash = await writeContractAsync({
+          address: ROUTER_ADDRESS,
+          abi: poliDaoRouterAbi,
+          functionName: 'refundWithSchedule',
+          args: [refundCtx.fid, refundCtx.donated],
+        });
+        setPendingRefund({ id: refundCtx.fid, hash: txHash });
+        setRefundUi('Zwrot zainicjowany. Oczekiwanie na potwierdzenie...');
+      } catch (err2: any) {
+        setRefundUi(err?.shortMessage || err?.message || err2?.shortMessage || err2?.message || 'Nie udało się wykonać zwrotu.');
+      }
     }
   };
 
@@ -797,6 +1065,13 @@ export default function AccountPage() {
       const requested = toBaseUnits(refundInput || '0', 6);
       if (requested <= 0n) {
         setRefundUi('Kwota musi być większa niż 0.');
+        return;
+      }
+      // NEW: simulate first
+      const sim = await simulateRefundSchedule(refundCtx.fid, requested);
+      if (!sim || sim.allowedNow === 0n) {
+        const when = sim?.nextAt ? new Date(Number(sim.nextAt) * 1000).toLocaleString('pl-PL') : '';
+        setRefundUi(sim ? `Zwrot w transzach niedostępny teraz. Spróbuj po: ${when}` : 'Zwrot chwilowo niedostępny (Security).');
         return;
       }
       const txHash = await writeContractAsync({
@@ -812,7 +1087,65 @@ export default function AccountPage() {
     }
   };
 
-  // NEW: withdraw actions
+  // NEW: Quick refund from overlay using Router with preflight
+  const doQuickRefund = async (fid: bigint) => {
+    try {
+      const idStr = fid.toString();
+      const donated = donatedPerFundraiser.get(idStr) ?? 0n;
+      const camp = (campaigns as any[])?.find((x) => x?.id?.toString?.() === idStr);
+      const title = camp?.title && String(camp.title).trim().length > 0 ? camp.title : (camp?.isFlexible ? `Elastyczna kampania #${idStr}` : `Zbiórka #${idStr}`);
+      const refundable = canRefundById.get(idStr) ?? false;
+      const reason = canRefundReasonById.get(idStr) || '';
+      setRefundCtx({ fid, donated, title, isRefundable: refundable, reason });
+      setRefundInput('');
+      setRefundUi('Inicjowanie zwrotu...');
+      setRefundOpen(true);
+
+      if (donated <= 0n) {
+        setRefundUi('Brak wpłat do zwrotu.');
+        return;
+      }
+
+      // NEW: load diagnostics early
+      const diag = await loadRefundDiagnostics(fid);
+      setRefundCtx((prev) => (prev ? { ...prev, ...diag } : prev));
+
+      if (refundable) {
+        const txHash = await writeContractAsync({
+          address: ROUTER_ADDRESS,
+          abi: poliDaoRouterAbi,
+          functionName: 'claimRefund',
+          args: [fid],
+        });
+        setPendingRefund({ id: fid, hash: txHash });
+        setRefundUi('Zwrot zainicjowany. Oczekiwanie na potwierdzenie...');
+        return;
+      }
+
+      // NEW: simulate schedule first and update UI
+      const sim = await simulateRefundSchedule(fid, donated);
+      if (sim) {
+        setRefundCtx((prev) => prev ? { ...prev, allowedNow: sim.allowedNow, nextAt: sim.nextAt, remaining: sim.remaining } : prev);
+        if (sim.allowedNow === 0n) {
+          const when = sim.nextAt ? new Date(Number(sim.nextAt) * 1000).toLocaleString('pl-PL') : '';
+          setRefundUi(when ? `Zwrot w transzach niedostępny teraz. Spróbuj po: ${when}` : 'Zwrot chwilowo niedostępny (Security).');
+          return;
+        }
+      }
+      const txHash = await writeContractAsync({
+        address: ROUTER_ADDRESS,
+        abi: poliDaoRouterAbi,
+        functionName: 'refundWithSchedule',
+        args: [fid, donated],
+      });
+      setPendingRefund({ id: fid, hash: txHash });
+      setRefundUi('Zwrot zainicjowany (harmonogram). Oczekiwanie na potwierdzenie...');
+    } catch (err: any) {
+      setRefundUi(err?.shortMessage || err?.message || 'Nie udało się wykonać zwrotu.');
+    }
+  };
+
+  // NEW: withdraw actions with preflight
   const doFullWithdraw = async () => {
     if (!withdrawCtx) return;
     try {
@@ -826,21 +1159,28 @@ export default function AccountPage() {
           args: [withdrawCtx.fid],
         });
         setPendingWithdraw({ id: withdrawCtx.fid, hash: txHash });
-      } else {
-        // Flexible or not fully eligible – request full raised, contract will tranche if needed
-        const requested = withdrawCtx.raised;
-        if (requested <= 0n) {
-          setWithdrawUi('Brak środków do wypłaty.');
-          return;
-        }
-        const txHash = await writeContractAsync({
-          address: ROUTER_ADDRESS,
-          abi: poliDaoRouterAbi,
-          functionName: 'withdrawWithSchedule',
-          args: [withdrawCtx.fid, requested],
-        });
-        setPendingWithdraw({ id: withdrawCtx.fid, hash: txHash });
+        setWithdrawUi('Wypłata zainicjowana. Oczekiwanie na potwierdzenie...');
+        return;
       }
+      // Flexible or partial — simulate schedule first
+      const requested = withdrawCtx.raised;
+      if (requested <= 0n) {
+        setWithdrawUi('Brak środków do wypłaty.');
+        return;
+      }
+      const sim = await simulateWithdrawSchedule(withdrawCtx.fid, requested);
+      if (!sim || sim.allowedNow === 0n) {
+        const when = sim?.nextAt ? new Date(Number(sim.nextAt) * 1000).toLocaleString('pl-PL') : '';
+        setWithdrawUi(sim ? `Wypłata w transzach niedostępna teraz. Spróbuj po: ${when}` : 'Wypłata chwilowo niedostępna (Security).');
+        return;
+      }
+      const txHash = await writeContractAsync({
+        address: ROUTER_ADDRESS,
+        abi: poliDaoRouterAbi,
+        functionName: 'withdrawWithSchedule',
+        args: [withdrawCtx.fid, requested],
+      });
+      setPendingWithdraw({ id: withdrawCtx.fid, hash: txHash });
       setWithdrawUi('Wypłata zainicjowana. Oczekiwanie na potwierdzenie...');
     } catch (err: any) {
       setWithdrawUi(err?.shortMessage || err?.message || 'Nie udało się wykonać wypłaty.');
@@ -853,6 +1193,13 @@ export default function AccountPage() {
       const requested = toBaseUnits(withdrawInput || '0', 6);
       if (requested <= 0n) {
         setWithdrawUi('Kwota musi być większa niż 0.');
+        return;
+      }
+      // NEW: simulate schedule first
+      const sim = await simulateWithdrawSchedule(withdrawCtx.fid, requested);
+      if (!sim || sim.allowedNow === 0n) {
+        const when = sim?.nextAt ? new Date(Number(sim.nextAt) * 1000).toLocaleString('pl-PL') : '';
+        setWithdrawUi(sim ? `Wypłata w transzach niedostępna teraz. Spróbuj po: ${when}` : 'Wypłata chwilowo niedostępna (Security).');
         return;
       }
       const txHash = await writeContractAsync({
@@ -1083,7 +1430,8 @@ export default function AccountPage() {
                                 aria-label="Cofnij wsparcie"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  openRefundDialog(BigInt(idStr));
+                                  // previously: openRefundDialog(BigInt(idStr))
+                                  doQuickRefund(BigInt(idStr));
                                 }}
                                 disabled={isPending}
                               >
@@ -1257,6 +1605,16 @@ export default function AccountPage() {
                     <span className="inline-flex items-center rounded-full bg-[#10b981]/10 px-2.5 py-1 text-xs font-semibold text-[#10b981] ring-1 ring-[#10b981]/20">
                       Pełny zwrot dostępny
                     </span>
+                  ) : refundCtx.allowedNow != null ? (
+                    refundCtx.allowedNow > 0n ? (
+                      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                        Dostępne teraz: {(Number(refundCtx.allowedNow) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+                        Następna transza po: {refundCtx.nextAt ? new Date(Number(refundCtx.nextAt) * 1000).toLocaleString('pl-PL') : 'wkrótce'}
+                      </span>
+                    )
                   ) : (
                     <span className="inline-flex items-center rounded-full bg-[#ef4444]/10 px-2.5 py-1 text-xs font-semibold text-[#ef4444] ring-1 ring-[#ef4444]/20">
                       {refundCtx.reason || 'Zwrot nie jest aktualnie dostępny'}
@@ -1302,6 +1660,56 @@ export default function AccountPage() {
                 {refundUi && (
                   <p className="mt-3 text-xs text-gray-600">{refundUi}</p>
                 )}
+              </div>
+
+              {/* NEW: Diagnostics from Storage/Core + Security */}
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-gray-600">
+                <div className="rounded-md bg-white p-2 ring-1 ring-gray-100">
+                  <div className="font-semibold text-gray-700">Token zbiórki</div>
+                  <div className="font-mono break-all">{refundCtx.token || '—'}</div>
+                </div>
+                <div className="rounded-md bg-white p-2 ring-1 ring-gray-100">
+                  <div className="font-semibold text-gray-700">Saldo w Storage</div>
+                  <div>
+                    {typeof refundCtx.donationStorage === 'bigint'
+                      ? `${(Number(refundCtx.donationStorage) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} (zakładane 6d)`
+                      : '—'}
+                  </div>
+                </div>
+                <div className="rounded-md bg-white p-2 ring-1 ring-gray-100">
+                  <div className="font-semibold text-gray-700">Wypłaty rozpoczęte</div>
+                  <div>{refundCtx.withdrawalsStarted === true ? 'Tak' : refundCtx.withdrawalsStarted === false ? 'Nie' : '—'}</div>
+                </div>
+                <div className="rounded-md bg-white p-2 ring-1 ring-gray-100">
+                  <div className="font-semibold text-gray-700">Cel osiągnięty</div>
+                  <div>
+                    {typeof refundCtx.goal === 'bigint' && typeof refundCtx.raised === 'bigint'
+                      ? refundCtx.goal > 0n && refundCtx.raised >= refundCtx.goal
+                        ? 'Tak'
+                        : 'Nie'
+                      : '—'}
+                  </div>
+                </div>
+                <div className="rounded-md bg-white p-2 ring-1 ring-gray-100">
+                  <div className="font-semibold text-gray-700">Adres Security</div>
+                  <div className="font-mono break-all">{(securityAddress as string) || '—'}</div>
+                </div>
+                <div className="rounded-md bg-white p-2 ring-1 ring-gray-100">
+                  <div className="font-semibold text-gray-700">Limit transzy (USDC)</div>
+                  <div>{trancheLimitHuman != null ? `${trancheLimitHuman.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC / ~1h` : '—'}</div>
+                </div>
+                <div className="rounded-md bg-white p-2 ring-1 ring-gray-100">
+                  <div className="font-semibold text-gray-700">Poziom bezpieczeństwa</div>
+                  <div>{secLevelName}{secLevelReason ? ` — ${secLevelReason}` : ''}</div>
+                </div>
+                <div className="rounded-md bg-white p-2 ring-1 ring-gray-100">
+                  <div className="font-semibold text-gray-700">Limit liczby refundów</div>
+                  <div>{refundRateInfo.text}</div>
+                </div>
+                <div className="rounded-md bg-white p-2 ring-1 ring-gray-100">
+                  <div className="font-semibold text-gray-700">Limit liczby wypłat</div>
+                  <div>{withdrawRateInfo.text}</div>
+                </div>
               </div>
             </div>
           )}
@@ -1372,7 +1780,7 @@ export default function AccountPage() {
                     />
                     <button
                       onClick={doCustomWithdraw}
-                      disabled={isWithdrawMining}
+                                           disabled={isWithdrawMining}
                       className={`px-4 py-2 rounded-lg text-white text-sm font-semibold bg-[#10b981] transition ${isWithdrawMining ? 'opacity-70 cursor-wait' : 'hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]'}`}
                     >
                       Wypłać kwotę

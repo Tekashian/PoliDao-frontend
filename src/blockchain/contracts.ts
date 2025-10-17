@@ -5,16 +5,16 @@ import routerAbi from './routerAbi';
 import coreAbi from './coreAbi';
 
 // Router-only source of truth
-export const ROUTER_ADDRESS = '0x3238a26109e9d054E132b1DDE13C6d23F4DD6356' as `0x${string}`;
+export const ROUTER_ADDRESS = '0xc1daf176bdb607611873342c0ed6e2Ea68639f12' as `0x${string}`;
 export const ROUTER_ABI = routerAbi;
 
-// NEW: fixed Core address (from sepolia.json)
-export const CORE_ADDRESS = '0x3Bec2751E82B0c9aeA68458a689304bEd291Fbb5' as `0x${string}`;
+// NEW: fixed Core address (from new deployment)
+export const CORE_ADDRESS = '0x9362d1b929c8cC161830292b95Ad5E1187239a38' as `0x${string}`;
 
 // Backward-compatible config for wagmi hooks/components
 export const polidaoContractConfig = {
   address: ROUTER_ADDRESS,
-  abi: ROUTER_ABI, // restore ABI so reads like coreContract() work
+  abi: ROUTER_ABI,
 } as const;
 
 // Legacy alias so old imports keep working (recommended to migrate to ROUTER_ABI)
