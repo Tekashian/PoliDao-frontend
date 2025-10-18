@@ -41,6 +41,8 @@ import { poliDaoRouterAbi } from '../../../blockchain/routerAbi';
 import { ROUTER_ADDRESS } from '../../../blockchain/contracts';
 import { poliDaoAnalyticsAbi } from '../../../blockchain/analyticsAbi';
 import { poliDaoCoreAbi } from '../../../blockchain/coreAbi';
+// NEW: Storage ABI for resolving Updates and fallback events
+import { poliDaoStorageAbi } from '../../../blockchain/storageAbi';
 
 // usuwamy helper i typ progresu z contracts – progres tylko z Routera via wagmi
 // import { fetchFundraiserProgress, type RouterFundraiserProgress } from '../../../blockchain/contracts';
@@ -393,7 +395,16 @@ export default function CampaignPage() {
     query: { enabled: !!coreAddress },
   });
 
-  // NEW: resolve Updates module (needed to read events)
+  // NEW: resolve Storage address (Core -> Storage)
+  const { data: storageAddress } = useReadContract({
+    address: coreAddress as `0x${string}` | undefined,
+    abi: poliDaoCoreAbi,
+    functionName: 'storageContract',
+    chainId: sepolia.id,
+    query: { enabled: !!coreAddress },
+  });
+
+  // OLD: Updates from Core (keep as fallback)
   const { data: updatesModuleAddress } = useReadContract({
     address: coreAddress as `0x${string}` | undefined,
     abi: poliDaoCoreAbi,
@@ -401,6 +412,28 @@ export default function CampaignPage() {
     chainId: sepolia.id,
     query: { enabled: !!coreAddress },
   });
+
+  // NEW: Updates from Storage.modules(UPDATES_KEY) — preferred
+  const { data: updatesAddrFromStorage } = useReadContract({
+    address: storageAddress as `0x${string}` | undefined,
+    abi: poliDaoStorageAbi,
+    functionName: 'modules',
+    args: [UPDATES_KEY],
+    chainId: sepolia.id,
+    query: { enabled: !!storageAddress },
+  });
+
+  // NEW: pick Updates module address preferring Storage mapping, fallback to Core
+  const updatesResolved = useMemo(() => {
+    const zero = ZERO_ADDR.toLowerCase();
+    const fromStorage = (updatesAddrFromStorage as string | undefined)?.toLowerCase?.();
+    const fromCore = (updatesModuleAddress as string | undefined)?.toLowerCase?.();
+    const chosen =
+      fromStorage && fromStorage !== zero ? (updatesAddrFromStorage as `0x${string}`) :
+      fromCore && fromCore !== zero ? (updatesModuleAddress as `0x${string}`) :
+      undefined;
+    return chosen;
+  }, [updatesAddrFromStorage, updatesModuleAddress]);
 
   const { data: donorsCountData, refetch: refetchDonorsCount } = useReadContract({
     address: analyticsAddress as `0x${string}` | undefined,
@@ -758,9 +791,9 @@ export default function CampaignPage() {
     }
   }, [isUpdateSuccess]);
 
-  // NEW: Updates reader — fetch UpdatePosted events from Updates module
+  // NEW: Updates reader — primary via Updates.UpdatePosted, fallback via Storage change events
   useEffect(() => {
-    if (selectedIdKey < 0 || !updatesModuleAddress) return;
+    if (selectedIdKey < 0) return;
 
     const rpcUrl =
       process.env.NEXT_PUBLIC_RPC_URL ||
@@ -777,47 +810,113 @@ export default function CampaignPage() {
       try {
         const provider = new JsonRpcProvider(rpcUrl);
 
-        // Correct event signature per ABI:
-        // UpdatePosted(uint256 indexed updateId, uint256 indexed fundraiserId, address indexed author, string content, uint8 updateType)
-        const uiface = new Interface([
-          'event UpdatePosted(uint256 indexed updateId, uint256 indexed fundraiserId, address indexed author, string content, uint8 updateType)'
-        ] as any);
+        // 1) Try Updates module (resolved via Storage, fallback Core)
+        let entriesFromUpdates: Update[] = [];
+        if (updatesResolved) {
+          const uiface = new Interface([
+            'event UpdatePosted(uint256 indexed updateId, uint256 indexed fundraiserId, address indexed author, string content, uint8 updateType)'
+          ] as any);
+          const ev = (uiface as any).getEvent?.('UpdatePosted') ?? (uiface.fragments.find((f: any) => f.type === 'event' && f.name === 'UpdatePosted'));
+          if (ev) {
+            const topic0 = (uiface as any).getEventTopic ? (uiface as any).getEventTopic(ev) : (uiface as any).getEventTopic?.('UpdatePosted');
 
-        const ev = (uiface as any).getEvent?.('UpdatePosted') ?? (uiface.fragments.find((f: any) => f.type === 'event' && f.name === 'UpdatePosted'));
-        if (!ev) return;
-        const topic0 = (uiface as any).getEventTopic ? (uiface as any).getEventTopic(ev) : (uiface as any).getEventTopic?.('UpdatePosted');
+            // Simplify topics: only signature; filter by fundraiserId after decoding
+            const logs = await provider.getLogs({
+              address: updatesResolved as string,
+              fromBlock: (process.env.NEXT_PUBLIC_UPDATES_START_BLOCK || process.env.NEXT_PUBLIC_CORE_START_BLOCK) ? BigInt(process.env.NEXT_PUBLIC_UPDATES_START_BLOCK || process.env.NEXT_PUBLIC_CORE_START_BLOCK!) : 0n,
+              toBlock: 'latest',
+              topics: [topic0],
+            });
 
-        const fundraiserTopic = '0x' + BigInt(selectedIdKey).toString(16).padStart(64, '0');
-        const startBlockEnv = process.env.NEXT_PUBLIC_UPDATES_START_BLOCK || process.env.NEXT_PUBLIC_CORE_START_BLOCK;
-        const fromBlock = startBlockEnv ? BigInt(startBlockEnv) : 0n;
+            const parsed = await Promise.all(
+              logs.map(async (log) => {
+                try {
+                  const decoded = uiface.parseLog(log as any);
+                  const args = decoded.args as any;
+                  const fid = Number(args?.fundraiserId ?? args?.[1] ?? -1);
+                  if (fid !== Number(selectedIdKey)) return null;
+                  const block = await provider.getBlock(log.blockHash!);
+                  const tsMs = block?.timestamp ? Number(block.timestamp) * 1000 : Date.now();
+                  const content = String(args?.content ?? '');
+                  return { content, timestamp: tsMs } as Update;
+                } catch {
+                  return null;
+                }
+              })
+            );
+            entriesFromUpdates = parsed.filter((x): x is Update => !!x).sort((a, b) => b.timestamp - a.timestamp);
+          }
+        }
 
-        // topics: [signature, updateId(any), fundraiserId(we filter), author(any)]
-        const logs = await provider.getLogs({
-          address: updatesModuleAddress as string,
-          fromBlock,
-          toBlock: 'latest',
-          topics: [topic0, null, fundraiserTopic, null],
-        });
+        // 2) Fallback to Storage events if no UpdatePosted found
+        if (entriesFromUpdates.length === 0 && storageAddress) {
+          const sIface = new Interface(poliDaoStorageAbi as any);
 
-        const entries = await Promise.all(
-          logs.map(async (log) => {
-            try {
-              const decoded = uiface.parseLog(log as any);
-              const args = decoded.args as any;
-              const block = await provider.getBlock(log.blockHash!);
-              const tsMs = block?.timestamp ? Number(block.timestamp) * 1000 : Date.now();
-              const content = String(args?.content ?? '');
-              return { content, timestamp: tsMs } as Update;
-            } catch {
-              return null;
-            }
-          })
-        );
+          const evTitle = (sIface as any).getEvent?.('FundraiserTitleUpdated') ?? (sIface.fragments.find((f: any) => f.type === 'event' && f.name === 'FundraiserTitleUpdated'));
+          const evDesc  = (sIface as any).getEvent?.('FundraiserDescriptionUpdated') ?? (sIface.fragments.find((f: any) => f.type === 'event' && f.name === 'FundraiserDescriptionUpdated'));
+          const evLoc   = (sIface as any).getEvent?.('FundraiserLocationUpdated') ?? (sIface.fragments.find((f: any) => f.type === 'event' && f.name === 'FundraiserLocationUpdated'));
 
-        const list = entries.filter((x): x is Update => !!x).sort((a, b) => b.timestamp - a.timestamp);
-        if (!disposed) setUpdates(list);
+          const topicTitle = (sIface as any).getEventTopic ? (sIface as any).getEventTopic(evTitle) : (sIface as any).getEventTopic?.('FundraiserTitleUpdated');
+          const topicDesc  = (sIface as any).getEventTopic ? (sIface as any).getEventTopic(evDesc)  : (sIface as any).getEventTopic?.('FundraiserDescriptionUpdated');
+          const topicLoc   = (sIface as any).getEventTopic ? (sIface as any).getEventTopic(evLoc)   : (sIface as any).getEventTopic?.('FundraiserLocationUpdated');
+
+          // Simplify topics: only signature; filter by fundraiserId after decode
+          const [logsTitle, logsDesc, logsLoc] = await Promise.all([
+            provider.getLogs({
+              address: storageAddress as string,
+              fromBlock: (process.env.NEXT_PUBLIC_STORAGE_START_BLOCK || process.env.NEXT_PUBLIC_CORE_START_BLOCK) ? BigInt(process.env.NEXT_PUBLIC_STORAGE_START_BLOCK || process.env.NEXT_PUBLIC_CORE_START_BLOCK!) : 0n,
+              toBlock: 'latest',
+              topics: [topicTitle],
+            }),
+            provider.getLogs({
+              address: storageAddress as string,
+              fromBlock: (process.env.NEXT_PUBLIC_STORAGE_START_BLOCK || process.env.NEXT_PUBLIC_CORE_START_BLOCK) ? BigInt(process.env.NEXT_PUBLIC_STORAGE_START_BLOCK || process.env.NEXT_PUBLIC_CORE_START_BLOCK!) : 0n,
+              toBlock: 'latest',
+              topics: [topicDesc],
+            }),
+            provider.getLogs({
+              address: storageAddress as string,
+              fromBlock: (process.env.NEXT_PUBLIC_STORAGE_START_BLOCK || process.env.NEXT_PUBLIC_CORE_START_BLOCK) ? BigInt(process.env.NEXT_PUBLIC_STORAGE_START_BLOCK || process.env.NEXT_PUBLIC_CORE_START_BLOCK!) : 0n,
+              toBlock: 'latest',
+              topics: [topicLoc],
+            }),
+          ]);
+
+          const parseSet = async (logs: any[], kind: 'title' | 'description' | 'location'): Promise<Update[]> => {
+            const mapped = await Promise.all(
+              logs.map(async (log) => {
+                try {
+                  const decoded = sIface.parseLog(log as any);
+                  const args = decoded.args as any;
+                  const fid = Number(args?.fundraiserId ?? args?.[0] ?? -1);
+                  if (fid !== Number(selectedIdKey)) return null;
+                  const block = await provider.getBlock(log.blockHash!);
+                  const tsMs = block?.timestamp ? Number(block.timestamp) * 1000 : Date.now();
+                  let content = '';
+                  if (kind === 'title') content = `Zmieniono tytuł: ${String(args?.newTitle ?? '')}`;
+                  if (kind === 'description') content = `Zmieniono opis: ${String(args?.newDescription ?? '')}`;
+                  if (kind === 'location') content = `Zmieniono lokalizację: ${String(args?.newLocation ?? '')}`;
+                  return { content, timestamp: tsMs } as Update;
+                } catch {
+                  return null;
+                }
+              })
+            );
+            return mapped.filter((x): x is Update => !!x);
+          };
+
+          const [tE, dE, lE] = await Promise.all([
+            parseSet(logsTitle, 'title'),
+            parseSet(logsDesc, 'description'),
+            parseSet(logsLoc, 'location'),
+          ]);
+
+          entriesFromUpdates = [...tE, ...dE, ...lE].sort((a, b) => b.timestamp - a.timestamp);
+        }
+
+        if (!disposed) setUpdates(entriesFromUpdates);
       } catch (err) {
-        console.warn('Błąd pobierania aktualności:', err);
+        console.warn('Błąd pobierania aktualności (Updates/Storage):', err);
         if (!disposed) setUpdates((prev) => prev);
       }
     };
@@ -828,7 +927,7 @@ export default function CampaignPage() {
       disposed = true;
       clearInterval(interval);
     };
-  }, [selectedIdKey, updatesModuleAddress, chainKey]);
+  }, [selectedIdKey, updatesResolved, storageAddress, chainKey]);
 
   // ADD: donation handler inside component
   const handleDonate = async () => {
@@ -1510,6 +1609,7 @@ export default function CampaignPage() {
               size="small"
             />
             <IconButton 
+ 
               onClick={() => {
                 if (typeof window !== 'undefined') {
                   navigator.clipboard.writeText(window.location.href);
