@@ -45,6 +45,9 @@ import { ROUTER_ADDRESS } from '../blockchain/contracts';
 import { poliDaoRouterAbi } from '../blockchain/routerAbi';
 import { poliDaoCoreAbi } from '../blockchain/coreAbi';
 import poliDaoGovernanceAbi from '../blockchain/governanceAbi';
+// ADD: voting writes + receipt, and Interface utils
+import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { Interface, keccak256, toUtf8Bytes } from 'ethers';
 
 // NEW: Swiper imports (minimal)
 import { Swiper, SwiperSlide } from 'swiper/react';
@@ -54,7 +57,12 @@ import 'swiper/css/pagination';
 import 'swiper/css/navigation'; // + navigation CSS
 
 // Material-UI Proposal Card z nawigacją - ZAKTUALIZOWANE
-function MUIProposalCard({ proposal }: { proposal: Proposal }) {
+function MUIProposalCard({ proposal, onVote, isVoting, votingId }: {
+  proposal: Proposal;
+  onVote?: (id: bigint, support: boolean) => void;
+  isVoting?: boolean;
+  votingId?: bigint | null;
+}) {
   const theme = useTheme();
   const router = useRouter();
   
@@ -75,9 +83,9 @@ function MUIProposalCard({ proposal }: { proposal: Proposal }) {
 
   const handleVote = (e: React.MouseEvent, support: boolean) => {
     e.stopPropagation();
-    // Tutaj wywołaj funkcję głosowania
-    console.log(`Voting ${support ? 'YES' : 'NO'} on proposal ${proposal.id}`);
+    if (onVote) onVote(proposal.id, support);
   };
+  const disabled = Boolean(isVoting && votingId === proposal.id);
 
   return (
     <Card 
@@ -212,8 +220,9 @@ function MUIProposalCard({ proposal }: { proposal: Proposal }) {
               }}
               startIcon={<CheckCircle />}
               onClick={(e) => handleVote(e, true)}
+              disabled={disabled}
             >
-              TAK
+              {disabled ? 'Głosowanie...' : 'TAK'}
             </Button>
             <Button
               variant="contained"
@@ -225,8 +234,9 @@ function MUIProposalCard({ proposal }: { proposal: Proposal }) {
               }}
               startIcon={<Cancel />}
               onClick={(e) => handleVote(e, false)}
+              disabled={disabled}
             >
-              NIE
+              {disabled ? 'Głosowanie...' : 'NIE'}
             </Button>
             <Button
               variant="outlined"
@@ -471,6 +481,42 @@ export default function HomePage() {
     query: { enabled: !!coreAddress },
   });
 
+  // ADD: voting via Router.routeModule -> GOVERNANCE key
+  const GOVERNANCE_KEY = React.useMemo(
+    () => keccak256(toUtf8Bytes('GOVERNANCE')) as `0x${string}`,
+    []
+  );
+  const { writeContract: writeVote, isPending: isVotePending, data: voteTxHash } = useWriteContract();
+  const { isLoading: isVoteConfirming, isSuccess: isVoteSuccess } = useWaitForTransactionReceipt({
+    hash: voteTxHash,
+  });
+  const [votingId, setVotingId] = React.useState<bigint | null>(null);
+
+  // Keep a single useAccount declaration (provides both address and isConnected)
+  const { address, isConnected } = useAccount();
+
+  const onVoteProposal = React.useCallback(async (id: bigint, support: boolean) => {
+    try {
+      if (!isConnected || !address) return; // guard: requires connected wallet
+      setVotingId(id);
+      // CHANGED: encode voteFor(uint256,bool,address) so voter != Core
+      const gIface = new Interface(['function voteFor(uint256,bool,address)']);
+      const calldata = gIface.encodeFunctionData('voteFor', [
+        id,
+        support,
+        address as `0x${string}`,
+      ]) as `0x${string}`;
+      await writeVote({
+        address: ROUTER_ADDRESS,
+        abi: poliDaoRouterAbi,
+        functionName: 'routeModule',
+        args: [GOVERNANCE_KEY, calldata],
+      });
+    } catch {
+      setVotingId(null);
+    }
+  }, [writeVote, GOVERNANCE_KEY, isConnected, address]);
+
   // REPLACED: getAllProposalIds -> getProposals (paged)
   const { data: govPage, refetch: refetchGovPage } = useReadContract({
     address: governanceAddress as `0x${string}` | undefined,
@@ -513,6 +559,16 @@ export default function HomePage() {
     contracts: govCalls,
     query: { enabled: govCalls.length > 0 },
   });
+
+  // FIX: move effect after refs exist + guard calls
+  React.useEffect(() => {
+    if (!isVoteSuccess) return;
+    Promise.allSettled([
+      typeof refetchGovPage === 'function' ? refetchGovPage() : Promise.resolve(),
+      typeof refetchGovResults === 'function' ? refetchGovResults() : Promise.resolve(),
+    ]);
+    setVotingId(null);
+  }, [isVoteSuccess, refetchGovPage, refetchGovResults]);
 
   const governanceProposals: Proposal[] = React.useMemo(() => {
     if (!govResults || govResults.length === 0) return [];
@@ -558,7 +614,7 @@ export default function HomePage() {
 
   const [activeTab, setActiveTab] = useState<"zbiorki" | "glosowania">("glosowania");
   const [campaignFilter, setCampaignFilter] = useState<"all" | "target" | "flexible">("all");
-  const { isConnected } = useAccount();
+  // const { isConnected } = useAccount(); // REMOVED duplicate – already declared above with address
 
   // Filtruj kampanie na podstawie wybranego filtru
   const campaigns = fundraisers; // alias dla istniejącej logiki poniżej
@@ -670,6 +726,9 @@ export default function HomePage() {
               <MUIProposalCard
                 key={proposal.id.toString()}
                 proposal={proposal}
+                onVote={onVoteProposal}
+                isVoting={isVotePending || isVoteConfirming}
+                votingId={votingId}
               />
             )}
             emptyMessage="Brak aktywnych głosowań"
@@ -806,6 +865,9 @@ export default function HomePage() {
                           <MUIProposalCard
                             key={proposal.id.toString()}
                             proposal={proposal}
+                            onVote={onVoteProposal}
+                            isVoting={isVotePending || isVoteConfirming}
+                            votingId={votingId}
                           />
                         ))}
                       </div>
