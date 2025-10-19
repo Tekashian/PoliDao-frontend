@@ -1319,6 +1319,28 @@ export default function AccountPage() {
     return map;
   }, [storageProgressById, progressResults, myCampaignIds]);
 
+  // NEW: form state for creating a vote (UI only for now)
+  const [newVoteTitle, setNewVoteTitle] = useState('');
+  const [newVoteDuration, setNewVoteDuration] = useState<number>(24); // hours
+  const [createVoteUi, setCreateVoteUi] = useState<string>('');
+
+  const handleCreateProposal = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setCreateVoteUi('');
+    const title = newVoteTitle.trim();
+    const dur = Number(newVoteDuration);
+    if (title.length < 3 || title.length > 120) {
+      setCreateVoteUi('Podaj tytuł o długości 3–120 znaków.');
+      return;
+    }
+    if (!Number.isFinite(dur) || dur <= 0 || dur > 720) {
+      setCreateVoteUi('Czas trwania powinien mieścić się w przedziale 1–720 godzin.');
+      return;
+    }
+    // Placeholder – in the future this will call governance module to create proposal
+    setCreateVoteUi(`Funkcja w budowie — wkrótce utworzysz głosowanie. Parametry: „${title}”, ${dur} h.`);
+  };
+
   return (
     <>
       <Header />
@@ -1533,6 +1555,51 @@ export default function AccountPage() {
         {activeTab === 'votes' && (
           <div className="p-4 bg-white rounded-lg shadow-md">
             <h2 className="text-xl font-semibold mb-4">Głosowania</h2>
+
+            {/* NEW: Create vote form (UI only) */}
+            <div className="mb-6">
+              <form
+                onSubmit={handleCreateProposal}
+                className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3"
+              >
+                <input
+                  type="text"
+                  placeholder="Tytuł głosowania"
+                  aria-label="Tytuł głosowania"
+                  value={newVoteTitle}
+                  onChange={(e) => setNewVoteTitle(e.target.value)}
+                  className="flex-1 rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#10b981]/30"
+                />
+                <input
+                  type="number"
+                  min={1}
+                  max={720}
+                  step={1}
+                  aria-label="Czas trwania (w godzinach)"
+                  value={newVoteDuration}
+                  onChange={(e) => setNewVoteDuration(Number(e.target.value))}
+                  className="w-28 rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#10b981]/30"
+                />
+                <button
+                  type="submit"
+                  className="rounded-md bg-[#10b981] text-white font-semibold px-4 py-2 text-sm shadow hover:shadow-[0_0_18px_rgba(16,185,129,0.35)] transition disabled:opacity-60 disabled:cursor-not-allowed"
+                  disabled={!address || !isNonZeroAddress(governanceAddress as string)}
+                  title={!address ? 'Połącz portfel' : (!isNonZeroAddress(governanceAddress as string) ? 'Moduł governance niedostępny' : 'Utwórz')}
+                >
+                  Utwórz
+                </button>
+              </form>
+              <div className="mt-2 text-xs text-gray-500">
+                Czas trwania w godzinach. Tworzenie głosowań będzie wkrótce dostępne.
+              </div>
+              {createVoteUi && (
+                <div className="mt-2 text-xs text-gray-700">
+                  {createVoteUi}
+                </div>
+              )}
+            </div>
+
+            {/* ...existing code... proposals list and fallbacks ... */}
             {!address ? (
               <p>Zaloguj się, aby zobaczyć głosowania.</p>
             ) : proposalsLoading ? (
