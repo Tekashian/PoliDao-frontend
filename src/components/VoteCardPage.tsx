@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useAccount, useWriteContract, useReadContract } from "wagmi";
+import { useAccount, useWriteContract, useReadContract, usePublicClient } from "wagmi";
 import { POLIDAO_ABI } from "../blockchain/poliDaoAbi";
 import { polidaoContractConfig } from "../blockchain/contracts";
 import { useGetAllProposals, type Proposal } from '../hooks/usePoliDao';
@@ -9,6 +9,7 @@ import { useGetAllProposals, type Proposal } from '../hooks/usePoliDao';
 export default function VoteCardPage() {
   const { address } = useAccount();
   const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
 
   // States
   const [selectedProposal, setSelectedProposal] = useState<number | null>(null);
@@ -41,6 +42,77 @@ export default function VoteCardPage() {
     args: selectedProposal !== null && address ? [BigInt(selectedProposal), address] : undefined,
   });
 
+  // NEW: user vote choice + loading
+  const [userVoteChoice, setUserVoteChoice] = useState<boolean | null>(null);
+  const [userVoteLoading, setUserVoteLoading] = useState(false);
+
+  useEffect(() => {
+    let disposed = false;
+    (async () => {
+      try {
+        setUserVoteLoading(true);
+        setUserVoteChoice(null);
+        if (!publicClient || !address || selectedProposal === null) {
+          if (!disposed) setUserVoteLoading(false);
+          return;
+        }
+        const pid = BigInt(selectedProposal);
+
+        function toBool(x: any): boolean | null {
+          if (typeof x === 'boolean') return x;
+          if (typeof x === 'bigint') return x === 1n ? true : x === 0n ? false : null;
+          if (typeof x === 'number') return x === 1 ? true : x === 0 ? false : null;
+          return null;
+        }
+        async function tryRead<T>(fn: string, args: readonly unknown[]): Promise<T | null> {
+          try {
+            // @ts-expect-error wagmi types accept any abi item shape
+            const res = await publicClient.readContract({
+              address: polidaoContractConfig.address as `0x${string}`,
+              abi: POLIDAO_ABI as any,
+              functionName: fn as any,
+              args,
+            });
+            return res as T;
+          } catch {
+            return null;
+          }
+        }
+
+        // a) getUserVote(uint256,address) -> (bool has, bool support|uint8)
+        const r1 = await tryRead<any>('getUserVote', [pid, address as `0x${string}`]);
+        if (!disposed && Array.isArray(r1) && r1.length >= 2) {
+          const has = Boolean(r1[0]);
+          const sup = toBool(r1[1]);
+          if (has && sup != null) {
+            setUserVoteChoice(sup);
+            setUserVoteLoading(false);
+            return;
+          }
+        }
+
+        // b) mappings userVotes / votes / voteOf (bool|uint8)
+        const vUser = await tryRead<any>('userVotes', [pid, address as `0x${string}`]);
+        const vVotes = vUser == null ? await tryRead<any>('votes', [pid, address as `0x${string}`]) : vUser;
+        const vVoteOf = vVotes == null ? await tryRead<any>('voteOf', [pid, address as `0x${string}`]) : vVotes;
+        const support = toBool(vVoteOf);
+        if (!disposed && support != null) {
+          setUserVoteChoice(support);
+          setUserVoteLoading(false);
+          return;
+        }
+
+        if (!disposed) setUserVoteLoading(false);
+      } catch {
+        if (!disposed) {
+          setUserVoteChoice(null);
+          setUserVoteLoading(false);
+        }
+      }
+    })();
+    return () => { disposed = true; };
+  }, [publicClient, address, selectedProposal]);
+
   // proposalSummary zastąpione przez selectedProposalData / proposalDetails
 
   // Automatyczne wybieranie pierwszej aktywnej propozycji
@@ -65,6 +137,9 @@ export default function VoteCardPage() {
   const selectedProposalData = proposals?.find(p => Number(p.id) === selectedProposal);
   const isCurrentProposalActive = selectedProposalData ? 
     (Number(selectedProposalData.endTime) - Math.floor(Date.now() / 1000)) > 0 : false;
+
+  // NEW: derive voted flag from either hook or discovered choice
+  const userHasVoted = Boolean(hasUserVoted) || (userVoteChoice !== null);
 
   // Funkcja głosowania
   const handleVote = async () => {
@@ -221,6 +296,15 @@ export default function VoteCardPage() {
             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
               <h2 className="text-gray-800 text-lg leading-relaxed font-semibold">{selectedProposalData.question}</h2>
               <p className="text-gray-500 text-sm mt-2">Propozycja #{selectedProposal}</p>
+              {/* NEW: user vote badge */}
+              {!userVoteLoading && userVoteChoice !== null && (
+                <div className="mt-3">
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ring-1
+                    ${userVoteChoice ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-rose-50 text-rose-700 ring-rose-200'}`}>
+                    {userVoteChoice ? 'Twój głos: TAK' : 'Twój głos: NIE'}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -229,7 +313,7 @@ export default function VoteCardPage() {
         <div className="p-6">
           
           {/* Voting Interface - gdy aktywne i nie głosowano */}
-          {isActive && !hasUserVoted && !showResults && (
+          {isActive && !userHasVoted && !showResults && (
             <div className="space-y-6">
               <div className="text-center">
                 <h3 className="text-xl font-bold text-gray-800 mb-2">Oddaj swój głos</h3>
@@ -365,7 +449,7 @@ export default function VoteCardPage() {
           )}
 
           {/* Komunikat o oddanym głosie */}
-          {hasUserVoted && !showResults && (
+          {userHasVoted && !showResults && (
             <div className="text-center space-y-4">
               <div className="bg-gradient-to-r from-emerald-50 to-green-100 border-2 border-emerald-200 py-8 rounded-2xl">
                 <div className="flex items-center justify-center text-emerald-700 mb-4">

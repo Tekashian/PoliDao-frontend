@@ -8,6 +8,9 @@ import { poliDaoRouterAbi } from '../../blockchain/routerAbi';
 import { poliDaoCoreAbi } from '../../blockchain/coreAbi';
 import { poliDaoAnalyticsAbi } from '../../blockchain/analyticsAbi';
 import poliDaoGovernanceAbi from '../../blockchain/governanceAbi';
+// ADD: legacy POLIDAO governance fallback
+import { POLIDAO_ABI } from '../../blockchain/poliDaoAbi';
+import { polidaoContractConfig } from '../../blockchain/contracts';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { useGetAllProposals } from '../../hooks/usePoliDao';
@@ -348,6 +351,9 @@ export default function AccountPage() {
     () => (governanceProposals.length > 0 ? governanceProposals : (proposals || [])),
     [governanceProposals, proposals]
   );
+
+  // NEW: mark from which source current list originates (module vs legacy)
+  const proposalsFromModule = React.useMemo(() => governanceProposals.length > 0, [governanceProposals]);
 
   // Router: list user's donations globally (ids[], amounts[])
   const { data: userDonationsTuple } = useReadContract({
@@ -1321,25 +1327,185 @@ export default function AccountPage() {
 
   // NEW: form state for creating a vote (UI only for now)
   const [newVoteTitle, setNewVoteTitle] = useState('');
-  const [newVoteDuration, setNewVoteDuration] = useState<number>(24); // hours
+  // was number -> string to allow empty value and show placeholder
+  const [newVoteDays, setNewVoteDays] = useState<string>(''); // days
   const [createVoteUi, setCreateVoteUi] = useState<string>('');
 
   const handleCreateProposal = (e?: React.FormEvent) => {
     e?.preventDefault();
     setCreateVoteUi('');
     const title = newVoteTitle.trim();
-    const dur = Number(newVoteDuration);
+    const days = Number(newVoteDays);
     if (title.length < 3 || title.length > 120) {
       setCreateVoteUi('Podaj tytuł o długości 3–120 znaków.');
       return;
     }
-    if (!Number.isFinite(dur) || dur <= 0 || dur > 720) {
-      setCreateVoteUi('Czas trwania powinien mieścić się w przedziale 1–720 godzin.');
+    if (!Number.isFinite(days) || days <= 0 || days > 60) {
+      setCreateVoteUi('Czas trwania powinien mieścić się w przedziale 1–60 dni.');
       return;
     }
     // Placeholder – in the future this will call governance module to create proposal
-    setCreateVoteUi(`Funkcja w budowie — wkrótce utworzysz głosowanie. Parametry: „${title}”, ${dur} h.`);
+    setCreateVoteUi(`Funkcja w budowie — wkrótce utworzysz głosowanie. Parametry: „${title}”, ${days} dni.`);
   };
+
+  // NEW: per-user voting history state
+  const [voteHistory, setVoteHistory] = useState<{ id: bigint; support: boolean; question: string }[]>([]);
+  const [voteHistoryLoading, setVoteHistoryLoading] = useState(false);
+
+  useEffect(() => {
+    let disposed = false;
+    (async () => {
+      try {
+        if (!publicClient || !address) {
+          if (!disposed) {
+            setVoteHistory([]);
+            setVoteHistoryLoading(false);
+          }
+          return;
+        }
+
+        setVoteHistoryLoading(true);
+
+        // 1) Build proposals list and remember the source
+        let list: any[] = Array.isArray(displayProposals) ? displayProposals.slice(0, 200) : [];
+        let listSource: 'module' | 'legacy' = proposalsFromModule ? 'module' : 'legacy';
+
+        // Fallback: if empty, try legacy POLIDAO directly
+        if ((!list || list.length === 0) && polidaoContractConfig?.address) {
+          try {
+            const count = (await publicClient.readContract({
+              address: polidaoContractConfig.address as `0x${string}`,
+              abi: POLIDAO_ABI as any,
+              functionName: 'getProposalCount',
+              args: [],
+            })) as bigint;
+
+            const lim = Math.min(Number(count ?? 0n), 200);
+            const ids = Array.from({ length: lim }, (_, i) => BigInt(i));
+            const proposalsRaw = await Promise.all(
+              ids.map(async (pid) => {
+                try {
+                  const pr: any = await publicClient.readContract({
+                    address: polidaoContractConfig.address as `0x${string}`,
+                    abi: POLIDAO_ABI as any,
+                    functionName: 'getProposal',
+                    args: [pid],
+                  });
+                  const question = String(pr?.question ?? pr?.[1] ?? `Propozycja #${pid.toString()}`);
+                  return { id: pid, question };
+                } catch {
+                  return { id: pid, question: `Propozycja #${pid.toString()}` };
+                }
+              })
+            );
+            list = proposalsRaw;
+            listSource = 'legacy'; // ensure we read votes from the same place
+          } catch {
+            // ignore, keep list empty
+          }
+        }
+
+        if (!list || list.length === 0) {
+          if (!disposed) {
+            setVoteHistory([]);
+            setVoteHistoryLoading(false);
+          }
+          return;
+        }
+
+        // 2) Choose vote source based on list source (fix: don't force module if list is legacy)
+        const govAddr =
+          (listSource === 'module' ? (governanceAddress as `0x${string}` | undefined) : (polidaoContractConfig.address as `0x${string}` | undefined));
+        const govAbi: any = listSource === 'module' ? (poliDaoGovernanceAbi as any) : (POLIDAO_ABI as any);
+
+        if (!govAddr) {
+          if (!disposed) {
+            setVoteHistory([]);
+            setVoteHistoryLoading(false);
+          }
+          return;
+        }
+
+        async function tryRead<T>(fn: string, args: readonly unknown[]): Promise<T | null> {
+          try {
+            const res = await publicClient.readContract({
+              address: govAddr,
+              abi: govAbi,
+              functionName: fn as any,
+              args,
+            });
+            return res as T;
+          } catch {
+            return null;
+          }
+        }
+
+        function toBool(x: any): boolean | null {
+          if (typeof x === 'boolean') return x;
+          if (typeof x === 'bigint') return x === 1n ? true : x === 0n ? false : null;
+          if (typeof x === 'number') return x === 1 ? true : x === 0 ? false : null;
+          return null;
+        }
+
+        async function getUserChoice(pid: bigint): Promise<{ has: boolean; support?: boolean } | null> {
+          // a) getUserVote(uint256,address) -> (bool has, bool support|uint8)
+          const r1 = (await tryRead<any>('getUserVote', [pid, address as `0x${string}`])) as any;
+          if (Array.isArray(r1) && r1.length >= 2) {
+            const has = Boolean(r1[0]);
+            const sup = toBool(r1[1]);
+            if (has && sup != null) return { has: true, support: sup };
+            if (has) return { has: true };
+          }
+
+          // b) hasVoted(uint256,address) -> bool
+          const has = await tryRead<boolean>('hasVoted', [pid, address as `0x${string}`]);
+
+          // c) mappings: userVotes / votes / voteOf
+          const vUser = await tryRead<any>('userVotes', [pid, address as `0x${string}`]);
+          const vVotes = vUser == null ? await tryRead<any>('votes', [pid, address as `0x${string}`]) : vUser;
+          const vVoteOf = vVotes == null ? await tryRead<any>('voteOf', [pid, address as `0x${string}`]) : vVotes;
+
+          const support = toBool(vVoteOf);
+          if (typeof has === 'boolean' && has === true && support != null) return { has: true, support };
+          if (has === true) return { has: true };
+          if (has == null && support != null) return { has: true, support };
+
+          return null;
+        }
+
+        const results = await Promise.all(
+          list.slice(0, 200).map(async (p: any) => {
+            const rawId = (p?.id ?? p?.proposalId ?? 0n);
+            const pid = typeof rawId === 'bigint' ? rawId : BigInt(rawId); // allow id 0
+            const question = String(p?.question ?? `Propozycja #${pid.toString()}`);
+            const choice = await getUserChoice(pid);
+            if (choice && choice.has && typeof choice.support === 'boolean') {
+              return { id: pid, support: !!choice.support, question };
+            }
+            if (choice && choice.has && typeof choice.support !== 'boolean') {
+              return { id: pid, support: true as boolean, question, __unknown: true } as any;
+            }
+            return null;
+          })
+        );
+
+        const filtered = results.filter(Boolean) as { id: bigint; support: boolean; question: string }[];
+
+        if (!disposed) {
+          setVoteHistory(filtered);
+          setVoteHistoryLoading(false);
+        }
+      } catch {
+        if (!disposed) {
+          setVoteHistory([]);
+          setVoteHistoryLoading(false);
+        }
+      }
+    })();
+    return () => {
+      disposed = true;
+    };
+  }, [publicClient, address, governanceAddress, displayProposals, proposalsFromModule]);
 
   return (
     <>
@@ -1556,7 +1722,7 @@ export default function AccountPage() {
           <div className="p-4 bg-white rounded-lg shadow-md">
             <h2 className="text-xl font-semibold mb-4">Głosowania</h2>
 
-            {/* NEW: Create vote form (UI only) */}
+            {/* Create vote form (UI only) */}
             <div className="mb-6">
               <form
                 onSubmit={handleCreateProposal}
@@ -1573,12 +1739,13 @@ export default function AccountPage() {
                 <input
                   type="number"
                   min={1}
-                  max={720}
+                  max={60}
                   step={1}
-                  aria-label="Czas trwania (w godzinach)"
-                  value={newVoteDuration}
-                  onChange={(e) => setNewVoteDuration(Number(e.target.value))}
-                  className="w-28 rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#10b981]/30"
+                  placeholder="Liczba dni trwania głosowania"
+                  aria-label="Czas trwania (w dniach)"
+                  value={newVoteDays}
+                  onChange={(e) => setNewVoteDays(e.target.value)}
+                  className="w-48 rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#10b981]/30"
                 />
                 <button
                   type="submit"
@@ -1590,7 +1757,7 @@ export default function AccountPage() {
                 </button>
               </form>
               <div className="mt-2 text-xs text-gray-500">
-                Czas trwania w godzinach. Tworzenie głosowań będzie wkrótce dostępne.
+                Czas trwania w dniach. Tworzenie głosowań będzie wkrótce dostępne.
               </div>
               {createVoteUi && (
                 <div className="mt-2 text-xs text-gray-700">
@@ -1599,7 +1766,47 @@ export default function AccountPage() {
               )}
             </div>
 
-            {/* ...existing code... proposals list and fallbacks ... */}
+            {/* NEW: Historia moich głosów – minimalistycznie */}
+            {address && (
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-800">Historia moich głosów</h3>
+                  {voteHistoryLoading && <span className="text-xs text-gray-500">Ładowanie…</span>}
+                </div>
+                {voteHistoryLoading ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="h-16 rounded-md border border-gray-100 bg-gray-50 animate-pulse" />
+                    <div className="h-16 rounded-md border border-gray-100 bg-gray-50 animate-pulse hidden sm:block" />
+                  </div>
+                ) : voteHistory.length === 0 ? (
+                  <div className="rounded-md border border-gray-100 bg-gray-50 px-3 py-3 text-xs text-gray-600">
+                    Brak oddanych głosów dla tego portfela.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {voteHistory.map((v: any) => (
+                      <div key={v.id.toString()} className="flex items-center justify-between rounded-md border border-gray-100 bg-white px-3 py-3">
+                        <div className="min-w-0 pr-3">
+                          <div className="truncate text-sm font-medium text-gray-800">{v.question || `Propozycja #${v.id.toString()}`}</div>
+                          <div className="mt-0.5 text-[11px] text-gray-500">ID: {v.id.toString()}</div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1
+                            ${v.__unknown ? 'bg-slate-50 text-slate-700 ring-slate-200' : (v.support ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-rose-50 text-rose-700 ring-rose-200')}`}>
+                            {v.__unknown ? 'GŁOS ODDANY' : (v.support ? 'TAK' : 'NIE')}
+                          </span>
+                          <a href={`/votes/${v.id.toString()}`} className="text-[11px] font-semibold text-[#10b981] hover:underline">
+                            Szczegóły
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ...existing code... proposals list ... */}
             {!address ? (
               <p>Zaloguj się, aby zobaczyć głosowania.</p>
             ) : proposalsLoading ? (
