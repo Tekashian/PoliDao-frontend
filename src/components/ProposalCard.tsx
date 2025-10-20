@@ -44,6 +44,12 @@ export default function ProposalCard() {
     args: selectedProposal !== null && address ? [BigInt(selectedProposal), address] : undefined,
   });
 
+  // NEW: stable boolean + auto-switch to results if voted
+  const userHasVoted = Boolean(hasUserVoted);
+  useEffect(() => {
+    if (userHasVoted && !showResults) setShowResults(true);
+  }, [userHasVoted, showResults]);
+
   // proposalSummary usunięte – korzystamy z selectedProposalData (hook + getProposal)
 
   // Automatyczne wybieranie pierwszej aktywnej propozycji
@@ -260,8 +266,8 @@ export default function ProposalCard() {
             {/* Content Area */}
             <div className="p-6">
               
-              {/* Voting Interface - gdy aktywne i nie głosowano */}
-              {isActive && !hasUserVoted && !showResults && (
+              {/* Voting Interface - tylko jeśli user nie głosował */}
+              {isActive && !userHasVoted && !showResults && (
                 <div className="space-y-6">
                   <div className="text-center">
                     <h3 className="text-xl font-bold text-gray-800 mb-2">Oddaj swój głos</h3>
@@ -396,32 +402,15 @@ export default function ProposalCard() {
                 </div>
               )}
 
-              {/* Komunikat o oddanym głosie */}
-              {hasUserVoted && !showResults && (
-                <div className="text-center space-y-4">
-                  <div className="bg-gradient-to-r from-emerald-50 to-green-100 border-2 border-emerald-200 py-8 rounded-2xl">
-                    <div className="flex items-center justify-center text-emerald-700 mb-4">
-                      <svg className="w-12 h-12 mr-3" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
-                      <div>
-                        <h3 className="font-bold text-2xl">Głos zapisany!</h3>
-                        <p className="text-emerald-600 mt-1">Twój głos został pomyślnie dodany do blockchain</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setShowResults(true)}
-                      className="px-8 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl transition-colors transform-gpu hover:scale-105"
-                    >
-                      📊 Zobacz wyniki głosowania
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {/* Wyniki głosowania */}
               {showResults && selectedProposalData && (
                 <div className="space-y-6">
+                  {/* NEW: thank you banner if voted */}
+                  {userHasVoted && (
+                    <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 p-4 rounded-xl text-center">
+                      Dziękujemy za udział! Twój głos został zapisany w blockchain.
+                    </div>
+                  )}
                   <div className="text-center">
                     <h3 className="text-2xl font-bold text-gray-800 mb-2">Wyniki głosowania</h3>
                     <p className="text-gray-600">Łączna liczba głosów: {Number(totalVotes)}</p>
@@ -480,7 +469,7 @@ export default function ProposalCard() {
               )}
 
               {/* Gdy głosowanie nieaktywne */}
-              {!isActive && (
+              {!isActive && !showResults && (
                 <div className="text-center py-8">
                   <div className="bg-gray-50 p-8 rounded-2xl border border-gray-200">
                     <div className="text-6xl mb-4">⏰</div>

@@ -55,6 +55,9 @@ import { Pagination, Autoplay, Navigation } from 'swiper/modules';
 import 'swiper/css';
 import 'swiper/css/pagination';
 import 'swiper/css/navigation'; // + navigation CSS
+// CHANGED: import coverflow effect for 3D-like center emphasis
+import { EffectCoverflow } from 'swiper/modules';
+import 'swiper/css/effect-coverflow';
 
 // Material-UI Proposal Card z nawigacją - ZAKTUALIZOWANE
 function MUIProposalCard({ proposal, onVote, isVoting, votingId }: {
@@ -287,7 +290,9 @@ function FuturisticCarousel({
   emptyMessage,
   rtl = false,
   autoplayDelay = 3000,
-  space, // NEW: custom gap between slides (px)
+  space,
+  myAccountCardLayout = false,
+  simpleNavOnly = false,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -296,7 +301,9 @@ function FuturisticCarousel({
   emptyMessage: string;
   rtl?: boolean;
   autoplayDelay?: number;
-  space?: number; // NEW
+  space?: number;
+  myAccountCardLayout?: boolean;
+  simpleNavOnly?: boolean; // NEW
 }) {
   const theme = useTheme();
   const ACCENT = '#10b981';
@@ -305,10 +312,12 @@ function FuturisticCarousel({
   // Ensure enough slides for seamless loop
   const slides = React.useMemo(() => {
     if (!items || items.length === 0) return [];
+    // NEW: in simple mode do NOT duplicate – keep exact number of items
+    if (simpleNavOnly) return items;
     if (items.length >= 9) return items;
     const reps = Math.ceil(9 / Math.max(1, items.length));
     return Array.from({ length: reps }).flatMap(() => items).slice(0, 9);
-  }, [items]);
+  }, [items, simpleNavOnly]);
 
   // NEW: custom navigation refs (external buttons)
   const prevRef = React.useRef<HTMLButtonElement | null>(null);
@@ -344,12 +353,11 @@ function FuturisticCarousel({
           pb: 3,
           overflow: 'visible',
           '& .swiper-wrapper': { transitionTimingFunction: 'ease-in-out' },
-          // Ensure visible spacing equals GAP even if Swiper rounding kicks in
           '& .swiper-slide': {
             marginInlineEnd: `${GAP}px !important`,
           },
-          // Pagination below (no overlay)
-          '& .swiper-pagination': {
+          // Hide pagination entirely in simple mode
+          '& .swiper-pagination': simpleNavOnly ? { display: 'none !important' } : {
             position: 'static !important',
             marginTop: theme.spacing(1.5),
             display: 'flex',
@@ -403,39 +411,58 @@ function FuturisticCarousel({
         </IconButton>
 
         <Swiper
-          key={`swiper-${title}-${slides.length}`}
-          modules={[Pagination, Autoplay, Navigation]}
-          loop
-          loopedSlides={slides.length}
-          loopedSlidesLimit={false}
+          key={`swiper-${title}-${slides.length}-${simpleNavOnly}`}
+          modules={simpleNavOnly ? [Navigation] : [Pagination, Autoplay, Navigation, EffectCoverflow]}
+          loop={!simpleNavOnly}
           loopAdditionalSlides={Math.min(slides.length, 12)}
-          speed={750}
-          autoplay={{
+          speed={550}
+          autoplay={simpleNavOnly ? undefined : {
             delay: autoplayDelay,
             disableOnInteraction: false,
             pauseOnMouseEnter: false,
-            reverseDirection: rtl,    // step to the right
+            reverseDirection: rtl,
             waitForTransition: true,
           }}
-          pagination={{ clickable: true }}
-          // NEW: bind custom external buttons
+          pagination={simpleNavOnly ? false : { clickable: true }}
           navigation={{
             prevEl: prevRef.current,
             nextEl: nextRef.current,
           }}
           onBeforeInit={(swiper) => {
-            // @ts-expect-error - runtime assignment supported by Swiper
+            // @ts-expect-error
             swiper.params.navigation.prevEl = prevRef.current;
-            // @ts-expect-error - runtime assignment supported by Swiper
+            // @ts-expect-error
             swiper.params.navigation.nextEl = nextRef.current;
           }}
-          slidesPerView={3}
+          // NEW: in simple mode fix slidesPerView to 1/2/3 with breakpoints; turn off centeredSlides
+          slidesPerView={simpleNavOnly ? 3 : (myAccountCardLayout ? 'auto' : 3)}
+          centeredSlides={simpleNavOnly ? false : (myAccountCardLayout ? true : false)}
+          breakpoints={simpleNavOnly ? {
+            0:   { slidesPerView: 1, centeredSlides: false },
+            640: { slidesPerView: 2, centeredSlides: false },
+            1024:{ slidesPerView: 3, centeredSlides: false },
+          } : undefined}
           slidesPerGroup={1}
+          slidesPerGroupAuto={false}
           spaceBetween={GAP}
           cssMode={false}
+          effect={!simpleNavOnly && myAccountCardLayout ? 'coverflow' : undefined}
+          coverflowEffect={!simpleNavOnly && myAccountCardLayout
+            ? { rotate: 0, stretch: 0, depth: 180, modifier: 1, slideShadows: false }
+            : undefined
+          }
+          allowTouchMove={!simpleNavOnly ? true : false}
+          simulateTouch={!simpleNavOnly ? true : false}
+          grabCursor={!simpleNavOnly ? true : false}
+          // NEW: hide nav when not enough items to scroll
+          watchOverflow
         >
           {slides.map((item, index) => (
-            <SwiperSlide key={`${title}-${index}`}>
+            <SwiperSlide
+              key={`${title}-${index}`}
+              // NEW: no fixed width in simple mode; keep previous fixed width only for account layout
+              className={simpleNavOnly ? undefined : (myAccountCardLayout ? 'w-full sm:w-[24rem] flex-none' : undefined)}
+            >
               <Box sx={{ borderRadius: 0 }}>
                 {renderItem(item, index)}
               </Box>
@@ -624,41 +651,6 @@ export default function HomePage() {
     return true; // "all"
   }) : [];
 
-  // Sprawdź czy są aktywne propozycje
-  const hasActiveProposals = displayProposals && displayProposals.some((proposal: Proposal) => {
-    const timeLeft = Number(proposal.endTime) - Math.floor(Date.now() / 1000);
-    return timeLeft > 0;
-  });
-
-  // ✅ ZAKTUALIZOWANE: Logika dla karuzeli propozycji - aktywne propozycje pierwsze
-  const getCarouselProposals = () => {
-    if (!displayProposals || displayProposals.length === 0) return [];
-    
-    const now = Math.floor(Date.now() / 1000);
-    
-    // Sortuj: aktywne pierwsze (według czasu pozostałego), potem zakończone (według aktywności)
-    return [...displayProposals].sort((a, b) => {
-      const timeLeftA = Number(a.endTime) - now;
-      const timeLeftB = Number(b.endTime) - now;
-      const isActiveA = timeLeftA > 0;
-      const isActiveB = timeLeftB > 0;
-      
-      // Aktywne propozycje pierwsze
-      if (isActiveA && !isActiveB) return -1;
-      if (!isActiveA && isActiveB) return 1;
-      
-      if (isActiveA && isActiveB) {
-        // Dla aktywnych: te z najmniejszym czasem pozostałym (pilne)
-        return timeLeftA - timeLeftB;
-      } else {
-        // Dla zakończonych: te z największą liczbą głosów
-        const totalVotesA = Number(a.yesVotes) + Number(a.noVotes);
-        const totalVotesB = Number(b.yesVotes) + Number(b.noVotes);
-        return totalVotesB - totalVotesA;
-      }
-    }).slice(0, 8); // Maksymalnie 8 propozycji w karuzeli
-  };
-
   // ✅ ZAKTUALIZOWANE: Logika dla karuzeli kampanii z nowymi danymi z ABI
   const getCarouselCampaigns = () => {
     if (!campaigns || campaigns.length === 0) return [];
@@ -695,53 +687,32 @@ export default function HomePage() {
     }).slice(0, 8); // Maksymalnie 8 kampanii w karuzeli
   };
 
-  const carouselProposals = getCarouselProposals();
   const carouselCampaigns = getCarouselCampaigns();
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header />
-
-      {/* HERO BACKGROUND - zawsze renderowany */}
       <Hero3D />
 
-      {/* GŁÓWNY HERO BANNER Z INTERAKTYWNYM GŁOSOWANIEM */}
-      {/* Pokazuj tylko gdy są aktywne propozycje, albo gdy zakładka głosowania jest wybrana */}
-      {(hasActiveProposals || activeTab === "glosowania") && (
-        <div className="relative -mt-[400px] pt-[200px] pb-[100px] flex items-center justify-center px-8">
-          <VoteCardPage />
-        </div>
-      )}
+      {/* GŁÓWNY HERO BANNER Z INTERAKTYWNYM GŁOSOWANIEM – zawsze obecny */}
+      <div className="relative -mt-[400px] pt-[200px] pb-[100px] flex items-center justify-center px-8">
+        <VoteCardPage proposalsOverride={displayProposals} />
+      </div>
 
-      {/* GŁÓWNA TREŚĆ - dodano flex-1 dla wypychania footer */}
       <main className="flex-1">
         {/* KARUZELE - pokazują się tylko gdy są dane */}
         <Container maxWidth="xl" sx={{ mt: 4 }}>
-          {/* Karuzela aktywnych głosowań */}
-          <FuturisticCarousel
-            title="Aktywne głosowania"
-            icon={<HowToVote sx={{ fontSize: 28 }} />}
-            items={carouselProposals}
-            renderItem={(proposal: Proposal) => (
-              <MUIProposalCard
-                key={proposal.id.toString()}
-                proposal={proposal}
-                onVote={onVoteProposal}
-                isVoting={isVotePending || isVoteConfirming}
-                votingId={votingId}
-              />
-            )}
-            emptyMessage="Brak aktywnych głosowań"
-          />
-
-          {/* ✅ Karuzela kampanii – super-płynny ruch w prawo */}
+          {/* ✅ Karuzela kampanii – tryb prosty, tylko strzałki */}
           <FuturisticCarousel
             title="Najlepsze kampanie i zbiórki"
             icon={<TrendingUp sx={{ fontSize: 28 }} />}
             items={carouselCampaigns}
-            rtl={true}
-            autoplayDelay={3000}
-            space={0} // CHANGED: force zero gap for a clear ~70%+ reduction
+            // NEW: turn off autoplay/coverflow/loop; arrows only
+            simpleNavOnly={true}
+            // Keep fixed width like "Moje zbiórki"
+            myAccountCardLayout={true}
+            // space 24px between cards
+            space={24}
             renderItem={(campaign: ModularFundraiser) => {
               const mappedCampaign = {
                 campaignId: campaign.id.toString(),

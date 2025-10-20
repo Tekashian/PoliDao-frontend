@@ -3,10 +3,14 @@
 import React, { useState, useEffect } from "react";
 import { useAccount, useWriteContract, useReadContract, usePublicClient } from "wagmi";
 import { POLIDAO_ABI } from "../blockchain/poliDaoAbi";
-import { polidaoContractConfig } from "../blockchain/contracts";
+import { polidaoContractConfig, ROUTER_ADDRESS } from "../blockchain/contracts";
 import { useGetAllProposals, type Proposal } from '../hooks/usePoliDao';
+import { poliDaoRouterAbi } from "../blockchain/routerAbi";
+import { Interface, keccak256, toUtf8Bytes } from "ethers";
+// ADD: receipt tracking
+import { useWaitForTransactionReceipt } from "wagmi";
 
-export default function VoteCardPage() {
+export default function VoteCardPage({ proposalsOverride }: { proposalsOverride?: Proposal[] }) {
   const { address } = useAccount();
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient();
@@ -26,6 +30,12 @@ export default function VoteCardPage() {
     error: proposalsError, 
     refetchProposals 
   } = useGetAllProposals();
+
+  // NEW: źródło danych – preferuj override z rodzica (governance), fallback do hooka
+  const sourceProposals = proposalsOverride && proposalsOverride.length > 0 ? proposalsOverride : proposals || [];
+  const loading = proposalsOverride ? false : proposalsLoading;
+  // ZMIANA: uniknij kolizji z lokalnym state "error"
+  const proposalsLoadError = proposalsOverride ? undefined : proposalsError;
 
   // Dodatkowe dane dla wybranej propozycji
   const { data: proposalDetails, refetch: refetchProposalDetails } = useReadContract({
@@ -115,31 +125,50 @@ export default function VoteCardPage() {
 
   // proposalSummary zastąpione przez selectedProposalData / proposalDetails
 
-  // Automatyczne wybieranie pierwszej aktywnej propozycji
+  // Automatyczne wybieranie najnowszej (aktywniej lub najnowszej ogółem)
   useEffect(() => {
-    if (proposals && proposals.length > 0 && selectedProposal === null) {
-      // Znajdź pierwszą aktywną propozycję
-      const activeProposal = proposals.find((proposal: Proposal) => {
-        const timeLeft = Number(proposal.endTime) - Math.floor(Date.now() / 1000);
-        return timeLeft > 0;
-      });
+    if (!sourceProposals || sourceProposals.length === 0) return;
 
-      if (activeProposal) {
-        setSelectedProposal(Number(activeProposal.id));
-      } else {
-        // Jeśli brak aktywnych, wybierz pierwszą
-        setSelectedProposal(Number(proposals[0].id));
-      }
+    const now = Math.floor(Date.now() / 1000);
+    // Sortuj malejąco po id (najnowsze pierwsze)
+    const sortedDesc = [...sourceProposals].sort((a, b) =>
+      a.id < b.id ? 1 : a.id > b.id ? -1 : 0
+    );
+
+    // Najpierw najnowsza aktywna, jeśli brak – najnowsza ogółem
+    const latestActive = sortedDesc.find(p => Number(p.endTime) > now);
+    const target = latestActive ?? sortedDesc[0];
+
+    const currentExists = selectedProposal != null && sourceProposals.some(p => Number(p.id) === selectedProposal);
+    if (!currentExists) {
+      setSelectedProposal(Number(target.id));
     }
-  }, [proposals, selectedProposal]);
+  }, [sourceProposals, selectedProposal]);
 
   // Pobierz dane wybranej propozycji
-  const selectedProposalData = proposals?.find(p => Number(p.id) === selectedProposal);
+  const selectedProposalData = sourceProposals.find(p => Number(p.id) === selectedProposal);
   const isCurrentProposalActive = selectedProposalData ? 
     (Number(selectedProposalData.endTime) - Math.floor(Date.now() / 1000)) > 0 : false;
 
   // NEW: derive voted flag from either hook or discovered choice
   const userHasVoted = Boolean(hasUserVoted) || (userVoteChoice !== null);
+
+  // NEW: auto-open results if user already voted
+  useEffect(() => {
+    if (userHasVoted && !showResults) setShowResults(true);
+  }, [userHasVoted, showResults]);
+
+  // NEW: compute module key for Governance routing via Router
+  const GOVERNANCE_KEY = React.useMemo(
+    () => keccak256(toUtf8Bytes("GOVERNANCE")) as `0x${string}`,
+    []
+  );
+
+  // NEW: store vote tx hash and track confirmation
+  const [voteTxHash, setVoteTxHash] = useState<`0x${string}` | null>(null);
+  const { isLoading: isVoteConfirming, isSuccess: isVoteConfirmed } = useWaitForTransactionReceipt({
+    hash: voteTxHash ?? undefined,
+  });
 
   // Funkcja głosowania
   const handleVote = async () => {
@@ -168,24 +197,28 @@ export default function VoteCardPage() {
     setSuccess("");
 
     try {
+      // Encode governance vote via Router
+      const gIface = new Interface(["function voteFor(uint256,bool,address)"]);
+      const calldata = gIface.encodeFunctionData("voteFor", [
+        BigInt(selectedProposal),
+        Boolean(vote),
+        address as `0x${string}`,
+      ]) as `0x${string}`;
+
       const txHash = await writeContractAsync({
-        address: polidaoContractConfig.address,
-        abi: POLIDAO_ABI,
-        functionName: "vote",
-        args: [BigInt(selectedProposal), vote],
+        address: ROUTER_ADDRESS,
+        abi: poliDaoRouterAbi,
+        functionName: "routeModule",
+        args: [GOVERNANCE_KEY, calldata],
       });
 
+      // track tx + UI
+      setVoteTxHash(txHash as `0x${string}`);
       setSuccess(`Głos oddany pomyślnie! Hash: ${txHash.slice(0, 10)}...`);
       setShowResults(true);
-      
-      // Odśwież dane
-      setTimeout(() => {
-        refetchProposalDetails();
-        refetchProposals();
-        setVote(null);
-        setSuccess("");
-      }, 3000);
 
+      // REMOVED: old 3s timeout refresh – replaced by effects below
+      // setTimeout(() => { refetchProposalDetails(); refetchProposals(); ... }, 3000);
     } catch (err: any) {
       console.error("Error voting:", err);
       setError(err.message || "Błąd podczas głosowania");
@@ -193,6 +226,35 @@ export default function VoteCardPage() {
       setSubmitting(false);
     }
   };
+
+  // NEW: immediately refetch after tx, and again after 7s (gives chain time to confirm)
+  useEffect(() => {
+    if (!voteTxHash) return;
+
+    // Immediate refresh (optimistic)
+    Promise.allSettled([
+      Promise.resolve(refetchProposalDetails?.()),
+      Promise.resolve(refetchProposals?.()),
+    ]);
+
+    const t = setTimeout(() => {
+      Promise.allSettled([
+        Promise.resolve(refetchProposalDetails?.()),
+        Promise.resolve(refetchProposals?.()),
+      ]);
+    }, 7000);
+
+    return () => clearTimeout(t);
+  }, [voteTxHash, refetchProposalDetails, refetchProposals]);
+
+  // NEW: also refresh once the tx is confirmed (if confirmation happens earlier/later than 7s)
+  useEffect(() => {
+    if (!isVoteConfirmed) return;
+    Promise.allSettled([
+      Promise.resolve(refetchProposalDetails?.()),
+      Promise.resolve(refetchProposals?.()),
+    ]);
+  }, [isVoteConfirmed, refetchProposalDetails, refetchProposals]);
 
   // Reset vote when proposal changes
   useEffect(() => {
@@ -229,7 +291,7 @@ export default function VoteCardPage() {
   const isActive = timeLeft !== "Zakończone";
 
   // Jeśli brak propozycji, nie renderuj nic
-  if (proposalsLoading) {
+  if (loading) {
     return (
       <div className="min-h-[400px] flex items-center justify-center">
         <div className="bg-white/95 backdrop-blur-lg px-8 py-12 rounded-3xl shadow-xl border border-white/20 max-w-md">
@@ -243,7 +305,8 @@ export default function VoteCardPage() {
     );
   }
 
-  if (proposalsError || !proposals || proposals.length === 0 || !selectedProposalData) {
+  // ZMIANA: używaj proposalsLoadError zamiast "error" (które jest stringiem z local state)
+  if (proposalsLoadError || !sourceProposals || sourceProposals.length === 0 || !selectedProposalData) {
     return null; // Nie renderuj karty, jeśli brak danych
   }
 
@@ -312,7 +375,7 @@ export default function VoteCardPage() {
         {/* Content Area */}
         <div className="p-6">
           
-          {/* Voting Interface - gdy aktywne i nie głosowano */}
+          {/* Voting Interface - tylko gdy użytkownik nie głosował */}
           {isActive && !userHasVoted && !showResults && (
             <div className="space-y-6">
               <div className="text-center">
@@ -448,32 +511,21 @@ export default function VoteCardPage() {
             </div>
           )}
 
-          {/* Komunikat o oddanym głosie */}
-          {userHasVoted && !showResults && (
-            <div className="text-center space-y-4">
-              <div className="bg-gradient-to-r from-emerald-50 to-green-100 border-2 border-emerald-200 py-8 rounded-2xl">
-                <div className="flex items-center justify-center text-emerald-700 mb-4">
-                  <svg className="w-12 h-12 mr-3" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  <div>
-                    <h3 className="font-bold text-2xl">Głos zapisany!</h3>
-                    <p className="text-emerald-600 mt-1">Twój głos został pomyślnie dodany do blockchain</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowResults(true)}
-                  className="px-8 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl transition-colors transform-gpu hover:scale-105"
-                >
-                  📊 Zobacz wyniki głosowania
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Wyniki głosowania */}
+          {/* Wyniki głosowania + podziękowanie */}
           {showResults && selectedProposalData && (
             <div className="space-y-6">
+              {/* NEW: thank you banner if user has voted */}
+              {userHasVoted && (
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 p-4 rounded-xl text-center">
+                  Dziękujemy za udział! Twój głos został zapisany w blockchain.
+                  {userVoteChoice !== null && (
+                    <span className="ml-2 font-semibold">
+                      (Twój głos: {userVoteChoice ? 'TAK' : 'NIE'})
+                    </span>
+                  )}
+                </div>
+              )}
+
               <div className="text-center">
                 <h3 className="text-2xl font-bold text-gray-800 mb-2">Wyniki głosowania</h3>
                 <p className="text-gray-600">Łączna liczba głosów: {Number(totalVotes)}</p>
@@ -543,7 +595,7 @@ export default function VoteCardPage() {
           )}
 
           {/* Gdy głosowanie nieaktywne */}
-          {!isActive && (
+          {!isActive && !showResults && (
             <div className="text-center py-8">
               <div className="bg-gray-50 p-8 rounded-2xl border border-gray-200">
                 <div className="text-6xl mb-4">⏰</div>
@@ -556,12 +608,12 @@ export default function VoteCardPage() {
       </div>
 
       {/* Navigation for multiple proposals */}
-      {proposals && proposals.length > 1 && (
+      {sourceProposals && sourceProposals.length > 1 && (
         <div className="mt-8 flex justify-center">
           <div className="bg-white/90 backdrop-blur-lg px-6 py-4 rounded-2xl shadow-lg border border-white/20 flex items-center space-x-4">
             <span className="text-gray-600 font-medium">Propozycja:</span>
             <div className="flex space-x-2">
-              {proposals.map((proposal: Proposal) => {
+              {sourceProposals.map((proposal: Proposal) => {
                 const isActiveProposal = (Number(proposal.endTime) - Math.floor(Date.now() / 1000)) > 0;
                 const isSelected = Number(proposal.id) === selectedProposal;
                 
