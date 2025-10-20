@@ -972,8 +972,8 @@ export default function HomePage() {
                           </div>
                         )}
                         
-                        {/* ✅ ZAKTUALIZOWANE: Używa CampaignCard zamiast EnhancedCampaignCard */}
-                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                        {/* ZMIANA: Układ i szerokość kart jak w "Moje zbiórki" (my-account) */}
+                        <div className="flex flex-wrap justify-center gap-6">
                           {filteredCampaigns.map((campaign: ModularFundraiser) => {
                             const mappedCampaign = {
                               campaignId: campaign.id.toString(),
@@ -996,11 +996,12 @@ export default function HomePage() {
                             };
 
                             return (
-                              <CampaignCard
-                                key={campaign.id.toString()}
-                                campaign={mappedCampaign}
-                                metadata={metadata}
-                              />
+                              <div key={campaign.id.toString()} className="w-full sm:w-[24rem] flex-none">
+                                <CampaignCard
+                                  campaign={mappedCampaign}
+                                  metadata={metadata}
+                                />
+                              </div>
                             );
                           })}
                         </div>
