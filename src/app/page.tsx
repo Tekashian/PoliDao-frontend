@@ -292,7 +292,7 @@ function FuturisticCarousel({
   autoplayDelay = 3000,
   space,
   myAccountCardLayout = false,
-  simpleNavOnly = false,
+  simpleNavOnly = false, // NEW
 }: {
   title: string;
   icon: React.ReactNode;
@@ -641,53 +641,131 @@ export default function HomePage() {
 
   const [activeTab, setActiveTab] = useState<"zbiorki" | "glosowania">("glosowania");
   const [campaignFilter, setCampaignFilter] = useState<"all" | "target" | "flexible">("all");
-  // const { isConnected } = useAccount(); // REMOVED duplicate – already declared above with address
+  // NEW: pagination (6 at a time)
+  const PAGE_SIZE = 6;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   // Filtruj kampanie na podstawie wybranego filtru
   const campaigns = fundraisers; // alias dla istniejącej logiki poniżej
+
+  // NEW: robust detector for "no-goal" (flexible) campaigns — handles ABI variants
+  const isNoGoalFlexible = React.useCallback((c: any) => {
+    const flag = Boolean(c?.isFlexible);
+    // goal can be goalAmount or target (bigint), treat 0 as "no goal"
+    const goalRaw = (c?.goalAmount ?? c?.target ?? 0n) as bigint;
+    const goalIsZero = (() => {
+      try { return BigInt(goalRaw) === 0n; } catch { return Number(goalRaw ?? 0) === 0; }
+    })();
+    // fundraiserType enum: likely 0=Target, 1=Flexible
+    const fType = Number(c?.fundraiserType ?? c?.type ?? -1);
+    return flag || goalIsZero || fType === 1;
+  }, []);
+
+  // UPDATED: counts using robust detector
+  const flexibleCount = campaigns ? campaigns.filter((c: any) => isNoGoalFlexible(c)).length : 0;
+  const targetCount = campaigns ? campaigns.filter((c: any) => !isNoGoalFlexible(c)).length : 0;
+
   const filteredCampaigns = campaigns ? campaigns.filter((campaign: ModularFundraiser) => {
-    if (campaignFilter === "target") return !campaign.isFlexible;
-    if (campaignFilter === "flexible") return campaign.isFlexible;
+    if (campaignFilter === "target") return !isNoGoalFlexible(campaign);
+    if (campaignFilter === "flexible") return isNoGoalFlexible(campaign);
     return true; // "all"
   }) : [];
+
+  // NEW: reset pagination on filter change
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [campaignFilter]);
+
+  // NEW: data for current page
+  const visibleCampaigns = React.useMemo(
+    () => filteredCampaigns.slice(0, visibleCount),
+    [filteredCampaigns, visibleCount]
+  );
 
   // ✅ ZAKTUALIZOWANE: Logika dla karuzeli kampanii z nowymi danymi z ABI
   const getCarouselCampaigns = () => {
     if (!campaigns || campaigns.length === 0) return [];
-    
     const now = Math.floor(Date.now() / 1000);
-    
     return [...campaigns].sort((a: any, b: any) => {
       const timeLeftA = Number(a.endDate ?? 0) - now;
       const timeLeftB = Number(b.endDate ?? 0) - now;
       const isActiveA = timeLeftA > 0;
       const isActiveB = timeLeftB > 0;
-      
-      // Aktywne kampanie pierwsze
       if (isActiveA && !isActiveB) return -1;
       if (!isActiveA && isActiveB) return 1;
-      
       if (isActiveA && isActiveB) {
-        // Dla aktywnych: 
-        // 1. Kampanie z celem - sortuj według % postępu (najbliższe celu)
-        // 2. Elastyczne - sortuj według zebranej kwoty
-        if (!a.isFlexible && !b.isFlexible) {
+        // target vs flexible sort based on robust detector
+        const aFlex = isNoGoalFlexible(a);
+        const bFlex = isNoGoalFlexible(b);
+        if (!aFlex && !bFlex) {
           const progressA = Number(a.raisedAmount ?? 0) / Math.max(Number(a.goalAmount ?? 0), 1);
           const progressB = Number(b.raisedAmount ?? 0) / Math.max(Number(b.goalAmount ?? 0), 1);
-          return progressB - progressA; // Największy postęp pierwszy
-        } else if (a.isFlexible && b.isFlexible) {
-          return Number(b.raisedAmount ?? 0) - Number(a.raisedAmount ?? 0); // Więcej zebranych środków
+          return progressB - progressA;
+        } else if (aFlex && bFlex) {
+          return Number(b.raisedAmount ?? 0) - Number(a.raisedAmount ?? 0);
         } else {
-          return a.isFlexible ? 1 : -1; // Kampanie z celem pierwszeństwo
+          return aFlex ? 1 : -1; // campaigns with goal first
         }
       } else {
-        // Dla zakończonych: sortuj według zebranej kwoty
         return Number(b.raisedAmount ?? 0) - Number(a.raisedAmount ?? 0);
       }
-    }).slice(0, 8); // Maksymalnie 8 kampanii w karuzeli
+    }).slice(0, 8);
   };
 
   const carouselCampaigns = getCarouselCampaigns();
+
+  // NEW: pick top-3 “Zbiórki dnia”
+  const dayPicks = React.useMemo(() => {
+    if (!campaigns || campaigns.length === 0) return [];
+    const now = Math.floor(Date.now() / 1000);
+
+    const score = (c: ModularFundraiser) => {
+      if (c.isFlexible) return Number(c.raisedAmount ?? 0);
+      const goal = Math.max(Number(c.goalAmount ?? 0), 1);
+      return Number(c.raisedAmount ?? 0) / goal; // progress: 0..1+
+    };
+
+    const sorted = [...campaigns].sort((a, b) => {
+      const aActive = Number(a.endDate ?? 0) > now;
+      const bActive = Number(b.endDate ?? 0) > now;
+      if (aActive && !bActive) return -1;
+      if (!aActive && bActive) return 1;
+
+      // both active: compare by “closeness” to goal
+      if (aActive && bActive) {
+        const sa = score(a);
+        const sb = score(b);
+        if (sb !== sa) return sb - sa;
+        // tie-breaker: sooner deadline
+        return Number(a.endDate ?? 0) - Number(b.endDate ?? 0);
+      }
+
+      // both inactive: newest first
+      return Number(b.endDate ?? 0) - Number(a.endDate ?? 0);
+    });
+
+    return sorted.slice(0, 3);
+  }, [campaigns]);
+
+  // NEW: total raised (USDC-style formatting: 6 decimals truncated to whole USDC for large counter)
+  const totalRaisedRaw = React.useMemo(() => {
+    if (!campaigns || campaigns.length === 0) return 0n;
+    return campaigns.reduce((acc: bigint, c: ModularFundraiser) => acc + BigInt(c.raisedAmount ?? 0n), 0n);
+  }, [campaigns]);
+  const formatUSDCInteger = (raw: bigint) => {
+    const whole = raw / 1_000_000n; // USDC 6 decimals
+    return new Intl.NumberFormat('pl-PL').format(Number(whole));
+  };
+  const totalRaisedUSDC = formatUSDCInteger(totalRaisedRaw);
+
+  // NEW: latest flexible campaigns (no goal) – newest first, up to 3
+  const latestFlexibleCampaigns = React.useMemo(() => {
+    if (!campaigns || campaigns.length === 0) return [];
+    return [...campaigns]
+      .filter((c: any) => isNoGoalFlexible(c))
+      .sort((a: any, b: any) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
+      .slice(0, 3);
+  }, [campaigns, isNoGoalFlexible]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -721,15 +799,15 @@ export default function HomePage() {
                 creator: campaign.creator,
                 token: campaign.token,
                 endTime: campaign.endDate ?? 0n,
-                isFlexible: campaign.isFlexible,
+                isFlexible: isNoGoalFlexible(campaign), // UPDATED
               };
 
               const metadata = {
                 title: campaign.title && campaign.title.length > 0
                   ? campaign.title
-                  : campaign.isFlexible
-                    ? `Elastyczna kampania #${campaign.id}`
-                    : `Zbiórka z celem #${campaign.id}`,
+                  : (isNoGoalFlexible(campaign)
+                      ? `Elastyczna kampania #${campaign.id}`
+                      : `Zbiórka z celem #${campaign.id}`), // UPDATED
                 description: campaign.description && campaign.description.length > 0
                   ? campaign.description.slice(0, 140)
                   : `Kampania utworzona przez ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
@@ -747,6 +825,198 @@ export default function HomePage() {
             emptyMessage="Brak aktywnych kampanii i zbiórek"
           />
         </Container>
+
+        {/* Zbiórki dnia (3 najciekawsze) */}
+        {dayPicks && dayPicks.length > 0 && (
+          <div className="container mx-auto px-4 mt-10">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold text-gray-800">Zbiórki dnia</h2>
+              <span className="text-sm text-gray-500">Wybrane: najnowsze lub najbliżej celu</span>
+            </div>
+            <div className="flex flex-wrap justify-center gap-6">
+              {dayPicks.map((campaign: ModularFundraiser) => {
+                const mappedCampaign = {
+                  campaignId: campaign.id.toString(),
+                  targetAmount: campaign.goalAmount ?? 0n,
+                  raisedAmount: campaign.raisedAmount ?? 0n,
+                  creator: campaign.creator,
+                  token: campaign.token,
+                  endTime: campaign.endDate ?? 0n,
+                  isFlexible: isNoGoalFlexible(campaign), // UPDATED
+                };
+                const metadata = {
+                  title: campaign.title && campaign.title.length > 0
+                    ? campaign.title
+                    : (isNoGoalFlexible(campaign)
+                        ? `Elastyczna kampania #${campaign.id}`
+                        : `Zbiórka z celem #${campaign.id}`), // UPDATED
+                  description: campaign.description && campaign.description.length > 0
+                    ? campaign.description.slice(0, 140)
+                    : `Kampania utworzona przez ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
+                  image: "/images/zbiorka.png",
+                };
+                return (
+                  <div key={campaign.id.toString()} className="w-full sm:w-[24rem] flex-none">
+                    <CampaignCard campaign={mappedCampaign} metadata={metadata} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* NEW: Trust + Counter + Extra value (under day picks) */}
+        <div className="mt-12 bg-[#10b981] py-10">
+          <div className="container mx-auto px-4">
+            <div className="grid gap-8 md:grid-cols-3 items-center text-center">
+              {/* Left: Trustworthy */}
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+                <div className="text-4xl mb-3">🛡️</div>
+                <h3 className="text-lg font-bold text-gray-800 mb-1">Godni zaufania</h3>
+                <p className="text-gray-600 text-sm">
+                  Wszystkie zbiórki przechodzą wieloetapową weryfikację. Środki są rozliczane on‑chain.
+                </p>
+              </div>
+
+              {/* Center: Big counter */}
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8">
+                <div className="text-5xl sm:text-6xl font-extrabold bg-gradient-to-r from-sky-500 to-green-600 bg-clip-text text-transparent">
+                  {totalRaisedUSDC} USDC
+                </div>
+                <p className="text-sky-700 font-semibold mt-2">
+                  Zebrane na PoliDAO (on‑chain)
+                </p>
+                <p className="text-gray-500 text-sm mt-1">
+                  Aktualizowane na bieżąco na podstawie danych z kontraktów
+                </p>
+              </div>
+
+              {/* Right: Something extra (Open-source & on-chain) */}
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+                <div className="text-4xl mb-3">🔍</div>
+                <h3 className="text-lg font-bold text-gray-800 mb-1">Open‑source i on‑chain</h3>
+                <p className="text-gray-600 text-sm">
+                  Kontrakty są publiczne i audytowalne. Pełna transparentność transakcji oraz wyników kampanii.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* NEW: Najnowsze Kampanie (flexible, up to 3) */}
+        {latestFlexibleCampaigns && latestFlexibleCampaigns.length > 0 && (
+          <div className="container mx-auto px-4 mt-10">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold text-gray-800">Najnowsze Kampanie</h2>
+              <span className="text-sm text-gray-500">Elastyczne kampanie bez celu</span>
+            </div>
+            <div className="flex flex-wrap justify-center gap-6">
+              {latestFlexibleCampaigns.map((campaign: ModularFundraiser) => {
+                const mappedCampaign = {
+                  campaignId: campaign.id.toString(),
+                  targetAmount: campaign.goalAmount ?? 0n,
+                  raisedAmount: campaign.raisedAmount ?? 0n,
+                  creator: campaign.creator,
+                  token: campaign.token,
+                  endTime: campaign.endDate ?? 0n,
+                  isFlexible: isNoGoalFlexible(campaign), // UPDATED
+                };
+                const metadata = {
+                  title: campaign.title && campaign.title.length > 0
+                    ? campaign.title
+                    : `Elastyczna kampania #${campaign.id}`,
+                  description: campaign.description && campaign.description.length > 0
+                    ? campaign.description.slice(0, 140)
+                    : `Kampania utworzona przez ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
+                  image: "/images/zbiorka.png",
+                };
+                return (
+                  <div key={campaign.id.toString()} className="w-full sm:w-[24rem] flex-none">
+                    <CampaignCard campaign={mappedCampaign} metadata={metadata} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* NEW: Onboarding/Start fundraising segment (under "Najnowsze Kampanie") */}
+        <div className="container mx-auto px-4 mt-12">
+          <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 md:p-10">
+            <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 text-center">
+              Szukasz pomocy dla siebie lub bliskiej osoby?
+            </h2>
+            <p className="mt-2 text-gray-600 text-center">
+              Wybierz jak chcesz zbierać środki — my Ci w tym pomożemy. Wszystko transparentnie, on‑chain.
+            </p>
+
+            <div className="mt-8 grid gap-6 md:grid-cols-3 items-center">
+              {/* Left benefits */}
+              <div className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">💳</span>
+                  <div>
+                    <div className="font-semibold text-gray-800">Wpłaty online</div>
+                    <div className="text-sm text-gray-500">Szybkie i bezpieczne wsparcie w USDC</div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">📈</span>
+                  <div>
+                    <div className="font-semibold text-gray-800">Statystyki i postęp</div>
+                    <div className="text-sm text-gray-500">Pełny wgląd w zebrane środki i wyniki</div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">🔒</span>
+                  <div>
+                    <div className="font-semibold text-gray-800">Zaufanie i bezpieczeństwo</div>
+                    <div className="text-sm text-gray-500">Rozliczenia na blockchainie, publiczne kontrakty</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Center CTAs */}
+              <div className="text-center">
+                <a
+                  href="/create-campaign"
+                  className="inline-block w-full md:w-auto px-8 py-4 rounded-full bg-[#10b981] no-underline !text-white hover:!text-white focus:!text-white active:!text-white visited:!text-white font-bold shadow hover:shadow-[0_0_22px_rgba(16,185,129,0.45)] transition-transform hover:scale-105"
+                  style={{ color: '#fff' }}
+                >
+                  Załóż zbiórkę
+                </a>
+                <p className="mt-3 text-xs text-gray-500">
+                  Nie wiesz od czego zacząć? Skontaktuj się z nami — pomożemy.
+                </p>
+              </div>
+
+              {/* Right benefits */}
+              <div className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">🧰</span>
+                  <div>
+                    <div className="font-semibold text-gray-800">Panel zarządzania</div>
+                    <div className="text-sm text-gray-500">Proste dodawanie aktualizacji i multimediów</div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">📣</span>
+                  <div>
+                    <div className="font-semibold text-gray-800">Materiały promocyjne</div>
+                    <div className="text-sm text-gray-500">Gotowe grafiki i linki do udostępniania</div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">⏱️</span>
+                  <div>
+                    <div className="font-semibold text-gray-800">Szybki start</div>
+                    <div className="text-sm text-gray-500">Utwórz kampanię w kilka minut</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* TABS */}
         <div className="container mx-auto px-4 mt-8">
@@ -891,7 +1161,7 @@ export default function HomePage() {
                         : "border-transparent text-gray-600 hover:text-[#10b981]"
                     }`}
                   >
-                    🎯 Zbiórki ({campaigns ? campaigns.filter(c => !c.isFlexible).length : 0})
+                    🎯 Zbiórki ({targetCount}) {/* UPDATED */}
                   </button>
                   <button
                     onClick={() => setCampaignFilter("flexible")}
@@ -901,7 +1171,7 @@ export default function HomePage() {
                         : "border-transparent text-gray-600 hover:text-[#10b981]"
                     }`}
                   >
-                    🌊 Kampanie ({campaigns ? campaigns.filter(c => c.isFlexible).length : 0})
+                    🌊 Kampanie ({flexibleCount}) {/* UPDATED */}
                   </button>
                 </div>
 
@@ -943,9 +1213,9 @@ export default function HomePage() {
                           </div>
                         )}
                         
-                        {/* ZMIANA: Układ i szerokość kart jak w "Moje zbiórki" (my-account) */}
+                        {/* Grid: show only visibleCampaigns */}
                         <div className="flex flex-wrap justify-center gap-6">
-                          {filteredCampaigns.map((campaign: ModularFundraiser) => {
+                          {visibleCampaigns.map((campaign: ModularFundraiser) => {
                             const mappedCampaign = {
                               campaignId: campaign.id.toString(),
                               targetAmount: campaign.goalAmount ?? 0n,
@@ -953,13 +1223,12 @@ export default function HomePage() {
                               creator: campaign.creator,
                               token: campaign.token,
                               endTime: campaign.endDate ?? 0n,
-                              isFlexible: campaign.isFlexible
+                              isFlexible: isNoGoalFlexible(campaign),
                             };
-
                             const metadata = {
                               title: campaign.title && campaign.title.length > 0
                                 ? campaign.title
-                                : campaign.isFlexible ? `Elastyczna kampania #${campaign.id}` : `Zbiórka #${campaign.id}`,
+                                : (isNoGoalFlexible(campaign) ? `Elastyczna kampania #${campaign.id}` : `Zbiórka #${campaign.id}`),
                               description: campaign.description && campaign.description.length > 0
                                 ? campaign.description.slice(0, 140)
                                 : `Kampania utworzona przez ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
@@ -976,6 +1245,18 @@ export default function HomePage() {
                             );
                           })}
                         </div>
+
+                        {/* NEW: "Pokaż więcej" – load next 6 until all are shown */}
+                        {visibleCount < filteredCampaigns.length && (
+                          <div className="mt-6 flex justify-center">
+                            <button
+                              onClick={() => setVisibleCount(Math.min(visibleCount + PAGE_SIZE, filteredCampaigns.length))}
+                              className="px-5 py-2 rounded-full bg-white border border-[#10b981] text-[#10b981] font-semibold hover:bg-[#10b981]/10 transition"
+                            >
+                              Pokaż więcej kampanii →
+                            </button>
+                          </div>
+                        )}
                       </>
                     ) : campaigns && campaigns.length > 0 ? (
                       // Są kampanie, ale nie pasują do filtru
