@@ -1599,7 +1599,8 @@ export default function AccountPage() {
                   donatedIdsSet.has((c.id ?? 0n).toString())
                 );
                 return donatedCampaigns.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  // CHANGED: use same layout as "Twoje zbiórki"
+                  <div className="flex flex-wrap justify-center gap-6">
                     {donatedCampaigns.map((c: any) => {
                       const idStr = (c.id ?? 0n).toString();
                       const donationAmount = donatedPerFundraiser.get(idStr) ?? 0n;
@@ -1632,45 +1633,48 @@ export default function AccountPage() {
 
                       const isRefundable = canRefundById.get(idStr) ?? false;
                       const isPending = pendingRefund?.id === BigInt(idStr) || isRefundMining;
+
+                      // NEW: fixed-width card wrapper matching "Twoje zbiórki"
                       return (
-                        <div
-                          key={idStr}
-                          className="relative group cursor-pointer transition-transform"
-                          onClick={() => router.push(`/campaigns/${idStr}`)}
-                          title="Przejdź do strony zbiórki"
-                        >
-                          <CampaignCard
-                            campaign={mappedCampaign}
-                            metadata={metadata}
-                            donationAmount={donationAmount}
-                            isRefundable={isRefundable}
-                            showDetails
-                          />
+                        <div key={idStr} className="w-full sm:w-[24rem] flex-none">
+                          <div
+                            className="relative group cursor-pointer transition-transform"
+                            onClick={() => router.push(`/campaigns/${idStr}`)}
+                            title="Przejdź do strony zbiórki"
+                          >
+                            <CampaignCard
+                              campaign={mappedCampaign}
+                              metadata={metadata}
+                              donationAmount={donationAmount}
+                              isRefundable={isRefundable}
+                              showDetails
+                            />
 
-                          {/* Czerwony overlay i CTA – refund */}
-                          <div className="pointer-events-none absolute left-0 right-0 top-0 h-60 z-10 rounded-t-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                            <div className="absolute inset-0 bg-gradient-to-t from-[#ef4444]/35 via-[#ef4444]/10 to-transparent" />
-                            <div className="absolute inset-0 rounded-t-xl ring-1 ring-[#ef4444]/40 shadow-[inset_0_0_22px_rgba(239,68,68,0.45)]" />
-                            <div className="absolute inset-x-0 bottom-3 flex justify-center">
-                              <button
-                                className={`pointer-events-auto px-4 py-2 rounded-full text-white text-sm font-semibold ring-1 ring-white/20 transition-shadow
-                                  ${isRefundable ? 'bg-[#ef4444] shadow-[0_0_14px_rgba(239,68,68,0.65)] hover:shadow-[0_0_26px_rgba(239,68,68,0.95)]' : 'bg-[#ef4444]/60'}
-                                  ${isPending ? 'opacity-70 cursor-wait' : ''}`}
-                                aria-label="Cofnij wsparcie"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  // previously: openRefundDialog(BigInt(idStr))
-                                  doQuickRefund(BigInt(idStr));
-                                }}
-                                disabled={isPending}
-                              >
-                                {isPending ? 'Cofanie...' : 'Cofnij wsparcie'}
-                              </button>
+                            {/* Czerwony overlay i CTA – refund */}
+                            <div className="pointer-events-none absolute left-0 right-0 top-0 h-60 z-10 rounded-t-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                              <div className="absolute inset-0 bg-gradient-to-t from-[#ef4444]/35 via-[#ef4444]/10 to-transparent" />
+                              <div className="absolute inset-0 rounded-t-xl ring-1 ring-[#ef4444]/40 shadow-[inset_0_0_22px_rgba(239,68,68,0.45)]" />
+                              <div className="absolute inset-x-0 bottom-3 flex justify-center">
+                                <button
+                                  className={`pointer-events-auto px-4 py-2 rounded-full text-white text-sm font-semibold ring-1 ring-white/20 transition-shadow
+                                    ${isRefundable ? 'bg-[#ef4444] shadow-[0_0_14px_rgba(239,68,68,0.65)] hover:shadow-[0_0_26px_rgba(239,68,68,0.95)]' : 'bg-[#ef4444]/60'}
+                                    ${isPending ? 'opacity-70 cursor-wait' : ''}`}
+                                  aria-label="Cofnij wsparcie"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    // previously: openRefundDialog(BigInt(idStr))
+                                    doQuickRefund(BigInt(idStr));
+                                  }}
+                                  disabled={isPending}
+                                >
+                                  {isPending ? 'Cofanie...' : 'Cofnij wsparcie'}
+                                </button>
+                              </div>
                             </div>
-                          </div>
 
-                          {/* delikatny ogólny hover dla kart */}
-                          <div className="absolute inset-0 rounded-lg transition-opacity duration-200 opacity-0 group-hover:opacity-100 bg-gradient-to-t from-black/30 via-black/10 to-transparent" />
+                            {/* delikatny ogólny hover dla kart */}
+                            <div className="absolute inset-0 rounded-lg transition-opacity duration-200 opacity-0 group-hover:opacity-100 bg-gradient-to-t from-black/30 via-black/10 to-transparent" />
+                          </div>
                         </div>
                       );
                     })}
