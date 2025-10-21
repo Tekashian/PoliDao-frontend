@@ -16,6 +16,7 @@
     "@mui/material": "^7.2.0",
     "@reown/appkit": "^1.7.10",
     "@reown/appkit-adapter-wagmi": "^1.7.10",
+    "@storacha/client": "^1.8.2",
     "@tanstack/react-query": "^5.80.7",
     "@ucanto/core": "^10.4.0",
     "@ucanto/interface": "^11.0.0",
