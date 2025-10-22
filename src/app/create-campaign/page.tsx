@@ -1,7 +1,7 @@
 // src/app/create-campaign/page.tsx
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, usePublicClient, useChainId } from 'wagmi';
 import { parseUnits, decodeErrorResult, parseEventLogs } from 'viem';
 import Header from '../../components/Header';
@@ -19,7 +19,7 @@ interface FormData {
   campaignType: 'target' | 'flexible';
   targetAmount: string;
   duration: string;
-  category: string;
+  // removed: category
   contactInfo: string;
   agreeTerms: boolean;
   agreeDataProcessing: boolean;
@@ -71,7 +71,7 @@ export default function CreateCampaignPage() {
     campaignType: 'target',
     targetAmount: '',
     duration: '30',
-    category: 'medical',
+    // removed: category: 'medical',
     contactInfo: '',
     agreeTerms: false,
     agreeDataProcessing: false,
@@ -85,6 +85,21 @@ export default function CreateCampaignPage() {
   type TokenInfo = { address: `0x${string}`; symbol: string; decimals?: number };
   const [tokensList, setTokensList] = useState<TokenInfo[]>([]);
   const [selectedTokenAddress, setSelectedTokenAddress] = useState<`0x${string}` | null>(null);
+
+  // NEW: main image file + preview
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!imageFile) {
+      setImagePreview('');
+      return;
+    }
+    const url = URL.createObjectURL(imageFile);
+    setImagePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [imageFile]);
 
   const handleInputChange = (field: keyof FormData, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -182,17 +197,57 @@ export default function CreateCampaignPage() {
     try {
       const now = Math.floor(Date.now() / 1000);
       const endDate = BigInt(now + parseInt(formData.duration) * 24 * 60 * 60);
-      const metadataHash = '';
+      // --- NEW: upload image and metadata like in the example ---
+      // A) Upload image (optional)
+      let imageCid: string = '';
+      if (imageFile) {
+        try {
+          const form = new FormData();
+          form.append('file', imageFile);
+          const res = await fetch('/api/upload', { method: 'POST', body: form });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Błąd uploadu pliku');
+          // Support objects with { "/": "<cid>" } or plain string
+          imageCid = typeof data.cid === 'object' && data.cid['/'] ? data.cid['/'] : String(data.cid || '');
+        } catch (e: any) {
+          setFriendlyError(e?.message || 'Nie udało się wgrać zdjęcia.');
+          return;
+        }
+      }
+      const imageUrl = imageCid ? `https://ipfs.io/ipfs/${imageCid}` : '';
+
+      // B) Build and upload metadata JSON
+      let metadataHash = '';
+      try {
+        const metadata = {
+          title: formData.title.trim(),
+          description: formData.description.trim(),
+          image: imageUrl,
+          location: formData.location || ''
+        };
+        const blob = new Blob([JSON.stringify(metadata)], { type: 'application/json' });
+        const file = new File([blob], 'metadata.json', { type: 'application/json' });
+        const fm = new FormData();
+        fm.append('file', file);
+        const mr = await fetch('/api/upload', { method: 'POST', body: fm });
+        const md = await mr.json();
+        if (!mr.ok) throw new Error(md.error || 'Błąd uploadu metadanych');
+        metadataHash = typeof md.cid === 'object' && md.cid['/'] ? md.cid['/'] : String(md.cid || '');
+      } catch (e: any) {
+        setFriendlyError(e?.message || 'Nie udało się wgrać metadanych.');
+        return;
+      }
+
       const selectedAddr = (selectedTokenAddress || networkUsdc) as `0x${string}` | null;
       const selected = tokensList.find(t => t.address.toLowerCase() === (selectedAddr || '').toLowerCase());
       const decimalsUsed = selected?.decimals ?? 6;
       const goalAmount = formData.campaignType === 'target' ? parseUnits(formData.targetAmount || '0', decimalsUsed) : 0n;
       const fundraiserType = mapFundraiserType(formData.campaignType);
-      const images: string[] = [];
+      const images: string[] = imageUrl ? [imageUrl] : []; // NEW: include main image
       const videos: string[] = [];
       const location = formData.location || '';
 
-      // NEW: pre-check token whitelist for friendlier UX (simulate would revert anyway)
+      // NEW: pre-check token whitelist (unchanged)
       try {
         if (publicClient) {
           const whitelisted = await publicClient.readContract({
@@ -225,9 +280,9 @@ export default function CreateCampaignPage() {
               fundraiserType,
               token: effectiveToken,
               goalAmount,
-              initialImages: images,
+              initialImages: images,       // NEW
               initialVideos: videos,
-              metadataHash,
+              metadataHash,                // NEW: metadata CID instead of ''
               location,
               isFlexible: formData.campaignType === 'flexible'
             }]
@@ -259,9 +314,9 @@ export default function CreateCampaignPage() {
           fundraiserType,
           token: effectiveToken,
           goalAmount,
-          initialImages: images,
+          initialImages: images,         // NEW
           initialVideos: videos,
-          metadataHash,
+          metadataHash,                  // NEW
           location,
           isFlexible: formData.campaignType === 'flexible'
         }]
@@ -595,25 +650,39 @@ export default function CreateCampaignPage() {
                     </p>
                   </div>
 
+                  {/* NEW: Main image upload */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Kategoria
+                      Zdjęcie główne (opcjonalne)
                     </label>
-                    <select
-                      value={formData.category}
-                      onChange={(e) => handleInputChange('category', e.target.value)}
-                      className="w-full px-5 py-4 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-[#10b981] focus:border-[#10b981] font-medium text-lg"
-                    >
-                      <option value="medical">💊 Medycyna i zdrowie</option>
-                      <option value="education">📚 Edukacja</option>
-                      <option value="social">🤝 Pomoc społeczna</option>
-                      <option value="animals">🐕 Zwierzęta</option>
-                      <option value="environment">🌱 Środowisko</option>
-                      <option value="technology">💻 Technologia</option>
-                      <option value="culture">🎭 Kultura i sztuka</option>
-                      <option value="sports">⚽ Sport</option>
-                      <option value="other">📋 Inne</option>
-                    </select>
+                    <div className="flex items-center gap-4">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-4 py-2 bg-white border-2 border-gray-300 rounded-xl font-semibold hover:border-[#10b981] hover:text-[#10b981] transition"
+                      >
+                        Dodaj zdjęcie główne
+                      </button>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
+                      />
+                      <span className="text-sm text-gray-600">
+                        To zdjęcie będzie jako pierwsze wyświetlane na karcie i stronie zbiórki.
+                      </span>
+                    </div>
+                    {imagePreview ? (
+                      <div className="mt-4 w-full h-48 rounded-xl overflow-hidden border-2 border-gray-200">
+                        <img src={imagePreview} alt="Podgląd" className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="mt-4 w-full h-32 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center text-gray-400">
+                        Brak zdjęcia
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
