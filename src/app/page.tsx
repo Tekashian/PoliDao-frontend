@@ -671,15 +671,21 @@ export default function HomePage() {
     return true; // "all"
   }) : [];
 
+  // NEW: sort by newest first (descending id)
+  const sortedFilteredCampaigns = React.useMemo(() => {
+    if (!filteredCampaigns || filteredCampaigns.length === 0) return [];
+    return [...filteredCampaigns].sort((a: any, b: any) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+  }, [filteredCampaigns]);
+
   // NEW: reset pagination on filter change
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
   }, [campaignFilter]);
 
-  // NEW: data for current page
+  // NEW: data for current page (after sorting)
   const visibleCampaigns = React.useMemo(
-    () => filteredCampaigns.slice(0, visibleCount),
-    [filteredCampaigns, visibleCount]
+    () => sortedFilteredCampaigns.slice(0, visibleCount),
+    [sortedFilteredCampaigns, visibleCount]
   );
 
   // ✅ ZAKTUALIZOWANE: Logika dla karuzeli kampanii z nowymi danymi z ABI

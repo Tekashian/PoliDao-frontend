@@ -24,11 +24,44 @@ interface CampaignCardProps {
   };
 }
 
+// NEW: prefer Storacha gateway when normalizing IPFS
+const IPFS_GATEWAY = 'https://ipfs.storacha.link/ipfs/';
+
 // Zastąp formatUnits z ethers własną funkcją
 function formatUSDC(amount: bigint, decimals: number = 6): string {
   const divisor = BigInt(10 ** decimals);
   const quotient = Number(amount) / Number(divisor);
   return quotient.toFixed(2);
+}
+
+// NEW: Normalizacja IPFS -> HTTP gateway lub użycie bez zmian jeśli to już URL
+// Parent should pass metadata.image as ipfs://<cid> or plain <cid>; the card builds the HTTP URL.
+function normalizeIpfsUrl(v?: string): string {
+  if (!v) return '';
+  const s = v.trim();
+  if (!s) return '';
+  if (s.startsWith('http://') || s.startsWith('https://')) {
+    // If it's an IPFS-style HTTP URL, remap to our preferred gateway
+    const lower = s.toLowerCase();
+    const marker = '/ipfs/';
+    const idx = lower.indexOf(marker);
+    if (idx !== -1) {
+      let p = s.slice(idx + marker.length);
+      if (p.startsWith('/')) p = p.slice(1);
+      return `${IPFS_GATEWAY}${p}`;
+    }
+    // Non-IPFS HTTP URL – return as-is
+    return s;
+  }
+
+  // Accept raw CID or prefixed paths/schemes
+  let p = s;
+  if (p.startsWith('ipfs://')) p = p.slice('ipfs://'.length);
+  if (p.startsWith('ipfs/')) p = p.slice('ipfs/'.length);
+  if (p.startsWith('/ipfs/')) p = p.slice('/ipfs/'.length);
+  if (p.startsWith('/')) p = p.slice(1);
+
+  return `${IPFS_GATEWAY}${p}`;
 }
 
 export default function CampaignCard({ campaign, metadata }: CampaignCardProps) {
@@ -37,6 +70,27 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
   const progress = target > 0 ? Math.min((raised / target) * 100, 100) : 0;
   const remaining = Math.max(target - raised, 0);
 
+  // NEW: dev-time nudge to keep parent passing ipfs://<cid> or <cid>
+  React.useEffect(() => {
+    const img = metadata?.image;
+    if (process.env.NODE_ENV !== 'production' && img && (img.startsWith('http://') || img.startsWith('https://'))) {
+      const lower = img.toLowerCase();
+      if (lower.includes('/ipfs/')) {
+        console.warn('CampaignCard: Prefer passing metadata.image as ipfs://<cid> or plain <cid>. The card will build the gateway URL.');
+      }
+    }
+  }, [metadata?.image]);
+
+  // NEW: źródło obrazka z metadanych + fallback do domyślnego
+  const DEFAULT_IMG = '/images/zbiorka.png';
+  const imageSrcNormalized = normalizeIpfsUrl(metadata?.image); // can be CID, ipfs://CID, ipfs/ipfs/CID or full URL
+  const initialSrc = imageSrcNormalized || DEFAULT_IMG;
+  const [imgSrc, setImgSrc] = React.useState<string>(initialSrc);
+  React.useEffect(() => {
+    setImgSrc(imageSrcNormalized || DEFAULT_IMG);
+  }, [imageSrcNormalized]);
+  const isRemote = imgSrc.startsWith('http');
+
   return (
     <Link 
       href={`/campaigns/${campaign.campaignId}`} 
@@ -44,12 +98,16 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
     >
       <div className="relative w-full h-60">
         <Image
-          src={metadata.image || '/placeholder.jpg'}
+          src={imgSrc}
           alt={metadata.title}
-          fill // Zastąp layout="fill"
-          style={{ objectFit: 'cover' }} // Zastąp objectFit="cover"
+          fill
+          style={{ objectFit: 'cover' }}
           className="rounded-t-xl"
           sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+          // NEW: uniknięcie ograniczeń Next Image dla zewnętrznych domen
+          unoptimized={isRemote}
+          // NEW: awaryjny fallback, gdy zewnętrzny obraz się nie wczyta
+          onError={() => { if (imgSrc !== DEFAULT_IMG) setImgSrc(DEFAULT_IMG); }}
         />
       </div>
 

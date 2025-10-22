@@ -202,24 +202,11 @@ export default function CreateCampaignPage() {
       return;
     }
 
+    // Compute end date (seconds) based on selected duration
+    const now = Math.floor(Date.now() / 1000);
+    const endDate = BigInt(now + parseInt(formData.duration) * 24 * 60 * 60);
+
     try {
-      const now = Math.floor(Date.now() / 1000);
-      const endDate = BigInt(now + parseInt(formData.duration) * 24 * 60 * 60);
-
-      // NEW: capture pre-count before sending tx
-      try {
-        if (publicClient) {
-          const pre: any = await publicClient.readContract({
-            address: ROUTER_ADDRESS,
-            abi: poliDaoRouterAbi as any,
-            functionName: 'getFundraiserCount',
-          });
-          if (typeof pre === 'bigint') preCountRef.current = pre;
-        }
-      } catch {
-        preCountRef.current = null;
-      }
-
       // --- image + metadata upload ---
       // A) Upload image (optional)
       let imageCid: string = '';
@@ -237,7 +224,8 @@ export default function CreateCampaignPage() {
           return;
         }
       }
-      const imageUrl = imageCid ? `https://ipfs.io/ipfs/${imageCid}` : '';
+      // Keep raw reference; let UI/card build gateway URL
+      const imageRef = imageCid ? `ipfs://${imageCid}` : '';
 
       // B) Build and upload metadata JSON
       let metadataHash = '';
@@ -245,7 +233,7 @@ export default function CreateCampaignPage() {
         const metadata = {
           title: formData.title.trim(),
           description: formData.description.trim(),
-          image: imageUrl,
+          image: imageRef, // raw ipfs://CID, no HTTP gateway here
           location: formData.location || ''
         };
         const blob = new Blob([JSON.stringify(metadata)], { type: 'application/json' });
@@ -266,7 +254,7 @@ export default function CreateCampaignPage() {
       const decimalsUsed = selected?.decimals ?? 6;
       const goalAmount = formData.campaignType === 'target' ? parseUnits(formData.targetAmount || '0', decimalsUsed) : 0n;
       const fundraiserType = mapFundraiserType(formData.campaignType);
-      const images: string[] = imageUrl ? [imageUrl] : []; // NEW: include main image
+      const images: string[] = imageRef ? [imageRef] : []; // pass ipfs://CID, UI will resolve
       const videos: string[] = [];
       const location = formData.location || '';
 
@@ -303,9 +291,9 @@ export default function CreateCampaignPage() {
               fundraiserType,
               token: effectiveToken,
               goalAmount,
-              initialImages: images,       // NEW
+              initialImages: images,       // ipfs://CID
               initialVideos: videos,
-              metadataHash,                // NEW: metadata CID instead of ''
+              metadataHash,                // metadata CID
               location,
               isFlexible: formData.campaignType === 'flexible'
             }]
@@ -321,7 +309,7 @@ export default function CreateCampaignPage() {
             setFriendlyError(mapError(simErr?.shortMessage || simErr?.message || 'Błąd symulacji'));
           }
         } catch {
-            setFriendlyError(mapError(simErr?.shortMessage || simErr?.message || 'Błąd symulacji'));
+          setFriendlyError(mapError(simErr?.shortMessage || simErr?.message || 'Błąd symulacji'));
         }
         return;
       }
@@ -337,9 +325,9 @@ export default function CreateCampaignPage() {
           fundraiserType,
           token: effectiveToken,
           goalAmount,
-          initialImages: images,         // NEW
+          initialImages: images,         // ipfs://CID
           initialVideos: videos,
-          metadataHash,                  // NEW
+          metadataHash,                  // CID used by lists to fetch metadata.json
           location,
           isFlexible: formData.campaignType === 'flexible'
         }]
