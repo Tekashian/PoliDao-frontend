@@ -24,8 +24,19 @@ interface CampaignCardProps {
   };
 }
 
-// NEW: prefer Storacha gateway when normalizing IPFS
-const IPFS_GATEWAY = 'https://ipfs.storacha.link/ipfs/';
+// NEW: prefer Storacha subdomain gateway
+const STORACHA_HOST = 'ipfs.storacha.link';
+
+// Build https://<cid>.ipfs.storacha.link[/path] (fallback to path-style for CIDv0 or non-base32)
+function buildStorachaUrl(cidAndPath: string): string {
+  const clean = cidAndPath.replace(/^\/+/, '');
+  const [cid, ...restParts] = clean.split('/');
+  const rest = restParts.join('/');
+  const isCidV0 = cid.startsWith('Qm') || /[A-Z]/.test(cid); // subdomain needs CIDv1 base32 (lowercase)
+  if (isCidV0) return `https://${STORACHA_HOST}/ipfs/${clean}`;
+  const host = `${cid}.ipfs.${STORACHA_HOST}`;
+  return rest ? `https://${host}/${rest}` : `https://${host}/`;
+}
 
 // Zastąp formatUnits z ethers własną funkcją
 function formatUSDC(amount: bigint, decimals: number = 6): string {
@@ -34,21 +45,22 @@ function formatUSDC(amount: bigint, decimals: number = 6): string {
   return quotient.toFixed(2);
 }
 
-// NEW: Normalizacja IPFS -> HTTP gateway lub użycie bez zmian jeśli to już URL
+// NEW: Normalizacja IPFS -> Storacha subdomain gateway
 // Parent should pass metadata.image as ipfs://<cid> or plain <cid>; the card builds the HTTP URL.
 function normalizeIpfsUrl(v?: string): string {
   if (!v) return '';
   const s = v.trim();
   if (!s) return '';
+  // Already a Storacha subdomain URL – keep
+  if (/^https?:\/\/[a-z0-9]+\.ipfs\.storacha\.link(\/|$)/i.test(s)) return s;
   if (s.startsWith('http://') || s.startsWith('https://')) {
-    // If it's an IPFS-style HTTP URL, remap to our preferred gateway
+    // Remap path-style IPFS links to subdomain form
     const lower = s.toLowerCase();
     const marker = '/ipfs/';
     const idx = lower.indexOf(marker);
     if (idx !== -1) {
-      let p = s.slice(idx + marker.length);
-      if (p.startsWith('/')) p = p.slice(1);
-      return `${IPFS_GATEWAY}${p}`;
+      let p = s.slice(idx + marker.length).replace(/^\/+/, '');
+      return buildStorachaUrl(p);
     }
     // Non-IPFS HTTP URL – return as-is
     return s;
@@ -59,9 +71,8 @@ function normalizeIpfsUrl(v?: string): string {
   if (p.startsWith('ipfs://')) p = p.slice('ipfs://'.length);
   if (p.startsWith('ipfs/')) p = p.slice('ipfs/'.length);
   if (p.startsWith('/ipfs/')) p = p.slice('/ipfs/'.length);
-  if (p.startsWith('/')) p = p.slice(1);
-
-  return `${IPFS_GATEWAY}${p}`;
+  p = p.replace(/^\/+/, '');
+  return buildStorachaUrl(p);
 }
 
 export default function CampaignCard({ campaign, metadata }: CampaignCardProps) {
@@ -83,7 +94,7 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
 
   // NEW: źródło obrazka z metadanych + fallback do domyślnego
   const DEFAULT_IMG = '/images/zbiorka.png';
-  const imageSrcNormalized = normalizeIpfsUrl(metadata?.image); // can be CID, ipfs://CID, ipfs/ipfs/CID or full URL
+  const imageSrcNormalized = normalizeIpfsUrl(metadata?.image); // supports CID, ipfs://CID(/path), or full URL
   const initialSrc = imageSrcNormalized || DEFAULT_IMG;
   const [imgSrc, setImgSrc] = React.useState<string>(initialSrc);
   React.useEffect(() => {

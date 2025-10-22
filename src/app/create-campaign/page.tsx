@@ -224,8 +224,10 @@ export default function CreateCampaignPage() {
           return;
         }
       }
-      // Keep raw reference; let UI/card build gateway URL
-      const imageRef = imageCid ? `ipfs://${imageCid}` : '';
+      // Keep raw reference with filename so gateways don't return a directory listing
+      const uploadedName = imageFile?.name?.trim() || '';
+      const encodedName = uploadedName ? encodeURIComponent(uploadedName) : '';
+      const imageRef = imageCid ? `ipfs://${imageCid}${encodedName ? `/${encodedName}` : ''}` : '';
 
       // B) Build and upload metadata JSON
       let metadataHash = '';
@@ -233,7 +235,7 @@ export default function CreateCampaignPage() {
         const metadata = {
           title: formData.title.trim(),
           description: formData.description.trim(),
-          image: imageRef, // raw ipfs://CID, no HTTP gateway here
+          image: imageRef, // ipfs://<cid>/<filename> if available
           location: formData.location || ''
         };
         const blob = new Blob([JSON.stringify(metadata)], { type: 'application/json' });
@@ -254,7 +256,7 @@ export default function CreateCampaignPage() {
       const decimalsUsed = selected?.decimals ?? 6;
       const goalAmount = formData.campaignType === 'target' ? parseUnits(formData.targetAmount || '0', decimalsUsed) : 0n;
       const fundraiserType = mapFundraiserType(formData.campaignType);
-      const images: string[] = imageRef ? [imageRef] : []; // pass ipfs://CID, UI will resolve
+      const images: string[] = imageRef ? [imageRef] : []; // pass ipfs://<cid>/<filename>, UI will resolve
       const videos: string[] = [];
       const location = formData.location || '';
 
@@ -393,12 +395,14 @@ export default function CreateCampaignPage() {
   // Auto-redirect po uzyskaniu createdId
   useEffect(() => {
     if (createdId) {
-      const t = setTimeout(() => {
-        window.location.href = `/campaigns/${createdId.toString()}`;
-      }, 2500);
-      return () => clearTimeout(t);
-    }
-  }, [createdId]);
+      // Routes are 1-based; on-chain ids are 0-based -> add +1 for display/URL
+      const displayId = (createdId + 1n).toString();
+       const t = setTimeout(() => {
+        window.location.href = `/campaigns/${displayId}`;
+       }, 2500);
+       return () => clearTimeout(t);
+     }
+   }, [createdId]);
 
   // NEW: sprawdzanie czy adres jest uprawniony do tworzenia (probing potencjalnych nazw)
   useEffect(() => {
