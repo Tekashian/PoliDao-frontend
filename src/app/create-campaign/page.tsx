@@ -91,6 +91,9 @@ export default function CreateCampaignPage() {
   const [imagePreview, setImagePreview] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // NEW: store pre-transaction fundraiser count
+  const preCountRef = useRef<bigint | null>(null);
+
   useEffect(() => {
     if (!imageFile) {
       setImagePreview('');
@@ -182,6 +185,11 @@ export default function CreateCampaignPage() {
     }
     if (!validateStep(3) || !isConnected) return;
 
+    // NEW: reset state for fresh run
+    setFriendlyError(null);
+    setCreatedId(null);
+    preCountRef.current = null; // NEW: clear previous pre-count
+
     // Prefer network Sepolia USDC, then user selection, then DEFAULT_TOKEN_ADDRESS
     const networkUsdc = getUsdcAddress(chainId) as `0x${string}` | null;
     const effectiveToken =
@@ -197,7 +205,22 @@ export default function CreateCampaignPage() {
     try {
       const now = Math.floor(Date.now() / 1000);
       const endDate = BigInt(now + parseInt(formData.duration) * 24 * 60 * 60);
-      // --- NEW: upload image and metadata like in the example ---
+
+      // NEW: capture pre-count before sending tx
+      try {
+        if (publicClient) {
+          const pre: any = await publicClient.readContract({
+            address: ROUTER_ADDRESS,
+            abi: poliDaoRouterAbi as any,
+            functionName: 'getFundraiserCount',
+          });
+          if (typeof pre === 'bigint') preCountRef.current = pre;
+        }
+      } catch {
+        preCountRef.current = null;
+      }
+
+      // --- image + metadata upload ---
       // A) Upload image (optional)
       let imageCid: string = '';
       if (imageFile) {
@@ -327,7 +350,7 @@ export default function CreateCampaignPage() {
     }
   };
 
-  // After success – parse FundraiserCreated event to get id (fallback to count-probe)
+  // After success – parse FundraiserCreated event; fallback: poll count increment vs preCount
   useEffect(() => {
     const run = async () => {
       if (!isSuccess || createdId || !publicClient || !hash) return;
@@ -345,37 +368,41 @@ export default function CreateCampaignPage() {
           return;
         }
       } catch {
-        // fallback below
+        // proceed to fallback below
       }
+
+      // NEW: deterministic fallback using preCount -> wait for increment, then use total-1
       try {
-        const total: any = await publicClient.readContract({
-          address: ROUTER_ADDRESS,
-          abi: poliDaoRouterAbi as any,
-          functionName: 'getFundraiserCount',
-        });
-        if (typeof total === 'bigint') {
-          const candidates = [];
-          if (total > 0n) candidates.push(total - 1n);
-          candidates.push(total);
-          for (const cand of candidates) {
-            try {
-              await publicClient.readContract({
-                address: ROUTER_ADDRESS,
-                abi: poliDaoRouterAbi as any,
-                functionName: 'getFundraiserDetails',
-                args: [cand],
-              });
-              setCreatedId(cand);
+        const pre = preCountRef.current ?? null;
+        let attempts = 0;
+        while (attempts < 20) {
+          const total: any = await publicClient.readContract({
+            address: ROUTER_ADDRESS,
+            abi: poliDaoRouterAbi as any,
+            functionName: 'getFundraiserCount',
+          });
+          if (typeof total === 'bigint') {
+            if (pre == null) {
+              if (total > 0n) {
+                setCreatedId(total - 1n);
+                return;
+              }
+            } else if (total > pre) {
+              setCreatedId(total - 1n);
               return;
-            } catch {/* try next */}
+            }
           }
+          await new Promise((r) => setTimeout(r, 800));
+          attempts++;
         }
-      } catch {/* ignore */}
+      } catch {
+        // ignore
+      }
     };
     run();
   }, [isSuccess, createdId, publicClient, hash]);
 
-  // Auto-redirect po uzyskaniu createdId (placeholder – gdy będzie dekodowanie logów z viem publicClient)
+  // Auto-redirect po uzyskaniu createdId
   useEffect(() => {
     if (createdId) {
       const t = setTimeout(() => {
