@@ -5,11 +5,14 @@ import routerAbi from './routerAbi';
 import coreAbi from './coreAbi';
 
 // Router-only source of truth
-export const ROUTER_ADDRESS = '0xc1daf176bdb607611873342c0ed6e2Ea68639f12' as `0x${string}`;
+export const ROUTER_ADDRESS = '0xB8DDB0D2Bce9200C87e53Ed06F4Ed2a15dde3423' as `0x${string}`;
 export const ROUTER_ABI = routerAbi;
 
 // NEW: fixed Core address (from new deployment)
 export const CORE_ADDRESS = '0x9362d1b929c8cC161830292b95Ad5E1187239a38' as `0x${string}`;
+
+// NEW: fixed Analytics module address from new deployment
+export const ANALYTICS_ADDRESS = '0x687e6294cf28D1b0D12AF25D8B23f298A5F1705B' as `0x${string}`;
 
 // Backward-compatible config for wagmi hooks/components
 export const polidaoContractConfig = {
@@ -30,16 +33,18 @@ export function getRouterContract(providerOrSigner: ethers.Signer | ethers.Abstr
   return new ethers.Contract(ROUTER_ADDRESS, routerAbi, providerOrSigner);
 }
 
-// NEW: Fabryka kontraktu Core
+// NEW: Fabryka kontraktu Core (legacy, may be stale if CORE_ADDRESS changes)
 export function getCoreContract(providerOrSigner: ethers.Signer | ethers.AbstractProvider) {
   return new ethers.Contract(CORE_ADDRESS, coreAbi, providerOrSigner);
 }
 
-// Helper: resolve Core address via Router (read-only) – now returns fixed address
+// NEW: resolve Core via Router dynamically (single source of truth)
 export async function getCoreAddress(
   providerOrSigner: ethers.Signer | ethers.AbstractProvider
 ): Promise<`0x${string}`> {
-  return CORE_ADDRESS;
+  const router = new ethers.Contract(ROUTER_ADDRESS, routerAbi, providerOrSigner) as any;
+  const addr = await router.coreContract();
+  return addr as `0x${string}`;
 }
 
 // Typy pomocnicze
@@ -99,23 +104,24 @@ export async function fetchFundraiserProgress(
   };
 }
 
-// Liczba kampanii – READ FROM CORE
+// Liczba kampanii – READ FROM CORE (resolved via Router)
 export async function fetchFundraiserCount(provider: ethers.AbstractProvider) {
-  const core = getCoreContract(provider);
+  const coreAddr = await getCoreAddress(provider);
+  const core = new ethers.Contract(coreAddr, coreAbi, provider);
   const count: bigint = await core.getFundraiserCount();
   return count;
 }
 
-// Pojedyncza kampania (details + basicInfo) – READ FROM CORE
+// Pojedyncza kampania (details + basicInfo) – READ FROM CORE (resolved via Router)
 export async function fetchFundraiser(provider: ethers.AbstractProvider, id: bigint | number) {
-  const core = getCoreContract(provider);
+  const coreAddr = await getCoreAddress(provider);
+  const core = new ethers.Contract(coreAddr, coreAbi, provider);
   const [details, basic] = await Promise.all([
     core.getFundraiserDetails(id),
     core.getFundraiserBasicInfo(id),
   ]);
   // Map details as before
   const mappedDetails = details as FundraiserDetails;
-  // Optional: you can use basic.raised/basic.goal if needed
   const progress: FundraiserProgress = {
     raised: (basic?.[2] ?? basic?.raised ?? mappedDetails.raisedAmount ?? 0n) as bigint,
     goal: (basic?.[3] ?? basic?.goal ?? mappedDetails.goalAmount ?? 0n) as bigint,
@@ -126,11 +132,7 @@ export async function fetchFundraiser(provider: ethers.AbstractProvider, id: big
     isSuspended: Boolean((details as any)?.isSuspended ?? false),
     suspensionTime: 0n,
   };
-  return {
-    id: BigInt(id),
-    details: mappedDetails,
-    progress,
-  };
+  return { id: BigInt(id), details: mappedDetails, progress };
 }
 
 // Safe wrapper – zwraca null, jeśli ID nie istnieje/revertuje

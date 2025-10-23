@@ -178,6 +178,17 @@ export default function CreateCampaignPage() {
   // FIX: fundraiserType zależy od typu kampanii: 0 = WITH_GOAL, 1 = WITHOUT_GOAL (dla elastycznych)
   const mapFundraiserType = (campaignType: 'target' | 'flexible'): number => (campaignType === 'target' ? 0 : 1);
 
+  // NEW: robust CID extractor for /api/upload responses
+  const extractCidFromResponse = (x: any): string => {
+    if (!x) return '';
+    if (typeof x === 'string') return x;
+    if (typeof x.cid === 'string') return x.cid;
+    if (x.cid && typeof x.cid['/'] === 'string') return x.cid['/'];
+    if (typeof x.Hash === 'string') return x.Hash;
+    if (typeof x.Cid === 'string') return x.Cid;
+    return '';
+  };
+
   const handleSubmit = async () => {
     if (creatorStatus === 'notAllowed') {
       setFriendlyError('Twoje konto nie jest uprawnione do tworzenia zbiórek.');
@@ -216,26 +227,30 @@ export default function CreateCampaignPage() {
           form.append('file', imageFile);
           const res = await fetch('/api/upload', { method: 'POST', body: form });
           const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Błąd uploadu pliku');
-          // Support objects with { "/": "<cid>" } or plain string
-          imageCid = typeof data.cid === 'object' && data.cid['/'] ? data.cid['/'] : String(data.cid || '');
+          if (process.env.NODE_ENV !== 'production') {
+            console.debug('upload(image) response', { ok: res.ok, data });
+          }
+          if (!res.ok) throw new Error(data?.error || 'Błąd uploadu pliku');
+          imageCid = extractCidFromResponse(data);
+          if (!imageCid) throw new Error('Brak CID w odpowiedzi uploadu');
         } catch (e: any) {
           setFriendlyError(e?.message || 'Nie udało się wgrać zdjęcia.');
           return;
         }
       }
-      // Keep raw reference with filename so gateways don't return a directory listing
+
+      // Build ipfs://CID/encodedFilename reference (this is what we want on-chain)
       const uploadedName = imageFile?.name?.trim() || '';
       const encodedName = uploadedName ? encodeURIComponent(uploadedName) : '';
       const imageRef = imageCid ? `ipfs://${imageCid}${encodedName ? `/${encodedName}` : ''}` : '';
 
-      // B) Build and upload metadata JSON
+      // B) Build and upload metadata JSON (keep image: ipfs://CID/filename)
       let metadataHash = '';
       try {
         const metadata = {
           title: formData.title.trim(),
           description: formData.description.trim(),
-          image: imageRef, // ipfs://<cid>/<filename> if available
+          image: imageRef,
           location: formData.location || ''
         };
         const blob = new Blob([JSON.stringify(metadata)], { type: 'application/json' });
@@ -244,8 +259,12 @@ export default function CreateCampaignPage() {
         fm.append('file', file);
         const mr = await fetch('/api/upload', { method: 'POST', body: fm });
         const md = await mr.json();
-        if (!mr.ok) throw new Error(md.error || 'Błąd uploadu metadanych');
-        metadataHash = typeof md.cid === 'object' && md.cid['/'] ? md.cid['/'] : String(md.cid || '');
+        if (process.env.NODE_ENV !== 'production') {
+          console.debug('upload(metadata) response', { ok: mr.ok, md });
+        }
+        if (!mr.ok) throw new Error(md?.error || 'Błąd uploadu metadanych');
+        metadataHash = extractCidFromResponse(md);
+        if (!metadataHash) throw new Error('Brak CID metadanych w odpowiedzi uploadu');
       } catch (e: any) {
         setFriendlyError(e?.message || 'Nie udało się wgrać metadanych.');
         return;
@@ -259,6 +278,18 @@ export default function CreateCampaignPage() {
       const images: string[] = imageRef ? [imageRef] : []; // pass ipfs://<cid>/<filename>, UI will resolve
       const videos: string[] = [];
       const location = formData.location || '';
+
+      // DEV logs
+      if (process.env.NODE_ENV !== 'production') {
+        console.debug('createFundraiser media payload', {
+          imageSelected: Boolean(imageFile),
+          imageCid,
+          uploadedName,
+          imageRef,               // ipfs://CID/filename
+          initialImages: images,  // sent on-chain
+          metadataHash
+        });
+      }
 
       // NEW: pre-check token whitelist (unchanged)
       try {
@@ -293,13 +324,16 @@ export default function CreateCampaignPage() {
               fundraiserType,
               token: effectiveToken,
               goalAmount,
-              initialImages: images,       // ipfs://CID
+              initialImages: images,   // ipfs://CID/filename or []
               initialVideos: videos,
-              metadataHash,                // metadata CID
+              metadataHash,
               location,
               isFlexible: formData.campaignType === 'flexible'
             }]
           });
+          if (process.env.NODE_ENV !== 'production') {
+            console.debug('simulateContract OK', { initialImages: images });
+          }
         }
       } catch (simErr: any) {
         console.error('Simulation revert', simErr);
@@ -316,6 +350,7 @@ export default function CreateCampaignPage() {
         return;
       }
 
+      // Send tx
       await writeContract({
         address: ROUTER_ADDRESS,
         abi: poliDaoRouterAbi as any,
@@ -327,13 +362,16 @@ export default function CreateCampaignPage() {
           fundraiserType,
           token: effectiveToken,
           goalAmount,
-          initialImages: images,         // ipfs://CID
+          initialImages: images,     // ipfs://CID/filename or []
           initialVideos: videos,
-          metadataHash,                  // CID used by lists to fetch metadata.json
+          metadataHash,
           location,
           isFlexible: formData.campaignType === 'flexible'
         }]
       });
+      if (process.env.NODE_ENV !== 'production') {
+        console.debug('writeContract sent', { initialImages: images });
+      }
     } catch (error: any) {
       console.error('Error creating campaign:', error);
       setFriendlyError(mapError(error?.message || ''));

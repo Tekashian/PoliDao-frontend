@@ -41,6 +41,8 @@ import { poliDaoRouterAbi } from '../../../blockchain/routerAbi';
 import { ROUTER_ADDRESS } from '../../../blockchain/contracts';
 import { poliDaoAnalyticsAbi } from '../../../blockchain/analyticsAbi';
 import { poliDaoCoreAbi } from '../../../blockchain/coreAbi';
+// NEW: fixed analytics address
+import { ANALYTICS_ADDRESS } from '../../../blockchain/contracts';
 // NEW: Storage ABI for resolving Updates and fallback events
 import { poliDaoStorageAbi } from '../../../blockchain/storageAbi';
 
@@ -126,6 +128,9 @@ interface Update {
 }
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
+
+// NEW: key for Media module to probe initialImages via Core.staticCallModule
+const MEDIA_KEY = keccak256(toUtf8Bytes('MEDIA')) as `0x${string}`;
 
 // NEW: key for Updates routing via Router
 const UPDATES_KEY = keccak256(toUtf8Bytes('UPDATES')) as `0x${string}`;
@@ -395,6 +400,16 @@ export default function CampaignPage() {
     query: { enabled: !!coreAddress },
   });
 
+  // NEW: prefer fixed analytics address, fallback to Core.analyticsModule
+  const analyticsResolved = useMemo(() => {
+    const zero = ZERO_ADDR.toLowerCase();
+    const fixed = (ANALYTICS_ADDRESS as string | undefined)?.toLowerCase?.();
+    const fromCore = (analyticsAddress as string | undefined)?.toLowerCase?.();
+    if (fixed && fixed !== zero) return ANALYTICS_ADDRESS as `0x${string}`;
+    if (fromCore && fromCore !== zero) return analyticsAddress as `0x${string}`;
+    return undefined;
+  }, [analyticsAddress]);
+
   // NEW: resolve Storage address (Core -> Storage)
   const { data: storageAddress } = useReadContract({
     address: coreAddress as `0x${string}` | undefined,
@@ -436,21 +451,21 @@ export default function CampaignPage() {
   }, [updatesAddrFromStorage, updatesModuleAddress]);
 
   const { data: donorsCountData, refetch: refetchDonorsCount } = useReadContract({
-    address: analyticsAddress as `0x${string}` | undefined,
+    address: analyticsResolved,
     abi: poliDaoAnalyticsAbi,
     functionName: 'getDonorsCount',
     args: selectedFundraiserId !== null ? [BigInt(selectedFundraiserId)] : undefined,
     chainId: sepolia.id,
-    query: { enabled: !!analyticsAddress && selectedFundraiserId !== null },
+    query: { enabled: !!analyticsResolved && selectedFundraiserId !== null },
   });
 
   const { data: donorsData, refetch: refetchDonors } = useReadContract({
-    address: analyticsAddress as `0x${string}` | undefined,
+    address: analyticsResolved,
     abi: poliDaoAnalyticsAbi,
     functionName: 'getDonors',
     args: selectedFundraiserId !== null ? [BigInt(selectedFundraiserId), 0n, BigInt(donorsLimit)] : undefined,
     chainId: sepolia.id,
-    query: { enabled: !!analyticsAddress && selectedFundraiserId !== null },
+    query: { enabled: !!analyticsResolved && selectedFundraiserId !== null },
   });
 
   // Unified unique donors count: Analytics (count > 0) -> Analytics total -> donors list -> events -> Analytics (0)
@@ -1603,8 +1618,8 @@ export default function CampaignPage() {
         <DialogContent>
           <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
             <TextField
-              fullWidth
-              value={typeof window !== 'undefined' ? window.location.href : ''}
+             
+              fullWidth              value={typeof window !== 'undefined' ? window.location.href : ''}
               InputProps={{ readOnly: true }}
               size="small"
             />
