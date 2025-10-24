@@ -239,12 +239,10 @@ export default function CreateCampaignPage() {
         }
       }
 
-      // Build ipfs://CID/encodedFilename reference (this is what we want on-chain)
-      const uploadedName = imageFile?.name?.trim() || '';
-      const encodedName = uploadedName ? encodeURIComponent(uploadedName) : '';
-      const imageRef = imageCid ? `ipfs://${imageCid}${encodedName ? `/${encodedName}` : ''}` : '';
+      // NEW: always use pure ipfs://<CID> for on-chain and metadata (no filename/gateway)
+      const imageRef = imageCid ? `ipfs://${imageCid}` : '';
 
-      // B) Build and upload metadata JSON (keep image: ipfs://CID/filename)
+      // B) Build and upload metadata JSON (keep image: ipfs://<CID>)
       let metadataHash = '';
       try {
         const metadata = {
@@ -275,7 +273,7 @@ export default function CreateCampaignPage() {
       const decimalsUsed = selected?.decimals ?? 6;
       const goalAmount = formData.campaignType === 'target' ? parseUnits(formData.targetAmount || '0', decimalsUsed) : 0n;
       const fundraiserType = mapFundraiserType(formData.campaignType);
-      const images: string[] = imageRef ? [imageRef] : []; // pass ipfs://<cid>/<filename>, UI will resolve
+      const images: string[] = imageRef ? [imageRef] : []; // ipfs://<CID> only
       const videos: string[] = [];
       const location = formData.location || '';
 
@@ -284,8 +282,7 @@ export default function CreateCampaignPage() {
         console.debug('createFundraiser media payload', {
           imageSelected: Boolean(imageFile),
           imageCid,
-          uploadedName,
-          imageRef,               // ipfs://CID/filename
+          imageRef,               // ipfs://CID
           initialImages: images,  // sent on-chain
           metadataHash
         });
@@ -324,7 +321,7 @@ export default function CreateCampaignPage() {
               fundraiserType,
               token: effectiveToken,
               goalAmount,
-              initialImages: images,   // ipfs://CID/filename or []
+              initialImages: images,   // ipfs://CID or []
               initialVideos: videos,
               metadataHash,
               location,
@@ -362,9 +359,9 @@ export default function CreateCampaignPage() {
           fundraiserType,
           token: effectiveToken,
           goalAmount,
-          initialImages: images,     // ipfs://CID/filename or []
+          initialImages: images,     // [ipfs://CID] or []
           initialVideos: videos,
-          metadataHash,
+          metadataHash,              // CID of metadata.json
           location,
           isFlexible: formData.campaignType === 'flexible'
         }]

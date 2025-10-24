@@ -3,6 +3,10 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useReadContract } from 'wagmi';
+import { sepolia } from 'viem/chains';
+import { ROUTER_ADDRESS } from '../blockchain/contracts';
+import { poliDaoRouterAbi } from '../blockchain/routerAbi';
 
 // Lokalny interfejs Campaign (usuń import z usePoliDao)
 interface Campaign {
@@ -32,7 +36,7 @@ function buildStorachaUrl(cidAndPath: string): string {
   const clean = cidAndPath.replace(/^\/+/, '');
   const [cid, ...restParts] = clean.split('/');
   const rest = restParts.join('/');
-  const isCidV0 = cid.startsWith('Qm') || /[A-Z]/.test(cid); // subdomain needs CIDv1 base32 (lowercase)
+  const isCidV0 = cid.startsWith('Qm') || /[A-Z]/.test(cid);
   if (isCidV0) return `https://${STORACHA_HOST}/ipfs/${clean}`;
   const host = `${cid}.ipfs.${STORACHA_HOST}`;
   return rest ? `https://${host}/${rest}` : `https://${host}/`;
@@ -92,13 +96,51 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
     }
   }, [metadata?.image]);
 
-  // NEW: źródło obrazka z metadanych + fallback do domyślnego
-  const DEFAULT_IMG = '/images/zbiorka.png';
-  const imageSrcNormalized = normalizeIpfsUrl(metadata?.image); // supports CID, ipfs://CID(/path), or full URL
-  const initialSrc = imageSrcNormalized || DEFAULT_IMG;
-  const [imgSrc, setImgSrc] = React.useState<string>(initialSrc);
+  // NEW: load metadata via Router if not provided (or if provided image is empty)
+  const needsFetch = !metadata?.image;
+  const idNum = Number(campaign.campaignId || '0');
+  const { data: metadataCid } = useReadContract({
+    address: ROUTER_ADDRESS,
+    abi: poliDaoRouterAbi,
+    functionName: 'getFundraiserMetadata',
+    args: needsFetch && !Number.isNaN(idNum) ? [BigInt(idNum)] : undefined,
+    chainId: sepolia.id,
+    query: { enabled: needsFetch && !Number.isNaN(idNum) },
+  });
+
+  const [fetchedImage, setFetchedImage] = React.useState<string>('');
   React.useEffect(() => {
-    setImgSrc(imageSrcNormalized || DEFAULT_IMG);
+    let disposed = false;
+    const run = async () => {
+      if (!needsFetch) return;
+      try {
+        const cidRaw = (metadataCid as string | undefined) || '';
+        const cid = cidRaw.trim();
+        if (!cid) {
+          if (!disposed) setFetchedImage('');
+          return;
+        }
+        const url = cid.startsWith('ipfs://') ? normalizeIpfsUrl(cid) : buildStorachaUrl(cid);
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`IPFS ${res.status}`);
+        const json = await res.json().catch(() => null);
+        const img = json && typeof json.image === 'string' ? json.image : '';
+        const finalUrl = img ? normalizeIpfsUrl(img) : '';
+        if (!disposed) setFetchedImage(finalUrl);
+      } catch {
+        if (!disposed) setFetchedImage('');
+      }
+    };
+    run();
+    return () => { disposed = true; };
+  }, [needsFetch, metadataCid]);
+
+  // Prefer provided metadata.image; fallback to fetched; then placeholder
+  const DEFAULT_IMG = '/images/zbiorka.png';
+  const imageSrcNormalized = normalizeIpfsUrl(metadata?.image) || fetchedImage || DEFAULT_IMG;
+  const [imgSrc, setImgSrc] = React.useState<string>(imageSrcNormalized);
+  React.useEffect(() => {
+    setImgSrc(imageSrcNormalized);
   }, [imageSrcNormalized]);
   const isRemote = imgSrc.startsWith('http');
 
@@ -110,7 +152,7 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
       <div className="relative w-full h-60">
         <Image
           src={imgSrc}
-          alt={metadata.title}
+          alt={metadata?.title || `Kampania #${campaign.campaignId}`}
           fill
           style={{ objectFit: 'cover' }}
           className="rounded-t-xl"
