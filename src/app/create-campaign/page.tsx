@@ -15,11 +15,10 @@ const USDC_DECIMALS = 6;
 interface FormData {
   title: string;
   description: string;
-  beneficiary: string; // who benefits (person / organization / initiative)
+  beneficiary: string;
   campaignType: 'target' | 'flexible';
   targetAmount: string;
   duration: string;
-  // removed: category
   contactInfo: string;
   agreeTerms: boolean;
   agreeDataProcessing: boolean;
@@ -71,7 +70,6 @@ export default function CreateCampaignPage() {
     campaignType: 'target',
     targetAmount: '',
     duration: '30',
-    // removed: category: 'medical',
     contactInfo: '',
     agreeTerms: false,
     agreeDataProcessing: false,
@@ -86,23 +84,24 @@ export default function CreateCampaignPage() {
   const [tokensList, setTokensList] = useState<TokenInfo[]>([]);
   const [selectedTokenAddress, setSelectedTokenAddress] = useState<`0x${string}` | null>(null);
 
-  // NEW: main image file + preview
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string>('');
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
   // NEW: store pre-transaction fundraiser count
   const preCountRef = useRef<bigint | null>(null);
 
-  useEffect(() => {
-    if (!imageFile) {
-      setImagePreview('');
-      return;
-    }
-    const url = URL.createObjectURL(imageFile);
-    setImagePreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [imageFile]);
+  // Remove all image-related state and refs
+  // const [imageFile, setImageFile] = useState<File | null>(null);
+  // const [imagePreview, setImagePreview] = useState<string>('');
+  // const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Remove image preview effect
+  // useEffect(() => {
+  //   if (!imageFile) {
+  //     setImagePreview('');
+  //     return;
+  //   }
+  //   const url = URL.createObjectURL(imageFile);
+  //   setImagePreview(url);
+  //   return () => URL.revokeObjectURL(url);
+  // }, [imageFile]);
 
   const handleInputChange = (field: keyof FormData, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -196,12 +195,10 @@ export default function CreateCampaignPage() {
     }
     if (!validateStep(3) || !isConnected) return;
 
-    // NEW: reset state for fresh run
     setFriendlyError(null);
     setCreatedId(null);
-    preCountRef.current = null; // NEW: clear previous pre-count
+    preCountRef.current = null;
 
-    // Prefer network Sepolia USDC, then user selection, then DEFAULT_TOKEN_ADDRESS
     const networkUsdc = getUsdcAddress(chainId) as `0x${string}` | null;
     const effectiveToken =
       (networkUsdc as `0x${string}`) ||
@@ -213,82 +210,31 @@ export default function CreateCampaignPage() {
       return;
     }
 
-    // Compute end date (seconds) based on selected duration
     const now = Math.floor(Date.now() / 1000);
     const endDate = BigInt(now + parseInt(formData.duration) * 24 * 60 * 60);
 
     try {
-      // --- image + metadata upload ---
-      // A) Upload image (optional)
-      let imageCid: string = '';
-      if (imageFile) {
-        try {
-          const form = new FormData();
-          form.append('file', imageFile);
-          const res = await fetch('/api/upload', { method: 'POST', body: form });
-          const data = await res.json();
-          if (process.env.NODE_ENV !== 'production') {
-            console.debug('upload(image) response', { ok: res.ok, data });
-          }
-          if (!res.ok) throw new Error(data?.error || 'Błąd uploadu pliku');
-          imageCid = extractCidFromResponse(data);
-          if (!imageCid) throw new Error('Brak CID w odpowiedzi uploadu');
-        } catch (e: any) {
-          setFriendlyError(e?.message || 'Nie udało się wgrać zdjęcia.');
-          return;
-        }
-      }
-
-      // NEW: always use pure ipfs://<CID> for on-chain and metadata (no filename/gateway)
-      const imageRef = imageCid ? `ipfs://${imageCid}` : '';
-
-      // B) Build and upload metadata JSON (keep image: ipfs://<CID>)
-      let metadataHash = '';
-      try {
-        const metadata = {
-          title: formData.title.trim(),
-          description: formData.description.trim(),
-          image: imageRef,
-          location: formData.location || ''
-        };
-        const blob = new Blob([JSON.stringify(metadata)], { type: 'application/json' });
-        const file = new File([blob], 'metadata.json', { type: 'application/json' });
-        const fm = new FormData();
-        fm.append('file', file);
-        const mr = await fetch('/api/upload', { method: 'POST', body: fm });
-        const md = await mr.json();
-        if (process.env.NODE_ENV !== 'production') {
-          console.debug('upload(metadata) response', { ok: mr.ok, md });
-        }
-        if (!mr.ok) throw new Error(md?.error || 'Błąd uploadu metadanych');
-        metadataHash = extractCidFromResponse(md);
-        if (!metadataHash) throw new Error('Brak CID metadanych w odpowiedzi uploadu');
-      } catch (e: any) {
-        setFriendlyError(e?.message || 'Nie udało się wgrać metadanych.');
-        return;
-      }
+      // Remove all upload logic - use empty metadata hash
+      const metadataHash = ''; // Empty metadata hash - no IPFS upload
 
       const selectedAddr = (selectedTokenAddress || networkUsdc) as `0x${string}` | null;
       const selected = tokensList.find(t => t.address.toLowerCase() === (selectedAddr || '').toLowerCase());
       const decimalsUsed = selected?.decimals ?? 6;
       const goalAmount = formData.campaignType === 'target' ? parseUnits(formData.targetAmount || '0', decimalsUsed) : 0n;
       const fundraiserType = mapFundraiserType(formData.campaignType);
-      const images: string[] = imageRef ? [imageRef] : []; // ipfs://<CID> only
+      const images: string[] = []; // No images
       const videos: string[] = [];
       const location = formData.location || '';
 
-      // DEV logs
+      // Remove all debug logs with imageFile references
       if (process.env.NODE_ENV !== 'production') {
-        console.debug('createFundraiser media payload', {
-          imageSelected: Boolean(imageFile),
-          imageCid,
-          imageRef,               // ipfs://CID
-          initialImages: images,  // sent on-chain
+        console.debug('createFundraiser payload', {
+          initialImages: images,
           metadataHash
         });
       }
 
-      // NEW: pre-check token whitelist (unchanged)
+      // Pre-check token whitelist
       try {
         if (publicClient) {
           const whitelisted = await publicClient.readContract({
@@ -303,10 +249,10 @@ export default function CreateCampaignPage() {
           }
         }
       } catch {
-        // ignore if function not available (fallback to simulate)
+        // ignore if function not available
       }
 
-      // 1) Pre-simulation
+      // Pre-simulation
       try {
         if (publicClient) {
           await publicClient.simulateContract({
@@ -321,7 +267,7 @@ export default function CreateCampaignPage() {
               fundraiserType,
               token: effectiveToken,
               goalAmount,
-              initialImages: images,   // ipfs://CID or []
+              initialImages: images,
               initialVideos: videos,
               metadataHash,
               location,
@@ -347,7 +293,7 @@ export default function CreateCampaignPage() {
         return;
       }
 
-      // Send tx
+      // Send transaction
       await writeContract({
         address: ROUTER_ADDRESS,
         abi: poliDaoRouterAbi as any,
@@ -359,9 +305,9 @@ export default function CreateCampaignPage() {
           fundraiserType,
           token: effectiveToken,
           goalAmount,
-          initialImages: images,     // [ipfs://CID] or []
+          initialImages: images,
           initialVideos: videos,
-          metadataHash,              // CID of metadata.json
+          metadataHash,
           location,
           isFlexible: formData.campaignType === 'flexible'
         }]
@@ -704,40 +650,7 @@ export default function CreateCampaignPage() {
                     </p>
                   </div>
 
-                  {/* NEW: Main image upload */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Zdjęcie główne (opcjonalne)
-                    </label>
-                    <div className="flex items-center gap-4">
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="px-4 py-2 bg-white border-2 border-gray-300 rounded-xl font-semibold hover:border-[#10b981] hover:text-[#10b981] transition"
-                      >
-                        Dodaj zdjęcie główne
-                      </button>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
-                      />
-                      <span className="text-sm text-gray-600">
-                        To zdjęcie będzie jako pierwsze wyświetlane na karcie i stronie zbiórki.
-                      </span>
-                    </div>
-                    {imagePreview ? (
-                      <div className="mt-4 w-full h-48 rounded-xl overflow-hidden border-2 border-gray-200">
-                        <img src={imagePreview} alt="Podgląd" className="w-full h-full object-cover" />
-                      </div>
-                    ) : (
-                      <div className="mt-4 w-full h-32 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center text-gray-400">
-                        Brak zdjęcia
-                      </div>
-                    )}
-                  </div>
+                  {/* Remove image upload section entirely */}
                 </div>
               </div>
             )}

@@ -109,6 +109,8 @@ const Header = () => {
   const [isLogoHovered, setIsLogoHovered] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // NEW: Add scroll progress for dynamic blur effect
+  const [scrollProgress, setScrollProgress] = useState(0);
   const headerRef = useRef<HTMLElement>(null);
 
   // Enhanced scroll detection z lepszą responsywnością
@@ -125,7 +127,7 @@ const Header = () => {
     }
   }, []);
 
-  // Enhanced scroll handling z throttling dla lepszej wydajności
+  // Enhanced scroll handling z backdrop blur effect
   useEffect(() => {
     let ticking = false;
     
@@ -133,7 +135,11 @@ const Header = () => {
       if (!ticking) {
         requestAnimationFrame(() => {
           const scrollPosition = window.scrollY;
-          setScrolled(scrollPosition > 10); // Slight delay for smoother transition
+          const maxScroll = 100; // Maximum scroll distance for full effect
+          const progress = Math.min(scrollPosition / maxScroll, 1); // 0 to 1
+          
+          setScrolled(scrollPosition > 10);
+          setScrollProgress(progress);
           ticking = false;
         });
         ticking = true;
@@ -210,6 +216,21 @@ const Header = () => {
     <header
       ref={headerRef}
       className={`${styles.header} ${scrolled ? styles.scrolled : styles.unscrolled}`}
+      style={{
+        // Dynamic backdrop blur based on scroll progress
+        backdropFilter: `blur(${scrollProgress * 8}px)`, // Reduced from 12px to 8px
+        WebkitBackdropFilter: `blur(${scrollProgress * 8}px)`,
+        // Much more transparent background
+        backgroundColor: scrolled 
+          ? `rgba(255, 255, 255, ${0.4 + scrollProgress * 0.1})` // Reduced from 0.8+0.15 to 0.4+0.1
+          : 'rgba(255, 255, 255, 0.7)', // Reduced from 0.95 to 0.7
+        // More subtle border when scrolled
+        borderBottom: scrolled 
+          ? `1px solid rgba(229, 231, 235, ${0.2 + scrollProgress * 0.2})` // Reduced opacity
+          : 'none',
+        // Smooth transition for all effects
+        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+      }}
     >
       <nav className={styles.nav}>
         {/* --- LEWA CZĘŚĆ (logo + linki) --- */}

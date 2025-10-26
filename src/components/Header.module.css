@@ -16,6 +16,14 @@
   width: 100%;
   left: 0;
   min-height: 80px; /* Więcej przestrzeni pionowej */
+
+  /* Enhanced backdrop support */
+  -webkit-backdrop-filter: blur(0px);
+  backdrop-filter: blur(0px);
+  /* Ensure smooth transitions */
+  will-change: backdrop-filter, background-color, border-bottom;
+  /* More transparent default background */
+  background-color: rgba(255, 255, 255, 0.7) !important;
 }
 
 /* ----------------------------------------
@@ -68,6 +76,11 @@
   color: var(--text-primary);
   border-bottom: 1px solid var(--border-primary-unscrolled);
   z-index: 10000;
+
+  /* Clean state without blur */
+  backdrop-filter: blur(0px);
+  -webkit-backdrop-filter: blur(0px);
+  background-color: rgba(255, 255, 255, 0.7) !important;
 }
 
 /* ----------------------------------------
@@ -81,10 +94,15 @@
   padding: 0.525rem 0.875rem;
   color: var(--text-primary);
   box-shadow: 
-    0 4px 20px rgba(0, 0, 0, 0.08),
-    0 1px 3px rgba(0, 0, 0, 0.1);
+    0 2px 15px rgba(0, 0, 0, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.08);
   border-bottom: 1px solid var(--border-primary-scrolled);
   z-index: 10000;
+
+  /* Enhanced shadow for better depth perception with blur */
+  box-shadow: 0 2px 15px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.08);
+  /* Support for backdrop blur fallback */
+  background-color: rgba(255, 255, 255, 0.5) !important;
 }
 
 /* ----------------------------------------
@@ -697,5 +715,36 @@
   .createCampaignButton {
     padding: 0.6rem 1.2rem;
     font-size: 0.9rem;
+  }
+}
+
+/* ----------------------------------------
+   Dark mode enhancements for blur effect
+---------------------------------------- */
+:global(.dark) .header {
+  background-color: rgba(17, 24, 39, 0.7) !important; /* Reduced from 0.95 to 0.7 */
+}
+
+:global(.dark) .scrolled {
+  background-color: rgba(17, 24, 39, 0.5) !important; /* Reduced from 0.95 to 0.5 */
+  border-bottom-color: rgba(55, 65, 81, 0.4); /* Reduced opacity */
+  box-shadow: 0 2px 15px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+/* Improve mobile performance for blur */
+@media (max-width: 768px) {
+  .header {
+    /* Reduce blur intensity on mobile for better performance */
+    backdrop-filter: blur(0px) !important;
+    -webkit-backdrop-filter: blur(0px) !important;
+  }
+  
+  .scrolled {
+    /* More transparent on mobile */
+    background-color: rgba(255, 255, 255, 0.85) !important; /* Reduced from 0.98 to 0.85 */
+  }
+  
+  :global(.dark) .scrolled {
+    background-color: rgba(17, 24, 39, 0.85) !important; /* Reduced from 0.98 to 0.85 */
   }
 }

@@ -3,10 +3,6 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useReadContract } from 'wagmi';
-import { sepolia } from 'viem/chains';
-import { ROUTER_ADDRESS } from '../blockchain/contracts';
-import { poliDaoRouterAbi } from '../blockchain/routerAbi';
 
 // Lokalny interfejs Campaign (usuń import z usePoliDao)
 interface Campaign {
@@ -28,55 +24,11 @@ interface CampaignCardProps {
   };
 }
 
-// NEW: prefer Storacha subdomain gateway
-const STORACHA_HOST = 'ipfs.storacha.link';
-
-// Build https://<cid>.ipfs.storacha.link[/path] (fallback to path-style for CIDv0 or non-base32)
-function buildStorachaUrl(cidAndPath: string): string {
-  const clean = cidAndPath.replace(/^\/+/, '');
-  const [cid, ...restParts] = clean.split('/');
-  const rest = restParts.join('/');
-  const isCidV0 = cid.startsWith('Qm') || /[A-Z]/.test(cid);
-  if (isCidV0) return `https://${STORACHA_HOST}/ipfs/${clean}`;
-  const host = `${cid}.ipfs.${STORACHA_HOST}`;
-  return rest ? `https://${host}/${rest}` : `https://${host}/`;
-}
-
 // Zastąp formatUnits z ethers własną funkcją
 function formatUSDC(amount: bigint, decimals: number = 6): string {
   const divisor = BigInt(10 ** decimals);
   const quotient = Number(amount) / Number(divisor);
   return quotient.toFixed(2);
-}
-
-// NEW: Normalizacja IPFS -> Storacha subdomain gateway
-// Parent should pass metadata.image as ipfs://<cid> or plain <cid>; the card builds the HTTP URL.
-function normalizeIpfsUrl(v?: string): string {
-  if (!v) return '';
-  const s = v.trim();
-  if (!s) return '';
-  // Already a Storacha subdomain URL – keep
-  if (/^https?:\/\/[a-z0-9]+\.ipfs\.storacha\.link(\/|$)/i.test(s)) return s;
-  if (s.startsWith('http://') || s.startsWith('https://')) {
-    // Remap path-style IPFS links to subdomain form
-    const lower = s.toLowerCase();
-    const marker = '/ipfs/';
-    const idx = lower.indexOf(marker);
-    if (idx !== -1) {
-      let p = s.slice(idx + marker.length).replace(/^\/+/, '');
-      return buildStorachaUrl(p);
-    }
-    // Non-IPFS HTTP URL – return as-is
-    return s;
-  }
-
-  // Accept raw CID or prefixed paths/schemes
-  let p = s;
-  if (p.startsWith('ipfs://')) p = p.slice('ipfs://'.length);
-  if (p.startsWith('ipfs/')) p = p.slice('ipfs/'.length);
-  if (p.startsWith('/ipfs/')) p = p.slice('/ipfs/'.length);
-  p = p.replace(/^\/+/, '');
-  return buildStorachaUrl(p);
 }
 
 export default function CampaignCard({ campaign, metadata }: CampaignCardProps) {
@@ -85,64 +37,9 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
   const progress = target > 0 ? Math.min((raised / target) * 100, 100) : 0;
   const remaining = Math.max(target - raised, 0);
 
-  // NEW: dev-time nudge to keep parent passing ipfs://<cid> or <cid>
-  React.useEffect(() => {
-    const img = metadata?.image;
-    if (process.env.NODE_ENV !== 'production' && img && (img.startsWith('http://') || img.startsWith('https://'))) {
-      const lower = img.toLowerCase();
-      if (lower.includes('/ipfs/')) {
-        console.warn('CampaignCard: Prefer passing metadata.image as ipfs://<cid> or plain <cid>. The card will build the gateway URL.');
-      }
-    }
-  }, [metadata?.image]);
-
-  // NEW: load metadata via Router if not provided (or if provided image is empty)
-  const needsFetch = !metadata?.image;
-  const idNum = Number(campaign.campaignId || '0');
-  const { data: metadataCid } = useReadContract({
-    address: ROUTER_ADDRESS,
-    abi: poliDaoRouterAbi,
-    functionName: 'getFundraiserMetadata',
-    args: needsFetch && !Number.isNaN(idNum) ? [BigInt(idNum)] : undefined,
-    chainId: sepolia.id,
-    query: { enabled: needsFetch && !Number.isNaN(idNum) },
-  });
-
-  const [fetchedImage, setFetchedImage] = React.useState<string>('');
-  React.useEffect(() => {
-    let disposed = false;
-    const run = async () => {
-      if (!needsFetch) return;
-      try {
-        const cidRaw = (metadataCid as string | undefined) || '';
-        const cid = cidRaw.trim();
-        if (!cid) {
-          if (!disposed) setFetchedImage('');
-          return;
-        }
-        const url = cid.startsWith('ipfs://') ? normalizeIpfsUrl(cid) : buildStorachaUrl(cid);
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`IPFS ${res.status}`);
-        const json = await res.json().catch(() => null);
-        const img = json && typeof json.image === 'string' ? json.image : '';
-        const finalUrl = img ? normalizeIpfsUrl(img) : '';
-        if (!disposed) setFetchedImage(finalUrl);
-      } catch {
-        if (!disposed) setFetchedImage('');
-      }
-    };
-    run();
-    return () => { disposed = true; };
-  }, [needsFetch, metadataCid]);
-
-  // Prefer provided metadata.image; fallback to fetched; then placeholder
+  // Remove all image fetching logic - always use placeholder
   const DEFAULT_IMG = '/images/zbiorka.png';
-  const imageSrcNormalized = normalizeIpfsUrl(metadata?.image) || fetchedImage || DEFAULT_IMG;
-  const [imgSrc, setImgSrc] = React.useState<string>(imageSrcNormalized);
-  React.useEffect(() => {
-    setImgSrc(imageSrcNormalized);
-  }, [imageSrcNormalized]);
-  const isRemote = imgSrc.startsWith('http');
+  const imgSrc = DEFAULT_IMG;
 
   return (
     <Link 
@@ -158,7 +55,7 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
           className="rounded-t-xl"
           sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
           // NEW: uniknięcie ograniczeń Next Image dla zewnętrznych domen
-          unoptimized={isRemote}
+          unoptimized={true}
           // NEW: awaryjny fallback, gdy zewnętrzny obraz się nie wczyta
           onError={() => { if (imgSrc !== DEFAULT_IMG) setImgSrc(DEFAULT_IMG); }}
         />
