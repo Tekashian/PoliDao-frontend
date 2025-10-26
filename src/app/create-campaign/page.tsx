@@ -39,6 +39,24 @@ function getUsdcAddress(chainId?: number): `0x${string}` | null {
   return null;
 }
 
+// NEW: USDC ABI for token info
+const USDC_ABI = [
+  {
+    constant: true,
+    inputs: [],
+    name: "symbol",
+    outputs: [{ name: "", type: "string" }],
+    type: "function"
+  },
+  {
+    constant: true,
+    inputs: [],
+    name: "decimals",
+    outputs: [{ name: "", type: "uint8" }],
+    type: "function"
+  },
+] as const;
+
 export default function CreateCampaignPage() {
   const { address, isConnected } = useAccount();
   const { writeContract, data: hash, isPending, error } = useWriteContract();

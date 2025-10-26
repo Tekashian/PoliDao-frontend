@@ -39,7 +39,7 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
 
   // Remove all image fetching logic - always use placeholder
   const DEFAULT_IMG = '/images/zbiorka.png';
-  const imgSrc = DEFAULT_IMG;
+  const [imgSrc, setImgSrc] = React.useState<string>(DEFAULT_IMG);
 
   return (
     <Link 
@@ -54,10 +54,7 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
           style={{ objectFit: 'cover' }}
           className="rounded-t-xl"
           sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-          // NEW: uniknięcie ograniczeń Next Image dla zewnętrznych domen
-          unoptimized={true}
-          // NEW: awaryjny fallback, gdy zewnętrzny obraz się nie wczyta
-          onError={() => { if (imgSrc !== DEFAULT_IMG) setImgSrc(DEFAULT_IMG); }}
+          onError={() => setImgSrc(DEFAULT_IMG)}
         />
       </div>
 
