@@ -7,13 +7,12 @@ import { ROUTER_ADDRESS } from '../../blockchain/contracts';
 import { poliDaoRouterAbi } from '../../blockchain/routerAbi';
 import { poliDaoCoreAbi } from '../../blockchain/coreAbi';
 import { poliDaoAnalyticsAbi } from '../../blockchain/analyticsAbi';
-import poliDaoGovernanceAbi from '../../blockchain/governanceAbi';
-// ADD: legacy POLIDAO governance fallback
-import { POLIDAO_ABI } from '../../blockchain/poliDaoAbi';
-import { polidaoContractConfig } from '../../blockchain/contracts';
+// import poliDaoGovernanceAbi from '../../blockchain/governanceAbi'; // removed
+// import { POLIDAO_ABI } from '../../blockchain/poliDaoAbi'; // removed
+// import { polidaoContractConfig } from '../../blockchain/contracts'; // removed
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
-import { useGetAllProposals } from '../../hooks/usePoliDao';
+// import { useGetAllProposals } from '../../hooks/usePoliDao'; // removed
 import { useFundraisersModular } from '../../hooks/useFundraisersModular';
 import CampaignCard from '../../components/CampaignCard';
 import { Interface, JsonRpcProvider, keccak256, toUtf8Bytes } from 'ethers';
@@ -68,7 +67,7 @@ interface Proposal {
 export default function AccountPage() {
   const { address, isConnected } = useAccount();
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'donations' | 'fundraisers' | 'votes'
+    'dashboard' | 'donations' | 'fundraisers'
   >('dashboard');
   const router = useRouter();
   // NEW: public client for simulateContract
@@ -83,12 +82,6 @@ export default function AccountPage() {
     isLoading: campaignsLoading, 
     error: campaignsError 
   } = useFundraisersModular();
-
-  const { 
-    proposals, 
-    isLoading: proposalsLoading, 
-    error: proposalsError 
-  } = useGetAllProposals();
 
   // Resolve Core and Analytics module
   const { data: coreAddress } = useReadContract({
@@ -247,113 +240,113 @@ export default function AccountPage() {
   });
 
   // --- Governance proposals (prefer governanceModule if present) ---
-  const { data: governanceAddress } = useReadContract({
-    address: coreAddress as `0x${string}` | undefined,
-    abi: poliDaoCoreAbi,
-    functionName: 'governanceModule',
-    query: { enabled: !!coreAddress }
-  });
+  // const { data: governanceAddress } = useReadContract({
+  //   address: coreAddress as `0x${string}` | undefined,
+  //   abi: poliDaoCoreAbi,
+  //   functionName: 'governanceModule',
+  //   query: { enabled: !!coreAddress }
+  // });
 
-  const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
-  const isNonZeroAddress = (addr?: string) =>
-    typeof addr === 'string' &&
-    /^0x[a-fA-F0-9]{40}$/.test(addr) &&
-    addr.toLowerCase() !== ZERO_ADDR;
+  // const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
+  // const isNonZeroAddress = (addr?: string) =>
+  //   typeof addr === 'string' &&
+  //   /^0x[a-fA-F0-9]{40}$/.test(addr) &&
+  //   addr.toLowerCase() !== ZERO_ADDR;
 
   // REPLACED: getAllProposalIds -> getProposals (paged)
-  const { data: govPage } = useReadContract({
-    address: (governanceAddress as `0x${string}`) ?? undefined,
-    abi: poliDaoGovernanceAbi,
-    functionName: 'getProposals',
-    args: [0n, 200n],
-    query: { enabled: isNonZeroAddress(governanceAddress as string) },
-  });
+  // const { data: govPage } = useReadContract({
+  //   address: (governanceAddress as `0x${string}`) ?? undefined,
+  //   abi: poliDaoGovernanceAbi,
+  //   functionName: 'getProposals',
+  //   args: [0n, 200n],
+  //   query: { enabled: isNonZeroAddress(governanceAddress as string) },
+  // });
 
-  const { data: govCountRaw } = useReadContract({
-    address: (governanceAddress as `0x${string}`) ?? undefined,
-    abi: poliDaoGovernanceAbi,
-    functionName: 'getProposalCount',
-    query: { enabled: isNonZeroAddress(governanceAddress as string) },
-  });
+  // const { data: govCountRaw } = useReadContract({
+  //   address: (governanceAddress as `0x${string}`) ?? undefined,
+  //   abi: poliDaoGovernanceAbi,
+  //   functionName: 'getProposalCount',
+  //   query: { enabled: isNonZeroAddress(governanceAddress as string) },
+  // });
 
   // Fallback: resolve real IDs via proposalIds(index) if needed
-  const proposalIndexCalls = React.useMemo(() => {
-    const count = Number(govCountRaw ?? 0n);
-    if (!isNonZeroAddress(governanceAddress as string) || count === 0) return [];
-    const limit = Math.min(count, 200);
-    return Array.from({ length: limit }, (_, i) => ({
-      address: governanceAddress as `0x${string}`,
-      abi: poliDaoGovernanceAbi,
-      functionName: 'proposalIds' as const,
-      args: [BigInt(i)],
-    }));
-  }, [governanceAddress, govCountRaw]);
+  // const proposalIndexCalls = React.useMemo(() => {
+  //   const count = Number(govCountRaw ?? 0n);
+  //   if (!isNonZeroAddress(governanceAddress as string) || count === 0) return [];
+  //   const limit = Math.min(count, 200);
+  //   return Array.from({ length: limit }, (_, i) => ({
+  //     address: governanceAddress as `0x${string}`,
+  //     abi: poliDaoGovernanceAbi,
+  //     functionName: 'proposalIds' as const,
+  //     args: [BigInt(i)],
+  //   }));
+  // }, [governanceAddress, govCountRaw]);
 
-  const { data: indexIdResults } = useReadContracts({
-    contracts: proposalIndexCalls,
-    query: { enabled: proposalIndexCalls.length > 0 },
-  });
+  // const { data: indexIdResults } = useReadContracts({
+  //   contracts: proposalIndexCalls,
+  //   query: { enabled: proposalIndexCalls.length > 0 },
+  // });
 
-  const govIds = React.useMemo(() => {
-    const tuple = govPage as any;
-    const pagedIds: bigint[] = Array.isArray(tuple?.ids)
-      ? (tuple.ids as bigint[])
-      : (Array.isArray(tuple?.[0]) ? (tuple[0] as bigint[]) : []);
-    if (pagedIds && pagedIds.length > 0) return pagedIds.slice(0, 200);
+  // const govIds = React.useMemo(() => {
+  //   const tuple = govPage as any;
+  //   const pagedIds: bigint[] = Array.isArray(tuple?.ids)
+  //     ? (tuple.ids as bigint[])
+  //     : (Array.isArray(tuple?.[0]) ? (tuple[0] as bigint[]) : []);
+  //   if (pagedIds && pagedIds.length > 0) return pagedIds.slice(0, 200);
 
-    if (indexIdResults && indexIdResults.length > 0) {
-      const realIds = indexIdResults
-        .map((r) => (r as any)?.result as bigint | undefined)
-        .filter((x): x is bigint => typeof x === 'bigint');
-      if (realIds.length > 0) return realIds.slice(0, 200);
-    }
+  //   if (indexIdResults && indexIdResults.length > 0) {
+  //     const realIds = indexIdResults
+  //       .map((r) => (r as any)?.result as bigint | undefined)
+  //       .filter((x): x is bigint => typeof x === 'bigint');
+  //     if (realIds.length > 0) return realIds.slice(0, 200);
+  //   }
 
-    const n = Number(govCountRaw ?? 0n);
-    return Array.from({ length: Math.min(n, 100) }, (_, i) => BigInt(i));
-  }, [govPage, indexIdResults, govCountRaw]);
+  //   const n = Number(govCountRaw ?? 0n);
+  //   return Array.from({ length: Math.min(n, 100) }, (_, i) => BigInt(i));
+  // }, [govPage, indexIdResults, govCountRaw]);
 
-  const govCalls = React.useMemo(() => {
-    if (!isNonZeroAddress(governanceAddress as string) || govIds.length === 0) return [];
-    return govIds.map((id) => ({
-      address: governanceAddress as `0x${string}`,
-      abi: poliDaoGovernanceAbi,
-      functionName: 'getProposal' as const,
-      args: [id],
-    }));
-  }, [governanceAddress, govIds]);
+  // const govCalls = React.useMemo(() => {
+  //   if (!isNonZeroAddress(governanceAddress as string) || govIds.length === 0) return [];
+  //   return govIds.map((id) => ({
+  //     address: governanceAddress as `0x${string}`,
+  //     abi: poliDaoGovernanceAbi,
+  //     functionName: 'getProposal' as const,
+  //     args: [id],
+  //   }));
+  // }, [governanceAddress, govIds]);
 
-  const { data: govResults } = useReadContracts({
-    contracts: govCalls,
-    query: { enabled: govCalls.length > 0 },
-  });
+  // const { data: govResults } = useReadContracts({
+  //   contracts: govCalls,
+  //   query: { enabled: govCalls.length > 0 },
+  // });
 
-  const governanceProposals = React.useMemo(() => {
-    if (!govResults || govResults.length === 0) return [];
-    const out: { id: bigint; question: string; yesVotes: bigint; noVotes: bigint; endTime: bigint; creator: string }[] = [];
-    govResults.forEach((r) => {
-      const v = (r as any)?.result;
-      if (!v) return;
-      const exists = Boolean(v.exists ?? v[6] ?? true);
-      if (!exists) return;
-      out.push({
-        id: BigInt(v.id ?? v[0] ?? 0n),
-        question: String(v.question ?? v[1] ?? ''),
-        yesVotes: BigInt(v.yesVotes ?? v[2] ?? 0n),
-        noVotes: BigInt(v.noVotes ?? v[3] ?? 0n),
-        endTime: BigInt(v.endTime ?? v[4] ?? 0n),
-        creator: String(v.creator ?? v[5] ?? ZERO_ADDR),
-      });
-    });
-    return out;
-  }, [govResults]);
+  // const governanceProposals = React.useMemo(() => {
+  //   if (!govResults || govResults.length === 0) return [];
+  //   const out: { id: bigint; question: string; yesVotes: bigint; noVotes: bigint; endTime: bigint; creator: string }[] = [];
+  //   govResults.forEach((r) => {
+  //     const v = (r as any)?.result;
+  //     if (!v) return;
+  //     const exists = Boolean(v.exists ?? v[6] ?? true);
+  //     if (!exists) return;
+  //     out.push({
+  //       id: BigInt(v.id ?? v[0] ?? 0n),
+  //       question: String(v.question ?? v[1] ?? ''),
+  //       yesVotes: BigInt(v.yesVotes ?? v[2] ?? 0n),
+  //       noVotes: BigInt(v.noVotes ?? v[3] ?? 0n),
+  //       endTime: BigInt(v.endTime ?? v[4] ?? 0n),
+  //       creator: String(v.creator ?? v[5] ?? ZERO_ADDR),
+  //     });
+  //   });
+  //   return out;
+  // }, [govResults]);
 
-  const displayProposals = React.useMemo(
-    () => (governanceProposals.length > 0 ? governanceProposals : (proposals || [])),
-    [governanceProposals, proposals]
-  );
+  // const displayProposals = React.useMemo(
+  //   () => (governanceProposals.length > 0 ? governanceProposals : (proposals || [])),
+  //   [governanceProposals, proposals]
+  // );
 
   // NEW: mark from which source current list originates (module vs legacy)
-  const proposalsFromModule = React.useMemo(() => governanceProposals.length > 0, [governanceProposals]);
+  // const proposalsFromModule = React.useMemo(() => governanceProposals.length > 0, [governanceProposals]);
 
   // Router: list user's donations globally (ids[], amounts[])
   const { data: userDonationsTuple } = useReadContract({
@@ -1325,188 +1318,6 @@ export default function AccountPage() {
     return map;
   }, [storageProgressById, progressResults, myCampaignIds]);
 
-  // NEW: form state for creating a vote (UI only for now)
-  const [newVoteTitle, setNewVoteTitle] = useState('');
-  // was number -> string to allow empty value and show placeholder
-  const [newVoteDays, setNewVoteDays] = useState<string>(''); // days
-  const [createVoteUi, setCreateVoteUi] = useState<string>('');
-
-  const handleCreateProposal = (e?: React.FormEvent) => {
-    e?.preventDefault();
-    setCreateVoteUi('');
-    const title = newVoteTitle.trim();
-    const days = Number(newVoteDays);
-    if (title.length < 3 || title.length > 120) {
-      setCreateVoteUi('Podaj tytuł o długości 3–120 znaków.');
-      return;
-    }
-    if (!Number.isFinite(days) || days <= 0 || days > 60) {
-      setCreateVoteUi('Czas trwania powinien mieścić się w przedziale 1–60 dni.');
-      return;
-    }
-    // Placeholder – in the future this will call governance module to create proposal
-    setCreateVoteUi(`Funkcja w budowie — wkrótce utworzysz głosowanie. Parametry: „${title}”, ${days} dni.`);
-  };
-
-  // NEW: per-user voting history state
-  const [voteHistory, setVoteHistory] = useState<{ id: bigint; support: boolean; question: string }[]>([]);
-  const [voteHistoryLoading, setVoteHistoryLoading] = useState(false);
-
-  useEffect(() => {
-    let disposed = false;
-    (async () => {
-      try {
-        if (!publicClient || !address) {
-          if (!disposed) {
-            setVoteHistory([]);
-            setVoteHistoryLoading(false);
-          }
-          return;
-        }
-
-        setVoteHistoryLoading(true);
-
-        // 1) Build proposals list and remember the source
-        let list: any[] = Array.isArray(displayProposals) ? displayProposals.slice(0, 200) : [];
-        let listSource: 'module' | 'legacy' = proposalsFromModule ? 'module' : 'legacy';
-
-        // Fallback: if empty, try legacy POLIDAO directly
-        if ((!list || list.length === 0) && polidaoContractConfig?.address) {
-          try {
-            const count = (await publicClient.readContract({
-              address: polidaoContractConfig.address as `0x${string}`,
-              abi: POLIDAO_ABI as any,
-              functionName: 'getProposalCount',
-              args: [],
-            })) as bigint;
-
-            const lim = Math.min(Number(count ?? 0n), 200);
-            const ids = Array.from({ length: lim }, (_, i) => BigInt(i));
-            const proposalsRaw = await Promise.all(
-              ids.map(async (pid) => {
-                try {
-                  const pr: any = await publicClient.readContract({
-                    address: polidaoContractConfig.address as `0x${string}`,
-                    abi: POLIDAO_ABI as any,
-                    functionName: 'getProposal',
-                    args: [pid],
-                  });
-                  const question = String(pr?.question ?? pr?.[1] ?? `Propozycja #${pid.toString()}`);
-                  return { id: pid, question };
-                } catch {
-                  return { id: pid, question: `Propozycja #${pid.toString()}` };
-                }
-              })
-            );
-            list = proposalsRaw;
-            listSource = 'legacy'; // ensure we read votes from the same place
-          } catch {
-            // ignore, keep list empty
-          }
-        }
-
-        if (!list || list.length === 0) {
-          if (!disposed) {
-            setVoteHistory([]);
-            setVoteHistoryLoading(false);
-          }
-          return;
-        }
-
-        // 2) Choose vote source based on list source (fix: don't force module if list is legacy)
-        const govAddr =
-          (listSource === 'module' ? (governanceAddress as `0x${string}` | undefined) : (polidaoContractConfig.address as `0x${string}` | undefined));
-        const govAbi: any = listSource === 'module' ? (poliDaoGovernanceAbi as any) : (POLIDAO_ABI as any);
-
-        if (!govAddr) {
-          if (!disposed) {
-            setVoteHistory([]);
-            setVoteHistoryLoading(false);
-          }
-          return;
-        }
-
-        async function tryRead<T>(fn: string, args: readonly unknown[]): Promise<T | null> {
-          try {
-            const res = await publicClient.readContract({
-              address: govAddr,
-              abi: govAbi,
-              functionName: fn as any,
-              args,
-            });
-            return res as T;
-          } catch {
-            return null;
-          }
-        }
-
-        function toBool(x: any): boolean | null {
-          if (typeof x === 'boolean') return x;
-          if (typeof x === 'bigint') return x === 1n ? true : x === 0n ? false : null;
-          if (typeof x === 'number') return x === 1 ? true : x === 0 ? false : null;
-          return null;
-        }
-
-        async function getUserChoice(pid: bigint): Promise<{ has: boolean; support?: boolean } | null> {
-          // a) getUserVote(uint256,address) -> (bool has, bool support|uint8)
-          const r1 = (await tryRead<any>('getUserVote', [pid, address as `0x${string}`])) as any;
-          if (Array.isArray(r1) && r1.length >= 2) {
-            const has = Boolean(r1[0]);
-            const sup = toBool(r1[1]);
-            if (has && sup != null) return { has: true, support: sup };
-            if (has) return { has: true };
-          }
-
-          // b) hasVoted(uint256,address) -> bool
-          const has = await tryRead<boolean>('hasVoted', [pid, address as `0x${string}`]);
-
-          // c) mappings: userVotes / votes / voteOf
-          const vUser = await tryRead<any>('userVotes', [pid, address as `0x${string}`]);
-          const vVotes = vUser == null ? await tryRead<any>('votes', [pid, address as `0x${string}`]) : vUser;
-          const vVoteOf = vVotes == null ? await tryRead<any>('voteOf', [pid, address as `0x${string}`]) : vVotes;
-
-          const support = toBool(vVoteOf);
-          if (typeof has === 'boolean' && has === true && support != null) return { has: true, support };
-          if (has === true) return { has: true };
-          if (has == null && support != null) return { has: true, support };
-
-          return null;
-        }
-
-        const results = await Promise.all(
-          list.slice(0, 200).map(async (p: any) => {
-            const rawId = (p?.id ?? p?.proposalId ?? 0n);
-            const pid = typeof rawId === 'bigint' ? rawId : BigInt(rawId); // allow id 0
-            const question = String(p?.question ?? `Propozycja #${pid.toString()}`);
-            const choice = await getUserChoice(pid);
-            if (choice && choice.has && typeof choice.support === 'boolean') {
-              return { id: pid, support: !!choice.support, question };
-            }
-            if (choice && choice.has && typeof choice.support !== 'boolean') {
-              return { id: pid, support: true as boolean, question, __unknown: true } as any;
-            }
-            return null;
-          })
-        );
-
-        const filtered = results.filter(Boolean) as { id: bigint; support: boolean; question: string }[];
-
-        if (!disposed) {
-          setVoteHistory(filtered);
-          setVoteHistoryLoading(false);
-        }
-      } catch {
-        if (!disposed) {
-          setVoteHistory([]);
-          setVoteHistoryLoading(false);
-        }
-      }
-    })();
-    return () => {
-      disposed = true;
-    };
-  }, [publicClient, address, governanceAddress, displayProposals, proposalsFromModule]);
-
   return (
     <>
       <Header />
@@ -1545,16 +1356,7 @@ export default function AccountPage() {
             >
               Twoje zbiórki
             </button>
-            <button
-              onClick={() => setActiveTab('votes')}
-              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${
-                activeTab === 'votes'
-                  ? 'bg-[#10b981] text-white shadow-md'
-                  : 'bg-gray-100 text-gray-700 hover:bg-[#10b981]/10 hover:text-[#10b981]'
-              } transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]`}
-            >
-              Głosowania
-            </button>
+            {/* removed "Głosowania" tab button */}
           </div>
         </div>
 
@@ -1722,127 +1524,8 @@ export default function AccountPage() {
           </div>
         )}
 
-        {activeTab === 'votes' && (
-          <div className="p-4 bg-white rounded-lg shadow-md">
-            <h2 className="text-xl font-semibold mb-4">Głosowania</h2>
-
-            {/* Create vote form (UI only) */}
-            <div className="mb-6">
-              <form
-                onSubmit={handleCreateProposal}
-                className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3"
-              >
-                <input
-                  type="text"
-                  placeholder="Tytuł głosowania"
-                  aria-label="Tytuł głosowania"
-                  value={newVoteTitle}
-                  onChange={(e) => setNewVoteTitle(e.target.value)}
-                  className="flex-1 rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#10b981]/30"
-                />
-                <input
-                  type="number"
-                  min={1}
-                  max={60}
-                  step={1}
-                  placeholder="Liczba dni trwania głosowania"
-                  aria-label="Czas trwania (w dniach)"
-                  value={newVoteDays}
-                  onChange={(e) => setNewVoteDays(e.target.value)}
-                  className="w-48 rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#10b981]/30"
-                />
-                <button
-                  type="submit"
-                  className="rounded-md bg-[#10b981] text-white font-semibold px-4 py-2 text-sm shadow hover:shadow-[0_0_18px_rgba(16,185,129,0.35)] transition disabled:opacity-60 disabled:cursor-not-allowed"
-                  disabled={!address || !isNonZeroAddress(governanceAddress as string)}
-                  title={!address ? 'Połącz portfel' : (!isNonZeroAddress(governanceAddress as string) ? 'Moduł governance niedostępny' : 'Utwórz')}
-                >
-                  Utwórz
-                </button>
-              </form>
-              <div className="mt-2 text-xs text-gray-500">
-                Czas trwania w dniach. Tworzenie głosowań będzie wkrótce dostępne.
-              </div>
-              {createVoteUi && (
-                <div className="mt-2 text-xs text-gray-700">
-                  {createVoteUi}
-                </div>
-              )}
-            </div>
-
-            {/* NEW: Historia moich głosów – minimalistycznie */}
-            {address && (
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-semibold text-gray-800">Historia moich głosów</h3>
-                  {voteHistoryLoading && <span className="text-xs text-gray-500">Ładowanie…</span>}
-                </div>
-                {voteHistoryLoading ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="h-16 rounded-md border border-gray-100 bg-gray-50 animate-pulse" />
-                    <div className="h-16 rounded-md border border-gray-100 bg-gray-50 animate-pulse hidden sm:block" />
-                  </div>
-                ) : voteHistory.length === 0 ? (
-                  <div className="rounded-md border border-gray-100 bg-gray-50 px-3 py-3 text-xs text-gray-600">
-                    Brak oddanych głosów dla tego portfela.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {voteHistory.map((v: any) => (
-                      <div key={v.id.toString()} className="flex items-center justify-between rounded-md border border-gray-100 bg-white px-3 py-3">
-                        <div className="min-w-0 pr-3">
-                          <div className="truncate text-sm font-medium text-gray-800">{v.question || `Propozycja #${v.id.toString()}`}</div>
-                          <div className="mt-0.5 text-[11px] text-gray-500">ID: {v.id.toString()}</div>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1
-                            ${v.__unknown ? 'bg-slate-50 text-slate-700 ring-slate-200' : (v.support ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-rose-50 text-rose-700 ring-rose-200')}`}>
-                            {v.__unknown ? 'GŁOS ODDANY' : (v.support ? 'TAK' : 'NIE')}
-                          </span>
-                          <a href={`/votes/${v.id.toString()}`} className="text-[11px] font-semibold text-[#10b981] hover:underline">
-                            Szczegóły
-                          </a>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ...existing code... proposals list ... */}
-            {!address ? (
-              <p>Zaloguj się, aby zobaczyć głosowania.</p>
-            ) : proposalsLoading ? (
-              <p>Ładowanie...</p>
-            ) : proposalsError ? (
-              <p className="text-red-500">Błąd podczas ładowania głosowań</p>
-            ) : displayProposals && displayProposals.length > 0 ? (
-              <div className="space-y-3">
-                {displayProposals.map((p: any) => (
-                  <div key={p.id.toString()} className="p-3 bg-gray-50 rounded-md border border-gray-100 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold">{p.question}</p>
-                      <p className="text-xs text-gray-500">
-                        Tak: {p.yesVotes.toString()} | Nie: {p.noVotes.toString()}
-                      </p>
-                    </div>
-                    <a
-                      href={`/votes/${p.id.toString()}`}
-                      className="text-xs text-[#10b981] hover:underline font-semibold"
-                    >
-                      Szczegóły
-                    </a>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p>Brak utworzonych głosowań.</p>
-            )}
-          </div>
-        )}
-
-        {/* removed Aktywność tab content */}
+        {/* removed votes section */}
+        {/* {activeTab === 'votes' && ( ... )} */}
       </div>
 
       {/* NEW: Historia darowizn – modal */}
