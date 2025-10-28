@@ -138,9 +138,21 @@ export async function getImageById(imageId: string) {
   }
 }
 
-// Get image URL for serving
-export function getImageUrl(imageId: string): string {
+// Get image URL for serving (updated)
+export function getImageUrl(imageId: string | null | undefined): string | null {
+  if (!imageId) return null;
   return `/api/images/${imageId}`;
+}
+
+// Get safe image props for Next.js Image component
+export function getImageProps(imageId: string | null | undefined) {
+  const url = getImageUrl(imageId);
+  if (!url) return null;
+  
+  return {
+    src: url,
+    unoptimized: true, // Disable Next.js optimization for our custom endpoint
+  };
 }
 
 // Test MongoDB connection - SIMPLE VERSION

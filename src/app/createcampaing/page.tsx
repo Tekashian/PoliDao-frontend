@@ -5,8 +5,7 @@ import Image from "next/image";
 interface UploadResponse {
   success: boolean;
   imageId: string;
-  cid: string;
-  url: string;
+  url: string; // ADD: URL field
   filename: string;
   message: string;
 }
@@ -211,7 +210,21 @@ export default function CreateCampaignPage() {
           {uploadedImage && (
             <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-md">
               <p className="text-green-800">✅ Zdjęcie przesłane pomyślnie!</p>
-              <p className="text-sm text-gray-600">CID: {uploadedImage.cid}</p>
+              <p className="text-sm text-gray-600">ID: {uploadedImage.imageId}</p>
+              
+              {/* ADD: Display uploaded image */}
+              {uploadedImage.url && (
+                <div className="mt-2">
+                  <Image
+                    src={uploadedImage.url}
+                    alt="Uploaded image"
+                    width={200}
+                    height={150}
+                    className="rounded-md object-cover border"
+                    unoptimized // ADD: disable Next.js optimization
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

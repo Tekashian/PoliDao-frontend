@@ -55,6 +55,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ 
       success: true, 
       imageId: imageId.toString(),
+      url: `/api/images/${imageId}`, // ADD: proper URL for accessing image
       filename,
       message: 'Image uploaded successfully to database'
     });

@@ -32,6 +32,7 @@ export async function GET(
         'Content-Type': image.mimeType,
         'Content-Length': image.size.toString(),
         'Cache-Control': 'public, max-age=31536000', // Cache for 1 year
+        'ETag': `"${imageId}"`,
       },
     });
   } catch (error: any) {

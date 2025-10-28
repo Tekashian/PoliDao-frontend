@@ -5,8 +5,7 @@ import Image from "next/image";
 interface UploadResponse {
   success: boolean;
   imageId: string;
-  cid: string;
-  url: string;
+  url: string; // ADD: URL field
   filename: string;
   message: string;
 }
@@ -139,9 +138,8 @@ export default function ImageUploadExample() {
             </h3>
             <div className="space-y-2 text-sm">
               <p><strong>ID w MongoDB:</strong> {uploadResult.imageId}</p>
-              <p><strong>CID:</strong> {uploadResult.cid}</p>
               <p><strong>Nazwa pliku:</strong> {uploadResult.filename}</p>
-              <p><strong>URL IPFS:</strong> 
+              <p><strong>URL:</strong> 
                 <a 
                   href={uploadResult.url} 
                   target="_blank" 
@@ -154,14 +152,17 @@ export default function ImageUploadExample() {
             </div>
             
             <div className="mt-4">
-              <h4 className="font-medium mb-2">Zdjęcie z IPFS:</h4>
-              <Image
-                src={uploadResult.url}
-                alt="Uploaded"
-                width={400}
-                height={300}
-                className="rounded-md object-cover border"
-              />
+              <h4 className="font-medium mb-2">Zdjęcie z MongoDB:</h4>
+              {uploadResult.url && (
+                <Image
+                  src={uploadResult.url}
+                  alt="Uploaded"
+                  width={400}
+                  height={300}
+                  className="rounded-md object-cover border"
+                  unoptimized // ADD: disable Next.js optimization for our custom endpoint
+                />
+              )}
             </div>
           </div>
         )}
