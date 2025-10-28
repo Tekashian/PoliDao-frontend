@@ -8,8 +8,8 @@ export default function Hero3D() {
     <div className="w-full h-[500px] relative overflow-hidden">
       {/* Tło banner */}
       <Image
-        src="/images/tuskBanner.png"
-        alt="PoliDao tło"
+        src="/images/nowybaner2.png"
+        alt="PoliDAO Banner"
         fill
         quality={100}
         priority
