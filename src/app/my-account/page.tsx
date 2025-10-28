@@ -1502,22 +1502,81 @@ export default function AccountPage() {
               <p className="text-red-500">Błąd podczas ładowania zbiórek</p>
             ) : myCampaigns.length > 0 ? (
               <div className="flex flex-wrap justify-center gap-6">
-                 {myCampaigns.map((c) => {
-                   const idStr = (c.id ?? 0n).toString();
-                   const success = successById.get(idStr) ?? false;
-                   const prog = progressById.get(idStr);
-                   return (
-                    <div key={String(c.id)} className="w-full sm:w-[24rem] flex-none">
-                      <MyCampaignCard
-                        campaign={c}
-                        progress={prog}
-                        onWithdraw={(id) => openWithdrawDialog(BigInt(id))}
-                        success={success}
-                      />
-                    </div>
-                   );
-                 })}
-               </div>
+                {(() => {
+                  // Reguły:
+                  // 1) (cat 0) niewypłacone i mają cel osiągnięty -> najpierw
+                  // 2) (cat 1) bez celu, ale z zebranymi środkami -> po (1)
+                  // 3) (cat 2) pozostałe: najbliżej celu (remaining asc)
+                  // 4) potem najnowsze -> najstarsze (id desc)
+                  // 5) wypłacone (success) -> na końcu
+                  const BIG = 10n ** 40n;
+                  const getProg = (c: any) => {
+                    const idStr = (c.id ?? 0n).toString();
+                    const pr = progressById.get(idStr);
+                    const raised = BigInt(pr?.raised ?? c.raisedAmount ?? c.raised ?? 0n);
+                    const goal = BigInt(pr?.goal ?? c.goalAmount ?? c.target ?? 0n);
+                    return { raised, goal };
+                  };
+                  const isSuccess = (c: any) => {
+                    const idStr = (c.id ?? 0n).toString();
+                    return successById.get(idStr) ?? false;
+                  };
+                  const reachedGoal = (c: any) => {
+                    const { raised, goal } = getProg(c);
+                    return goal > 0n && raised >= goal;
+                  };
+                  const noGoalRaised = (c: any) => {
+                    const { raised, goal } = getProg(c);
+                    return goal <= 0n && raised > 0n;
+                  };
+                  const remainingToGoal = (c: any) => {
+                    const { raised, goal } = getProg(c);
+                    if (goal <= 0n) return BIG;
+                    return raised >= goal ? 0n : (goal - raised);
+                  };
+
+                  const sorted = myCampaigns.slice().sort((a: any, b: any) => {
+                    const aSucc = isSuccess(a);
+                    const bSucc = isSuccess(b);
+                    if (aSucc !== bSucc) return aSucc ? 1 : -1; // success last
+
+                    // Kategoria: 0=reachedGoal, 1=noGoalRaised, 2=pozostałe
+                    const aCat = !aSucc && reachedGoal(a) ? 0 : (!aSucc && noGoalRaised(a) ? 1 : 2);
+                    const bCat = !bSucc && reachedGoal(b) ? 0 : (!bSucc && noGoalRaised(b) ? 1 : 2);
+                    if (aCat !== bCat) return aCat - bCat;
+
+                    // Dla "pozostałych" (cat 2) porównaj bliskość celu
+                    if (aCat === 2 && bCat === 2) {
+                      const aRem = remainingToGoal(a);
+                      const bRem = remainingToGoal(b);
+                      if (aRem !== bRem) return aRem < bRem ? -1 : 1;
+                    }
+
+                    // W obrębie każdej kategorii: najnowsze najpierw
+                    const aid = BigInt(a.id ?? 0n);
+                    const bid = BigInt(b.id ?? 0n);
+                    if (aid !== bid) return aid > bid ? -1 : 1;
+
+                    return 0;
+                  });
+
+                  return sorted.map((c: any) => {
+                    const idStr = (c.id ?? 0n).toString();
+                    const success = successById.get(idStr) ?? false;
+                    const prog = progressById.get(idStr);
+                    return (
+                      <div key={String(c.id)} className="w-full sm:w-[24rem] flex-none">
+                        <MyCampaignCard
+                          campaign={c}
+                          progress={prog}
+                          onWithdraw={(id) => openWithdrawDialog(BigInt(id))}
+                          success={success}
+                        />
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
             ) : (
               <p>Nie utworzyłeś jeszcze żadnej zbiórki.</p>
             )}
