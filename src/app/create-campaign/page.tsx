@@ -139,9 +139,10 @@ export default function CreateCampaignPage() {
       if (formData.title.length > 100) newErrors.title = 'Tytuł nie może przekraczać 100 znaków';
       if (!formData.description.trim()) newErrors.description = 'Opis jest wymagany';
       if (formData.description.length < 50) newErrors.description = 'Opis musi mieć co najmniej 50 znaków';
-      if (formData.description.length > 2000) newErrors.description = 'Opis nie może przekraczać 2000 znaków';
+      // FIX: Zmniejsz limit z 2000 na 1000 znaków (bezpieczny limit dla smart contract)
+      if (formData.description.length > 1000) newErrors.description = 'Opis nie może przekraczać 1000 znaków (limit kontraktu)';
       if (!formData.beneficiary.trim()) newErrors.beneficiary = 'Wybierz kto jest beneficjentem';
-      if (formData.location.length > 80) newErrors.location = 'Lokalizacja maks 80 znaków';
+      if (formData.location.length > 50) newErrors.location = 'Lokalizacja maks 50 znaków'; // też zmniejsz
       
       // Enhanced image validation
       if (imageFile) {
@@ -199,6 +200,8 @@ export default function CreateCampaignPage() {
     if (lower.includes('invalidtitle')) return 'Tytuł nie spełnia wymagań';
     if (lower.includes('invalidamount')) return 'Nieprawidłowa kwota';
     if (lower.includes('tokennotwhitelisted')) return 'Wybrany token nie jest dozwolony';
+    // FIX: Dodaj mapowanie dla error signature
+    if (lower.includes('0xd7cfc590')) return 'Opis zbiórki jest za długi - maksymalnie 1000 znaków';
     if (lower.includes('invalid creator')) return 'Twoje konto nie ma uprawnień do tworzenia zbiórek (Invalid creator). Skontaktuj się z administracją lub zakończ proces weryfikacji.';
     return 'Nieudana transakcja – sprawdź dane lub spróbuj ponownie';
   };
@@ -720,6 +723,10 @@ export default function CreateCampaignPage() {
                     {errors.location && (
                       <p className="mt-2 text-sm text-red-600 font-medium">{errors.location}</p>
                     )}
+                    {/* FIX: Dodaj licznik znaków dla lokalizacji */}
+                    <p className="mt-1 text-sm text-gray-500">
+                      {formData.location.length}/50 znaków
+                    </p>
                   </div>
                     {errors.beneficiary && (
                       <p className="mt-2 text-sm text-red-600 font-medium">{errors.beneficiary}</p>
@@ -744,8 +751,15 @@ export default function CreateCampaignPage() {
                       <p className="mt-2 text-sm text-red-600 font-medium">{errors.description}</p>
                     )}
                     <p className="mt-1 text-sm text-gray-500">
-                      {formData.description.length}/2000 znaków (minimum 50)
+                      {/* FIX: Zmień licznik na 1000 znaków */}
+                      {formData.description.length}/1000 znaków (minimum 50)
                     </p>
+                    {/* FIX: Dodaj ostrzeżenie gdy zbliżasz się do limitu */}
+                    {formData.description.length > 900 && (
+                      <p className="mt-1 text-sm text-amber-600 font-medium">
+                        ⚠️ Zbliżasz się do limitu znaków! Pozostało: {1000 - formData.description.length} znaków
+                      </p>
+                    )}
                   </div>
 
                   {/* Enhanced image upload section */}

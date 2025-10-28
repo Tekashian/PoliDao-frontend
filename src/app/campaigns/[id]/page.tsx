@@ -1,7 +1,7 @@
 // src/app/campaigns/[id]/page.tsx - INSPIROWANE DZIAŁAJĄCYM PROJEKTEM
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   Box,
@@ -165,6 +165,15 @@ export default function CampaignPage() {
   const [donorsLimit] = useState(50);
   const [campaignImage, setCampaignImage] = useState<string | null>(null);
   const [imageLoading, setImageLoading] = useState(true);
+  
+  // NEW: Gallery state
+  const [gallery, setGallery] = useState<any[]>([]);
+  const [galleryLoading, setGalleryLoading] = useState(false);
+  const [addImageOpen, setAddImageOpen] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [newImageFile, setNewImageFile] = useState<File | null>(null);
+  const [newImagePreview, setNewImagePreview] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // WSZYSTKIE stałe i zmienne pochodne
   const campaignId = params.id as string;
@@ -908,6 +917,98 @@ export default function CampaignPage() {
     fetchCampaignImage();
   }, [campaignId]);
 
+  // 12. Fetch campaign gallery - NEW
+  useEffect(() => {
+    if (!campaignId) return;
+    
+    const fetchGallery = async () => {
+      try {
+        setGalleryLoading(true);
+        const response = await fetch(`/api/campaigns/${campaignId}/gallery`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          setGallery(data.gallery || []);
+          console.log('✅ Gallery loaded:', data.gallery?.length || 0, 'images');
+        } else {
+          console.warn('No gallery found for campaign:', campaignId);
+          setGallery([]);
+        }
+      } catch (error) {
+        console.error('Error fetching campaign gallery:', error);
+        setGallery([]);
+      } finally {
+        setGalleryLoading(false);
+      }
+    };
+
+    fetchGallery();
+  }, [campaignId]);
+
+  // NEW: Image preview effect for gallery upload
+  useEffect(() => {
+    if (!newImageFile) {
+      setNewImagePreview('');
+      return;
+    }
+    const url = URL.createObjectURL(newImageFile);
+    setNewImagePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [newImageFile]);
+
+  // NEW: Handle adding image to gallery
+  const handleAddImageToGallery = async () => {
+    if (!newImageFile || !campaignData || !address) {
+      setSnackbar({ open: true, message: 'Wybierz zdjęcie do dodania', severity: 'error' });
+      return;
+    }
+
+    if (!isOwner) {
+      setSnackbar({ open: true, message: 'Tylko twórca kampanii może dodawać zdjęcia', severity: 'error' });
+      return;
+    }
+
+    try {
+      setUploadingImage(true);
+      
+      const formData = new FormData();
+      formData.append('file', newImageFile);
+      formData.append('creator', address);
+
+      const response = await fetch(`/api/campaigns/${campaignId}/add-image`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        // Add to local gallery state
+        setGallery(prev => [...prev, {
+          imageUrl: result.imageUrl,
+          imageId: result.imageId,
+          filename: result.filename,
+          uploadedAt: new Date()
+        }]);
+
+        setSnackbar({ open: true, message: 'Zdjęcie zostało dodane do galerii!', severity: 'success' });
+        setAddImageOpen(false);
+        setNewImageFile(null);
+        setNewImagePreview('');
+        
+        console.log('✅ Image added to gallery:', result.imageUrl);
+      } else {
+        const errorText = await response.text();
+        setSnackbar({ open: true, message: `Błąd dodawania zdjęcia: ${errorText}`, severity: 'error' });
+      }
+    } catch (error) {
+      console.error('❌ Error adding image:', error);
+      setSnackbar({ open: true, message: 'Błąd dodawania zdjęcia', severity: 'error' });
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
   // Handler functions
   const handleAddUpdate = async () => {
     const trimmed = newUpdateText.trim();
@@ -1208,6 +1309,56 @@ export default function CampaignPage() {
                   color: 'white', fontWeight: 700, fontSize: '0.9rem', px: 2, py: 1, zIndex: 10
                 }}
               />
+            </div>
+
+            {/* NEW: Gallery Section */}
+            <div className="bg-white rounded-md shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-semibold text-[#1F4E79]">Galeria zdjęć</h2>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {gallery.length > 0 ? `${gallery.length} zdjęć` : 'Brak zdjęć w galerii'}
+                  </p>
+                </div>
+                {isOwner && (
+                  <button
+                    onClick={() => setAddImageOpen(true)}
+                    className="px-4 py-2 bg-[#10b981] text-white rounded-lg hover:bg-green-600 transition-colors text-sm font-medium"
+                  >
+                    + Dodaj zdjęcie
+                  </button>
+                )}
+              </div>
+              
+              <div className="px-6 py-4">
+                {galleryLoading ? (
+                  <div className="flex justify-center py-8">
+                    <CircularProgress size={40} sx={{ color: '#10b981' }} />
+                  </div>
+                ) : gallery.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <span className="text-4xl mb-4 block">📸</span>
+                    <p>Brak zdjęć w galerii</p>
+                    {isOwner && (
+                      <p className="text-sm mt-2">Dodaj pierwsze zdjęcie aby pokazać więcej szczegółów kampanii</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {gallery.map((image, idx) => (
+                      <div key={idx} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100">
+                        <Image
+                          src={image.imageUrl}
+                          alt={`Zdjęcie galerii ${idx + 1}`}
+                          fill
+                          className="object-cover hover:scale-105 transition-transform duration-200"
+                          sizes="(max-width: 768px) 50vw, 33vw"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="bg-white rounded-md shadow-sm overflow-hidden">
@@ -1620,6 +1771,104 @@ export default function CampaignPage() {
         <DialogActions>
           <Button onClick={() => setShareOpen(false)} variant="contained">
             Zamknij
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* NEW: Add Image Dialog */}
+      <Dialog 
+        open={addImageOpen} 
+        onClose={() => setAddImageOpen(false)} 
+        maxWidth="sm" 
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <span style={{ fontSize: '1.5rem' }}>📸</span>
+            Dodaj zdjęcie do galerii
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="body2" color="text.secondary">
+              Dodaj zdjęcie które pokaże więcej szczegółów Twojej kampanii
+            </Typography>
+          </Box>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-center w-full">
+              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                  <svg className="w-8 h-8 mb-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                    <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
+                  </svg>
+                  <p className="mb-2 text-sm text-gray-500 font-medium">
+                    <span className="font-semibold">Kliknij aby wybrać</span> lub przeciągnij zdjęcie
+                  </p>
+                  <p className="text-xs text-gray-500">PNG, JPG, WebP (maks. 5MB)</p>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/webp"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    setNewImageFile(file || null);
+                  }}
+                  className="hidden"
+                />
+              </label>
+            </div>
+            
+            {newImagePreview && (
+              <div className="relative">
+                <img 
+                  src={newImagePreview} 
+                  alt="Podgląd nowego zdjęcia" 
+                  className="w-full max-w-md mx-auto h-48 object-cover rounded-xl border-2 border-gray-200 shadow-lg"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewImageFile(null);
+                    setNewImagePreview('');
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = '';
+                    }
+                  }}
+                  className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm transition-colors"
+                >
+                  ✕
+                </button>
+                <div className="mt-2 text-center">
+                  <p className="text-sm text-gray-600 font-medium">
+                    {newImageFile?.name} • {newImageFile && (newImageFile.size / 1024 / 1024).toFixed(1)}MB
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAddImageOpen(false)}>Anuluj</Button>
+          <Button
+            variant="contained"
+            onClick={handleAddImageToGallery}
+            disabled={!newImageFile || uploadingImage}
+            sx={{ 
+              bgcolor: '#10b981', 
+              '&:hover': { bgcolor: '#10b981', transform: 'scale(1.03)', boxShadow: '0 0 18px rgba(16,185,129,0.45)' },
+              transition: 'all .2s ease',
+            }}
+          >
+            {uploadingImage ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <CircularProgress size={20} sx={{ color: 'white' }} />
+                Dodawanie...
+              </Box>
+            ) : (
+              'Dodaj do galerii'
+            )}
           </Button>
         </DialogActions>
       </Dialog>
