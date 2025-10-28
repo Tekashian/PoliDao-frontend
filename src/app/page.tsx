@@ -34,7 +34,6 @@ import {
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 import Hero3D from "../components/Hero3D";
-import VoteCardPage from "../components/VoteCardPage";
 import CampaignCard from "../components/CampaignCard";
 import { useAccount } from 'wagmi';
 import { useGetAllProposals, type Proposal } from '../hooks/usePoliDao';
@@ -682,7 +681,7 @@ export default function HomePage() {
     } catch {}
   };
 
-  const [activeTab, setActiveTab] = useState<"zbiorki" | "glosowania">("glosowania");
+  const [activeTab, setActiveTab] = useState<"zbiorki" | "glosowania">("zbiorki");
   const [campaignFilter, setCampaignFilter] = useState<"all" | "target" | "flexible">("all");
   // NEW: pagination (6 at a time)
   const PAGE_SIZE = 6;
@@ -820,11 +819,6 @@ export default function HomePage() {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header />
       <Hero3D />
-
-      {/* GŁÓWNY HERO BANNER Z INTERAKTYWNYM GŁOSOWANIEM – zawsze obecny */}
-      <div className="relative -mt-[400px] pt-[200px] pb-[100px] flex items-center justify-center px-8">
-        <VoteCardPage proposalsOverride={displayProposals} />
-      </div>
 
       <main className="flex-1">
         {/* KARUZELE - pokazują się tylko gdy są dane */}
