@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -37,9 +37,43 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
   const progress = target > 0 ? Math.min((raised / target) * 100, 100) : 0;
   const remaining = Math.max(target - raised, 0);
 
-  // Remove all image fetching logic - always use placeholder
   const DEFAULT_IMG = '/images/zbiorka.png';
-  const [imgSrc, setImgSrc] = React.useState<string>(DEFAULT_IMG);
+  const [imgSrc, setImgSrc] = useState<string>(DEFAULT_IMG);
+  const [imageLoading, setImageLoading] = useState(true);
+
+  // Fetch campaign image from MongoDB
+  useEffect(() => {
+    const fetchCampaignImage = async () => {
+      try {
+        setImageLoading(true);
+        console.log('🔍 CampaignCard fetching image for ID:', campaign.campaignId);
+        const response = await fetch(`/api/campaigns/${campaign.campaignId}/images`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.imageUrl) {
+            console.log('✅ CampaignCard found image:', data.imageUrl);
+            setImgSrc(data.imageUrl);
+          } else {
+            console.log('⚠️ CampaignCard no imageUrl in response');
+            setImgSrc(DEFAULT_IMG);
+          }
+        } else {
+          console.log('❌ CampaignCard API response not ok:', response.status);
+          setImgSrc(DEFAULT_IMG);
+        }
+      } catch (error) {
+        console.error('❌ CampaignCard error fetching image:', error);
+        setImgSrc(DEFAULT_IMG);
+      } finally {
+        setImageLoading(false);
+      }
+    };
+
+    if (campaign.campaignId) {
+      fetchCampaignImage();
+    }
+  }, [campaign.campaignId]);
 
   return (
     <Link 
@@ -47,15 +81,21 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
       className="block w-full max-w-full bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow"
     >
       <div className="relative w-full h-60">
-        <Image
-          src={imgSrc}
-          alt={metadata?.title || `Kampania #${campaign.campaignId}`}
-          fill
-          style={{ objectFit: 'cover' }}
-          className="rounded-t-xl"
-          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-          onError={() => setImgSrc(DEFAULT_IMG)}
-        />
+        {imageLoading ? (
+          <div className="w-full h-full bg-gray-200 animate-pulse flex items-center justify-center">
+            <span className="text-gray-500 text-sm">Ładowanie...</span>
+          </div>
+        ) : (
+          <Image
+            src={imgSrc}
+            alt={metadata?.title || `Kampania #${campaign.campaignId}`}
+            fill
+            style={{ objectFit: 'cover' }}
+            className="rounded-t-xl"
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            onError={() => setImgSrc(DEFAULT_IMG)}
+          />
+        )}
       </div>
 
       <div className="p-4">

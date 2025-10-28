@@ -144,6 +144,7 @@ export default function CampaignPage() {
   const { address, isConnected } = useAppKitAccount();
   const { chainId } = useAppKitNetwork();
   
+  // WSZYSTKIE useState muszą być na górze - stała kolejność
   const [campaignData, setCampaignData] = useState<FundraiserData | null>(null);
   const [donateOpen, setDonateOpen] = useState(false);
   const [donateAmount, setDonateAmount] = useState("");
@@ -152,7 +153,7 @@ export default function CampaignPage() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsApproval, setNeedsApproval] = useState(false);
-  const [pendingDonationAmount, setPendingDonationAmount] = useState<bigint | null>(null); // <<< zapamiętana kwota do donate
+  const [pendingDonationAmount, setPendingDonationAmount] = useState<bigint | null>(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'info' });
   const [donations, setDonations] = useState<DonationLog[]>([]);
   const [uniqueDonorsCount, setUniqueDonorsCount] = useState(0);
@@ -160,15 +161,17 @@ export default function CampaignPage() {
   const [newUpdateText, setNewUpdateText] = useState<string>('');
   const [isOwner, setIsOwner] = useState(false);
   const [lastRefreshTime, setLastRefreshTime] = useState(Date.now());
-  // NEW: donors list (aggregated per donor from Analytics)
   const [donors, setDonors] = useState<{ address: string; amount: number }[]>([]);
   const [donorsLimit] = useState(50);
+  const [campaignImage, setCampaignImage] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(true);
 
+  // WSZYSTKIE stałe i zmienne pochodne
   const campaignId = params.id as string;
   const idNum = Number(campaignId);
   const invalid = !campaignId || Number.isNaN(idNum) || idNum < 0;
 
-  // Probe both id and id-1 to handle 1-based vs 0-based IDs using Router ABI
+  // WSZYSTKIE useMemo muszą być w stałej kolejności
   const calls = useMemo(() => {
     if (invalid) return [];
     const primary = {
@@ -188,12 +191,13 @@ export default function CampaignPage() {
     return alt ? [primary, alt] : [primary];
   }, [idNum, invalid]);
 
+  // PRZENIESIONE: useReadContracts PRZED useMemo który używa data
   const { data, isLoading, error: contractError } = useReadContracts({
     contracts: calls,
     query: { enabled: calls.length > 0 }
   });
 
-  // Choose first valid response (creator != zero) and normalize
+  // TERAZ możemy bezpiecznie użyć data w useMemo
   const parsed = useMemo(() => {
     if (!data || !Array.isArray(data)) return null;
     for (let i = 0; i < data.length; i++) {
@@ -228,18 +232,18 @@ export default function CampaignPage() {
     return null;
   }, [data, idNum]);
 
-  // Dodatkowo pobierz progres z Routera dla realId (raised, donorsCount, timeLeft itp.)
+  // Choose first valid response (creator != zero) and normalize
   const selectedFundraiserId = parsed ? parsed.id : null;
+  const selectedIdKey = selectedFundraiserId ?? -1;
 
-  // ZAMIANA: zamiast wagmi useReadContract dla progresu używamy helpera z ethers
-  // const [progress, setProgress] = useState<RouterFundraiserProgress | null>(null);
-  // useEffect(() => { ...ethers JsonRpcProvider fetch... }, [selectedFundraiserId, lastRefreshTime])
+  // PRZENIEŚ chainKey i decimalsKey TUTAJ - przed wszystkimi useReadContract
+  const chainKey = useMemo(() => Number(chainId ?? 0), [chainId]);
 
   // Progres pobieramy WYŁĄCZNIE z Routera via wagmi
   const { 
     data: progressTuple, 
-    error: progressError,           // NEW
-    isLoading: isProgressLoading,   // NEW (for telemetry; we won't gate on it)
+    error: progressError,
+    isLoading: isProgressLoading,
     refetch: refetchProgress 
   } = useReadContract({
     address: ROUTER_ADDRESS,
@@ -250,72 +254,6 @@ export default function CampaignPage() {
     query: { enabled: selectedFundraiserId !== null },
   });
 
-  // Set up campaign data z Router.getFundraiserDetails + (optional) Router.getFundraiserProgress
-  useEffect(() => {
-    if (invalid) {
-      setError("Nieprawidłowy ID kampanii");
-      setLoading(false);
-      return;
-    }
-    if (isLoading) { // <- only details call
-      setLoading(true);
-      return;
-    }
-    if (contractError) {
-      setError(`Błąd pobierania danych kampanii: ${contractError.message}`);
-      setLoading(false);
-      return;
-    }
-    if (!parsed) {
-      setError("Nie udało się znaleźć zbiórki dla podanego ID");
-      setLoading(false);
-      return;
-    }
-
-    // Do NOT block on progress; use it if present, otherwise fallback to details
-    if (progressError) {
-      console.warn('getFundraiserProgress failed:', progressError);
-    }
-
-    const p = progressTuple ? parseProgressTuple(progressTuple as any) : null;
-    const raised = (p?.raised ?? parsed.raisedAmount ?? 0n) as bigint;
-    const goal = (p?.goal ?? parsed.goalAmount ?? 0n) as bigint;
-    const donors = (p?.donorsCount ?? 0n) as bigint;
-
-    setCampaignData({
-      id: parsed.id.toString(),
-      creator: parsed.creator,
-      token: parsed.token,
-      target: goal,
-      raised,
-      endTime: parsed.endDate,
-      isFlexible: parsed.isFlexible,
-      closureInitiated: false,
-      reclaimDeadline: 0n,
-      fundsWithdrawn: parsed.status === 2,
-      title: parsed.title,
-      description: parsed.description,
-    });
-    setUniqueDonorsCount(Number(donors));
-    setError(null);
-    setLoading(false);
-  }, [invalid, isLoading, contractError, parsed, progressTuple, progressError]);
-
-  // Aktualizuj znacznik odświeżenia, gdy przyjdzie nowy progres
-  useEffect(() => {
-    if (progressTuple) setLastRefreshTime(Date.now());
-  }, [progressTuple]);
-
-  // Check ownership
-  useEffect(() => {
-    if (!campaignData || !address) {
-      setIsOwner(false);
-      return;
-    }
-    setIsOwner(campaignData.creator.toLowerCase() === address.toLowerCase());
-  }, [campaignData, address]);
-
-  // >>> Odczyt metadanych tokena (symbol/decimals)
   const {
     data: tokenSymbol,
   } = useReadContract({
@@ -336,46 +274,12 @@ export default function CampaignPage() {
     query: { enabled: !!campaignData?.token },
   });
 
-  // Stabilne klucze do dependencies
-  const selectedIdKey = selectedFundraiserId ?? -1;
-  const chainKey = useMemo(() => Number(chainId ?? 0), [chainId]);
+  // TERAZ decimalsKey może być zdefiniowany TUTAJ
   const decimalsKey = useMemo(() => Number(tokenDecimals ?? 6), [tokenDecimals]);
+  
   // Etherscan base (Sepolia)
   const ETHERSCAN_BASE = 'https://sepolia.etherscan.io';
 
-  // NEW: read single-donation limit (prefer security.effectiveDonationLimit)
-  // const { data: donationLimitRaw } = useReadContract({
-  //   address: ROUTER_ADDRESS,
-  //   abi: poliDaoRouterAbi,
-  //   functionName: 'currentDonationLimit',
-  //   chainId: sepolia.id,
-  // });
-
-  // const { data: securityInfo } = useReadContract({
-  //   address: ROUTER_ADDRESS,
-  //   abi: poliDaoRouterAbi,
-  //   functionName: 'getSecurityInfo',
-  //   chainId: sepolia.id,
-  // });
-
-  // const donationLimitBaseUnits = useMemo(() => {
-  //   if (Array.isArray(securityInfo) && securityInfo[0] === true && typeof securityInfo[1] === 'bigint') {
-  //     return securityInfo[1] as bigint;
-  //   }
-  //   if (typeof donationLimitRaw === 'bigint') return donationLimitRaw as bigint;
-  //   return null;
-  // }, [securityInfo, donationLimitRaw]);
-
-  // const donationLimitHuman = useMemo(() => {
-  //   if (!donationLimitBaseUnits) return null;
-  //   try {
-  //     return Number(formatUnits(donationLimitBaseUnits, decimalsKey));
-  //   } catch {
-  //     return null;
-  //   }
-  // }, [donationLimitBaseUnits, decimalsKey]);
-
-  // --- Core address from Router, then spender from Core ---
   const { data: coreAddress } = useReadContract({
     address: ROUTER_ADDRESS,
     abi: poliDaoRouterAbi,
@@ -391,7 +295,6 @@ export default function CampaignPage() {
     query: { enabled: !!coreAddress },
   });
 
-  // FIX: analyticsModule is exposed by Core, not Router
   const { data: analyticsAddress } = useReadContract({
     address: coreAddress as `0x${string}` | undefined,
     abi: poliDaoCoreAbi,
@@ -400,17 +303,6 @@ export default function CampaignPage() {
     query: { enabled: !!coreAddress },
   });
 
-  // NEW: prefer fixed analytics address, fallback to Core.analyticsModule
-  const analyticsResolved = useMemo(() => {
-    const zero = ZERO_ADDR.toLowerCase();
-    const fixed = (ANALYTICS_ADDRESS as string | undefined)?.toLowerCase?.();
-    const fromCore = (analyticsAddress as string | undefined)?.toLowerCase?.();
-    if (fixed && fixed !== zero) return ANALYTICS_ADDRESS as `0x${string}`;
-    if (fromCore && fromCore !== zero) return analyticsAddress as `0x${string}`;
-    return undefined;
-  }, [analyticsAddress]);
-
-  // NEW: resolve Storage address (Core -> Storage)
   const { data: storageAddress } = useReadContract({
     address: coreAddress as `0x${string}` | undefined,
     abi: poliDaoCoreAbi,
@@ -419,7 +311,6 @@ export default function CampaignPage() {
     query: { enabled: !!coreAddress },
   });
 
-  // OLD: Updates from Core (keep as fallback)
   const { data: updatesModuleAddress } = useReadContract({
     address: coreAddress as `0x${string}` | undefined,
     abi: poliDaoCoreAbi,
@@ -428,7 +319,6 @@ export default function CampaignPage() {
     query: { enabled: !!coreAddress },
   });
 
-  // NEW: Updates from Storage.modules(UPDATES_KEY) — preferred
   const { data: updatesAddrFromStorage } = useReadContract({
     address: storageAddress as `0x${string}` | undefined,
     abi: poliDaoStorageAbi,
@@ -438,7 +328,16 @@ export default function CampaignPage() {
     query: { enabled: !!storageAddress },
   });
 
-  // NEW: pick Updates module address preferring Storage mapping, fallback to Core
+  // WSZYSTKIE useMemo dla derived values
+  const analyticsResolved = useMemo(() => {
+    const zero = ZERO_ADDR.toLowerCase();
+    const fixed = (ANALYTICS_ADDRESS as string | undefined)?.toLowerCase?.();
+    const fromCore = (analyticsAddress as string | undefined)?.toLowerCase?.();
+    if (fixed && fixed !== zero) return ANALYTICS_ADDRESS as `0x${string}`;
+    if (fromCore && fromCore !== zero) return analyticsAddress as `0x${string}`;
+    return undefined;
+  }, [analyticsAddress]);
+
   const updatesResolved = useMemo(() => {
     const zero = ZERO_ADDR.toLowerCase();
     const fromStorage = (updatesAddrFromStorage as string | undefined)?.toLowerCase?.();
@@ -450,6 +349,7 @@ export default function CampaignPage() {
     return chosen;
   }, [updatesAddrFromStorage, updatesModuleAddress]);
 
+  // Pozostałe useReadContract calls
   const { data: donorsCountData, refetch: refetchDonorsCount } = useReadContract({
     address: analyticsResolved,
     abi: poliDaoAnalyticsAbi,
@@ -468,15 +368,196 @@ export default function CampaignPage() {
     query: { enabled: !!analyticsResolved && selectedFundraiserId !== null },
   });
 
-  // Unified unique donors count: Analytics (count > 0) -> Analytics total -> donors list -> events -> Analytics (0)
+  const { data: userBalance, refetch: refetchUserBalance } = useReadContract({
+    address: campaignData?.token,
+    abi: ERC20_ABI,
+    functionName: "balanceOf",
+    args: [address || "0x0000000000000000000000000000000000000000"],
+    chainId: sepolia.id,
+    query: { enabled: !!campaignData?.token && !!address },
+  });
+
+  // useWriteContract hooks
+  const { 
+    writeContract, 
+    isPending: isDonating, 
+    data: donateHash 
+  } = useWriteContract();
+  
+  const { 
+    writeContract: writeApproval, 
+    isPending: isApproving,
+    data: approvalHash 
+  } = useWriteContract();
+
+  const {
+	writeContract: writeUpdate,
+	isPending: isPostingUpdate,
+	data: updateHash
+  } = useWriteContract();
+
+  // useWaitForTransactionReceipt hooks
+  const { 
+    isLoading: isDonationConfirming, 
+    isSuccess: isDonationSuccess 
+  } = useWaitForTransactionReceipt({
+    hash: donateHash,
+  });
+
+  const { 
+    isLoading: isApprovalConfirming, 
+    isSuccess: isApprovalSuccess 
+  } = useWaitForTransactionReceipt({
+    hash: approvalHash,
+  });
+
+  const {
+    isLoading: isUpdateConfirming,
+    isSuccess: isUpdateSuccess
+  } = useWaitForTransactionReceipt({
+    hash: updateHash,
+  });
+
+  // Memoized values dla spender logic
+  const spenderCandidates = React.useMemo(() => {
+    const list: string[] = [];
+    if (coreSpender && String(coreSpender).toLowerCase() !== ZERO_ADDR.toLowerCase()) list.push(String(coreSpender));
+    if (coreAddress && String(coreAddress).toLowerCase() !== ZERO_ADDR.toLowerCase()) list.push(String(coreAddress));
+    return Array.from(new Set(list.map(x => x.toLowerCase()))) as `0x${string}`[];
+  }, [coreSpender, coreAddress]);
+
+  const allowanceCalls = React.useMemo(() => {
+    if (!campaignData?.token || !address || spenderCandidates.length === 0) return [];
+    return spenderCandidates.map((sp) => ({
+      address: campaignData.token as `0x${string}`,
+      abi: ERC20_ABI,
+      functionName: 'allowance' as const,
+      args: [address as `0x${string}`, sp],
+      chainId: sepolia.id,
+    }));
+  }, [campaignData?.token, address, spenderCandidates]);
+
+  const { data: allowancesMulti, refetch: refetchAllowancesMulti } = useReadContracts({
+    contracts: allowanceCalls,
+    query: { enabled: allowanceCalls.length > 0 },
+  });
+
+  const allowanceBySpender = React.useMemo(() => {
+    const map = new Map<string, bigint>();
+    if (!allowancesMulti) return map;
+    spenderCandidates.forEach((sp, i) => {
+      const val = (allowancesMulti[i] as any)?.result as bigint | undefined;
+      map.set(sp.toLowerCase(), typeof val === 'bigint' ? val : 0n);
+    });
+    return map;
+  }, [allowancesMulti, spenderCandidates]);
+
+  const bestSpenderWithAllowance = React.useCallback((minAmount: bigint) => {
+    for (const sp of spenderCandidates) {
+      const a = allowanceBySpender.get(sp.toLowerCase()) ?? 0n;
+      if (a >= minAmount) return sp;
+    }
+    return null as `0x${string}` | null;
+  }, [spenderCandidates, allowanceBySpender]);
+
+  const firstSpenderToApprove = React.useMemo(() => {
+    return (spenderCandidates[0] ?? null) as `0x${string}` | null;
+  }, [spenderCandidates]);
+
+  // KPIs calculation - MUSI być przed early returns
+  const { avgDonation, maxDonation, series14 } = useMemo(() => {
+    const total = donations.reduce((s, d) => s + (d.amount || 0), 0);
+    const count = donations.length;
+    const avg = count > 0 ? total / count : 0;
+    const max = donations.reduce((m, d) => Math.max(m, d.amount || 0), 0);
+    const days = 14;
+    const oneDay = 24 * 60 * 60 * 1000;
+    const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+    const buckets = new Array(days).fill(0);
+    for (const d of donations) {
+      const dt0 = new Date(d.timestamp); dt0.setHours(0, 0, 0, 0);
+      const diffDays = Math.floor((today0.getTime() - dt0.getTime()) / oneDay);
+      if (diffDays >= 0 && diffDays < days) {
+        const idx = days - 1 - diffDays;
+        buckets[idx] += d.amount || 0;
+      }
+    }
+    return { avgDonation: avg, maxDonation: max, series14: buckets };
+  }, [donations]);
+
+  // WSZYSTKIE useEffect w stałej kolejności - bez warunków na początku
+  
+  // 1. Set up campaign data
+  useEffect(() => {
+    if (invalid) {
+      setError("Nieprawidłowy ID kampanii");
+      setLoading(false);
+      return;
+    }
+    if (isLoading) {
+      setLoading(true);
+      return;
+    }
+    if (contractError) {
+      setError(`Błąd pobierania danych kampanii: ${contractError.message}`);
+      setLoading(false);
+      return;
+    }
+    if (!parsed) {
+      setError("Nie udało się znaleźć zbiórki dla podanego ID");
+      setLoading(false);
+      return;
+    }
+
+    if (progressError) {
+      console.warn('getFundraiserProgress failed:', progressError);
+    }
+
+    const p = progressTuple ? parseProgressTuple(progressTuple as any) : null;
+    const raised = (p?.raised ?? parsed.raisedAmount ?? 0n) as bigint;
+    const goal = (p?.goal ?? parsed.goalAmount ?? 0n) as bigint;
+    const donorsCount = (p?.donorsCount ?? 0n) as bigint;
+
+    setCampaignData({
+      id: parsed.id.toString(),
+      creator: parsed.creator,
+      token: parsed.token,
+      target: goal,
+      raised,
+      endTime: parsed.endDate,
+      isFlexible: parsed.isFlexible,
+      closureInitiated: false,
+      reclaimDeadline: 0n,
+      fundsWithdrawn: parsed.status === 2,
+      title: parsed.title,
+      description: parsed.description,
+    });
+    setUniqueDonorsCount(Number(donorsCount));
+    setError(null);
+    setLoading(false);
+  }, [invalid, isLoading, contractError, parsed, progressTuple, progressError]);
+
+  // 2. Update refresh time
+  useEffect(() => {
+    if (progressTuple) setLastRefreshTime(Date.now());
+  }, [progressTuple]);
+
+  // 3. Check ownership
+  useEffect(() => {
+    if (!campaignData || !address) {
+      setIsOwner(false);
+      return;
+    }
+    setIsOwner(campaignData.creator.toLowerCase() === address.toLowerCase());
+  }, [campaignData, address]);
+
+  // 4. Unified unique donors count
   useEffect(() => {
     let nextCount: number | undefined;
 
-    // 1) Prefer Analytics.getDonorsCount if > 0
     if (typeof donorsCountData === 'bigint' && donorsCountData > 0n) {
       nextCount = Number(donorsCountData);
     } else {
-      // 2) Try "total" from Analytics.getDonors() if > 0
       if (donorsData) {
         const tuple = donorsData as any;
         const totalFromTuple = tuple?.total ?? tuple?.[2];
@@ -484,17 +565,14 @@ export default function CampaignPage() {
           nextCount = Number(totalFromTuple);
         }
       }
-      // 3) Use current donors list (already aggregated/unique)
       if (nextCount === undefined && Array.isArray(donors) && donors.length > 0) {
         const uniq = new Set(donors.map(d => d.address.toLowerCase()));
         nextCount = uniq.size;
       }
-      // 4) Derive from Core events if needed
       if (nextCount === undefined && Array.isArray(donations) && donations.length > 0) {
         const uniq = new Set(donations.map(d => d.donor.toLowerCase()));
         nextCount = uniq.size;
       }
-      // 5) If Analytics returned 0 and nothing else available, keep it
       if (nextCount === undefined && typeof donorsCountData === 'bigint') {
         nextCount = Number(donorsCountData);
       }
@@ -505,10 +583,9 @@ export default function CampaignPage() {
     }
   }, [donorsCountData, donorsData, donors, donations]);
 
-  // Fallback: build donors list from Core DonationMade events (aggregate and sort desc)
+  // 5. Fallback donors list
   useEffect(() => {
     if (!donations || donations.length === 0) return;
-    // if Analytics already populated a non-empty list, keep it
     if (Array.isArray(donors) && donors.length > 0) return;
     const totals = new Map<string, number>();
     for (const d of donations) {
@@ -521,39 +598,13 @@ export default function CampaignPage() {
     setDonors(aggregated);
   }, [donations, donors.length]);
 
-  // KPIs and 14-day activity series (for flexible campaigns) – must be before any early return
-  const { avgDonation, maxDonation, series14 } = useMemo(() => {
-    const total = donations.reduce((s, d) => s + (d.amount || 0), 0);
-    const count = donations.length;
-    const avg = count > 0 ? total / count : 0;
-    const max = donations.reduce((m, d) => Math.max(m, d.amount || 0), 0);
-    // Build last 14 days series (sum per day)
-    const days = 14;
-    const oneDay = 24 * 60 * 60 * 1000;
-    const today0 = new Date(); today0.setHours(0, 0, 0, 0);
-    const buckets = new Array(days).fill(0);
-    for (const d of donations) {
-      const dt0 = new Date(d.timestamp); dt0.setHours(0, 0, 0, 0);
-      const diffDays = Math.floor((today0.getTime() - dt0.getTime()) / oneDay);
-      if (diffDays >= 0 && diffDays < days) {
-        // Put older days to the left by reversing index
-        const idx = days - 1 - diffDays;
-        buckets[idx] += d.amount || 0;
-      }
-    }
-    return { avgDonation: avg, maxDonation: max, series14: buckets };
-  }, [donations]);
-
-  // Historia wpłat z eventów (Core first, Router fallback)
+  // 6. Fetch donation logs
   useEffect(() => {
     if (selectedIdKey < 0) return;
 
-    const rpcUrl =
-      process.env.NEXT_PUBLIC_RPC_URL ||
-      process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL;
-
+    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL;
     if (!rpcUrl) {
-      console.warn('Brak RPC URL. Ustaw NEXT_PUBLIC_RPC_URL lub NEXT_PUBLIC_SEPOLIA_RPC_URL w .env');
+      console.warn('Brak RPC URL');
       setDonations([]);
       return;
     }
@@ -655,167 +706,13 @@ export default function CampaignPage() {
     };
   }, [selectedIdKey, chainKey, decimalsKey, coreAddress]);
 
-  // Contract write hooks
-  const { 
-    writeContract, 
-    isPending: isDonating, 
-    data: donateHash 
-  } = useWriteContract();
-  
-  const { 
-    writeContract: writeApproval, 
-    isPending: isApproving,
-    data: approvalHash 
-  } = useWriteContract();
-
-  // NEW: writer for posting updates
-  const {
-	writeContract: writeUpdate,
-	isPending: isPostingUpdate,
-	data: updateHash
-} = useWriteContract();
-
-  // Wait for transaction confirmations
-  const { 
-    isLoading: isDonationConfirming, 
-    isSuccess: isDonationSuccess 
-  } = useWaitForTransactionReceipt({
-    hash: donateHash,
-  });
-
-  const { 
-    isLoading: isApprovalConfirming, 
-    isSuccess: isApprovalSuccess 
-  } = useWaitForTransactionReceipt({
-    hash: approvalHash,
-  });
-
-  // NEW: wait for update tx
-  const {
-    isLoading: isUpdateConfirming,
-    isSuccess: isUpdateSuccess
-  } = useWaitForTransactionReceipt({
-    hash: updateHash,
-  });
-
-  // Check user's token balance – unchanged
-  const { data: userBalance, refetch: refetchUserBalance } = useReadContract({
-    address: campaignData?.token,
-    abi: ERC20_ABI,
-    functionName: "balanceOf",
-    args: [address || "0x0000000000000000000000000000000000000000"],
-    chainId: sepolia.id,
-    query: { enabled: !!campaignData?.token && !!address },
-  });
-
-  // NEW: resolve spender candidates (ONLY Core.spenderAddress -> Core), never Router
-  const spenderCandidates = React.useMemo(() => {
-    const list: string[] = [];
-    if (coreSpender && String(coreSpender).toLowerCase() !== ZERO_ADDR.toLowerCase()) list.push(String(coreSpender));
-    if (coreAddress && String(coreAddress).toLowerCase() !== ZERO_ADDR.toLowerCase()) list.push(String(coreAddress));
-    return Array.from(new Set(list.map(x => x.toLowerCase()))) as `0x${string}`[];
-  }, [coreSpender, coreAddress]);
-
-  const allowanceCalls = React.useMemo(() => {
-    if (!campaignData?.token || !address || spenderCandidates.length === 0) return [];
-    return spenderCandidates.map((sp) => ({
-      address: campaignData.token as `0x${string}`,
-      abi: ERC20_ABI,
-      functionName: 'allowance' as const,
-      args: [address as `0x${string}`, sp],
-      chainId: sepolia.id,
-    }));
-  }, [campaignData?.token, address, spenderCandidates]);
-
-  const { data: allowancesMulti, refetch: refetchAllowancesMulti } = useReadContracts({
-    contracts: allowanceCalls,
-    query: { enabled: allowanceCalls.length > 0 },
-  });
-
-  const allowanceBySpender = React.useMemo(() => {
-    const map = new Map<string, bigint>();
-    if (!allowancesMulti) return map;
-    spenderCandidates.forEach((sp, i) => {
-      const val = (allowancesMulti[i] as any)?.result as bigint | undefined;
-      map.set(sp.toLowerCase(), typeof val === 'bigint' ? val : 0n);
-    });
-    return map;
-  }, [allowancesMulti, spenderCandidates]);
-
-  const bestSpenderWithAllowance = React.useCallback((minAmount: bigint) => {
-    for (const sp of spenderCandidates) {
-      const a = allowanceBySpender.get(sp.toLowerCase()) ?? 0n;
-      if (a >= minAmount) return sp;
-    }
-    return null as `0x${string}` | null;
-  }, [spenderCandidates, allowanceBySpender]);
-
-  const firstSpenderToApprove = React.useMemo(() => {
-    return (spenderCandidates[0] ?? null) as `0x${string}` | null;
-  }, [spenderCandidates]);
-
-  // Handle updates
-  // REPLACE Core.postUpdate with Router.routeModule(UPDATES_KEY, data)
-  const handleAddUpdate = async () => {
-    const trimmed = newUpdateText.trim();
-    if (!trimmed) return;
-    if (!isConnected) {
-      setSnackbar({ open: true, message: 'Najpierw połącz portfel!', severity: 'error' });
-      return;
-    }
-    if (!isOwner) {
-      setSnackbar({ open: true, message: 'Tylko twórca kampanii może dodawać aktualności.', severity: 'error' });
-      return;
-    }
-    if (chainId !== sepolia.id) {
-      setSnackbar({ open: true, message: 'Przełącz sieć na Sepolia.', severity: 'error' });
-      return;
-    }
-    try {
-      // Optimistic UI
-      setUpdates(prev => [{ content: trimmed, timestamp: Date.now() }, ...prev ]);
-      setNewUpdateText('');
-      setSnackbar({ open: true, message: 'Wysyłanie aktualności...', severity: 'info' });
-
-      // Encode Updates.postUpdate(uint256,address,string)
-      const uiface = new Interface(['function postUpdate(uint256,address,string)']);
-      const calldata = uiface.encodeFunctionData('postUpdate', [
-        BigInt(campaignData!.id),
-        address as `0x${string}`,
-        trimmed
-      ]) as `0x${string}`;
-
-      await writeUpdate({
-        address: ROUTER_ADDRESS,
-        abi: poliDaoRouterAbi,
-        functionName: 'routeModule',
-        args: [UPDATES_KEY, calldata],
-        chainId: sepolia.id,
-      });
-    } catch (err: any) {
-      setSnackbar({ open: true, message: `Błąd zapisu aktualności: ${err?.message || 'nieznany błąd'}`, severity: 'error' });
-    }
-  };
-
-  // NEW: react on confirmed update – notify and let poller refresh list
-  useEffect(() => {
-    if (isUpdateSuccess) {
-      setSnackbar({ open: true, message: 'Aktualność zapisana na blockchainie!', severity: 'success' });
-      // optional visual ping
-      setLastRefreshTime(Date.now());
-    }
-  }, [isUpdateSuccess]);
-
-  // NEW: Updates reader — primary via Updates.UpdatePosted, fallback via Storage change events
+  // 8. Fetch updates
   useEffect(() => {
     if (selectedIdKey < 0) return;
 
-    const rpcUrl =
-      process.env.NEXT_PUBLIC_RPC_URL ||
-      process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL;
-
+    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL;
     if (!rpcUrl) {
-      console.warn('Brak RPC URL. Ustaw NEXT_PUBLIC_RPC_URL lub NEXT_PUBLIC_SEPOLIA_RPC_URL w .env');
+      console.warn('Brak RPC URL');
       return;
     }
 
@@ -944,7 +841,115 @@ export default function CampaignPage() {
     };
   }, [selectedIdKey, updatesResolved, storageAddress, chainKey]);
 
-  // ADD: donation handler inside component
+  // 9. Auto-donate after approve
+  useEffect(() => {
+    const doDonateAfterApprove = async () => {
+      if (!isApprovalSuccess) return;
+      if (!campaignData || pendingDonationAmount === null) return;
+      try {
+        await refetchAllowancesMulti?.();
+        await writeContract({
+          address: ROUTER_ADDRESS,
+          abi: poliDaoRouterAbi,
+          functionName: "donate",
+          args: [BigInt(campaignData.id), pendingDonationAmount],
+          chainId: sepolia.id,
+        });
+        setNeedsApproval(false);
+      } catch (err: any) {
+        console.error('Donate after approve failed:', err);
+        setSnackbar({ open: true, message: `Donate nie powiódł się: ${err?.message || 'nieznany błąd'}`, severity: 'error' });
+      } finally {
+        setPendingDonationAmount(null);
+      }
+    };
+    doDonateAfterApprove();
+  }, [isApprovalSuccess, campaignData, pendingDonationAmount, refetchAllowancesMulti, writeContract]);
+
+  // 10. Refresh after donation
+  useEffect(() => {
+    if (isDonationSuccess) {
+      setSnackbar({ open: true, message: 'Wpłata została potwierdzona! Odświeżanie danych...', severity: 'success' });
+      setTimeout(() => {
+        setDonateOpen(false);
+        setDonateAmount("");
+        setNeedsApproval(false);
+        refetchProgress();
+        refetchDonorsCount?.();
+        refetchDonors?.();
+      }, 1200);
+    }
+  }, [isDonationSuccess, refetchProgress, refetchDonorsCount, refetchDonors]);
+
+  // 11. Fetch campaign image - ZAWSZE wywoływany
+  useEffect(() => {
+    if (!campaignId) return;
+    
+    const fetchCampaignImage = async () => {
+      try {
+        setImageLoading(true);
+        const response = await fetch(`/api/campaigns/${campaignId}/images`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          setCampaignImage(data.imageUrl);
+        } else {
+          console.warn('No image found for campaign:', campaignId);
+          setCampaignImage(null);
+        }
+      } catch (error) {
+        console.error('Error fetching campaign image:', error);
+        setCampaignImage(null);
+      } finally {
+        setImageLoading(false);
+      }
+    };
+
+    fetchCampaignImage();
+  }, [campaignId]);
+
+  // Handler functions
+  const handleAddUpdate = async () => {
+    const trimmed = newUpdateText.trim();
+    if (!trimmed) return;
+    if (!isConnected) {
+      setSnackbar({ open: true, message: 'Najpierw połącz portfel!', severity: 'error' });
+      return;
+    }
+    if (!isOwner) {
+      setSnackbar({ open: true, message: 'Tylko twórca kampanii może dodawać aktualności.', severity: 'error' });
+      return;
+    }
+    if (chainId !== sepolia.id) {
+      setSnackbar({ open: true, message: 'Przełącz sieć na Sepolia.', severity: 'error' });
+      return;
+    }
+    try {
+      // Optimistic UI
+      setUpdates(prev => [{ content: trimmed, timestamp: Date.now() }, ...prev ]);
+      setNewUpdateText('');
+      setSnackbar({ open: true, message: 'Wysyłanie aktualności...', severity: 'info' });
+
+      // Encode Updates.postUpdate(uint256,address,string)
+      const uiface = new Interface(['function postUpdate(uint256,address,string)']);
+      const calldata = uiface.encodeFunctionData('postUpdate', [
+        BigInt(campaignData!.id),
+        address as `0x${string}`,
+        trimmed
+      ]) as `0x${string}`;
+
+      await writeUpdate({
+        address: ROUTER_ADDRESS,
+        abi: poliDaoRouterAbi,
+        functionName: 'routeModule',
+        args: [UPDATES_KEY, calldata],
+        chainId: sepolia.id,
+      });
+    } catch (err: any) {
+      setSnackbar({ open: true, message: `Błąd zapisu aktualności: ${err?.message || 'nieznany błąd'}`, severity: 'error' });
+    }
+  };
+
   const handleDonate = async () => {
     if (!isConnected || !campaignData) {
       setSnackbar({ open: true, message: 'Najpierw połącz portfel!', severity: 'error' });
@@ -1008,46 +1013,6 @@ export default function CampaignPage() {
       setSnackbar({ open: true, message: `Wystąpił błąd: ${error.message || 'Nieznany błąd'}`, severity: 'error' });
     }
   };
-
-  // ADD: auto-donate after approve confirms (inside component)
-  useEffect(() => {
-    const doDonateAfterApprove = async () => {
-      if (!isApprovalSuccess) return;
-      if (!campaignData || pendingDonationAmount === null) return;
-      try {
-        await refetchAllowancesMulti?.();
-        await writeContract({
-          address: ROUTER_ADDRESS,
-          abi: poliDaoRouterAbi,
-          functionName: "donate",
-          args: [BigInt(campaignData.id), pendingDonationAmount],
-          chainId: sepolia.id,
-        });
-        setNeedsApproval(false);
-      } catch (err: any) {
-        console.error('Donate after approve failed:', err);
-        setSnackbar({ open: true, message: `Donate nie powiódł się: ${err?.message || 'nieznany błąd'}`, severity: 'error' });
-      } finally {
-        setPendingDonationAmount(null);
-      }
-    };
-    doDonateAfterApprove();
-  }, [isApprovalSuccess, campaignData, pendingDonationAmount, refetchAllowancesMulti, writeContract]);
-
-  // ADD: refresh after donation confirms (inside component)
-  useEffect(() => {
-    if (isDonationSuccess) {
-      setSnackbar({ open: true, message: 'Wpłata została potwierdzona! Odświeżanie danych...', severity: 'success' });
-      setTimeout(() => {
-        setDonateOpen(false);
-        setDonateAmount("");
-        setNeedsApproval(false);
-        refetchProgress();
-        refetchDonorsCount?.();
-        refetchDonors?.();
-      }, 1200);
-    }
-  }, [isDonationSuccess, refetchProgress, refetchDonorsCount, refetchDonors]);
 
   // Show loading state – only core read
   if (loading || isLoading) {
@@ -1178,6 +1143,8 @@ export default function CampaignPage() {
     ? campaignData.description
     : "Decentralizowana zbiórka na platformie PoliDAO";
 
+  const displayImage = campaignImage || PLACEHOLDER_IMAGE;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       <Header />
@@ -1186,7 +1153,7 @@ export default function CampaignPage() {
       <div className="relative w-full h-[600px] -mt-56">
         <div className="absolute inset-0 -z-10">
           <Image
-            src={PLACEHOLDER_IMAGE}
+            src={displayImage}
             alt="Tło rozmyte kampanii"
             fill
             className="object-cover object-top w-full h-full blur-lg scale-110"
@@ -1220,13 +1187,19 @@ export default function CampaignPage() {
           {/* Left column */}
           <div className="space-y-6">
             <div className="w-full relative rounded-md overflow-hidden shadow-sm h-[600px]">
-              <Image
-                src={PLACEHOLDER_IMAGE}
-                alt={displayTitle}
-                fill
-                className="object-cover object-center w-full h-full"
-                priority
-              />
+              {imageLoading ? (
+                <div className="w-full h-full bg-gray-200 animate-pulse flex items-center justify-center">
+                  <span className="text-gray-500">Ładowanie zdjęcia...</span>
+                </div>
+              ) : (
+                <Image
+                  src={displayImage}
+                  alt={displayTitle}
+                  fill
+                  className="object-cover object-center w-full h-full"
+                  priority
+                />
+              )}
               <Chip
                 label={isActive ? "AKTYWNA!" : "ZAKOŃCZONA"}
                 sx={{ 
@@ -1579,7 +1552,7 @@ export default function CampaignPage() {
           {needsApproval && (
             <Alert severity="warning" sx={{ mb: 2 }}>
               Musisz najpierw zatwierdzić wydatkowanie tokenów {displayTokenSymbol}.
-            </Alert>
+                       </Alert>
           )}
           
           {!campaignData.isFlexible && (
@@ -1618,7 +1591,6 @@ export default function CampaignPage() {
         <DialogContent>
           <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
             <TextField
-             
               fullWidth              value={typeof window !== 'undefined' ? window.location.href : ''}
               InputProps={{ readOnly: true }}
               size="small"

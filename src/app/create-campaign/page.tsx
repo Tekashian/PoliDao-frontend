@@ -8,6 +8,7 @@ import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { ROUTER_ADDRESS, DEFAULT_TOKEN_ADDRESS } from '../../blockchain/contracts';
 import { poliDaoRouterAbi } from '../../blockchain/routerAbi';
+import { useImageUpload } from '@/hooks/useImageUpload';
 
 // USDC ma 6 miejsc po przecinku
 const USDC_DECIMALS = 6;
@@ -105,21 +106,21 @@ export default function CreateCampaignPage() {
   // NEW: store pre-transaction fundraiser count
   const preCountRef = useRef<bigint | null>(null);
 
-  // Remove all image-related state and refs
-  // const [imageFile, setImageFile] = useState<File | null>(null);
-  // const [imagePreview, setImagePreview] = useState<string>('');
-  // const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { uploadImage, isUploading, error: uploadError } = useImageUpload();
 
-  // Remove image preview effect
-  // useEffect(() => {
-  //   if (!imageFile) {
-  //     setImagePreview('');
-  //     return;
-  //   }
-  //   const url = URL.createObjectURL(imageFile);
-  //   setImagePreview(url);
-  //   return () => URL.revokeObjectURL(url);
-  // }, [imageFile]);
+  // Image preview effect
+  useEffect(() => {
+    if (!imageFile) {
+      setImagePreview('');
+      return;
+    }
+    const url = URL.createObjectURL(imageFile);
+    setImagePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [imageFile]);
 
   const handleInputChange = (field: keyof FormData, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -135,14 +136,24 @@ export default function CreateCampaignPage() {
     if (step === 1) {
       if (!formData.title.trim()) newErrors.title = 'Tytuł jest wymagany';
       if (formData.title.length < 10) newErrors.title = 'Tytuł musi mieć co najmniej 10 znaków';
-      // NEW: enforce sane max aligned with contract error guards
       if (formData.title.length > 100) newErrors.title = 'Tytuł nie może przekraczać 100 znaków';
       if (!formData.description.trim()) newErrors.description = 'Opis jest wymagany';
       if (formData.description.length < 50) newErrors.description = 'Opis musi mieć co najmniej 50 znaków';
-      // NEW: enforce max desc length
       if (formData.description.length > 2000) newErrors.description = 'Opis nie może przekraczać 2000 znaków';
       if (!formData.beneficiary.trim()) newErrors.beneficiary = 'Wybierz kto jest beneficjentem';
       if (formData.location.length > 80) newErrors.location = 'Lokalizacja maks 80 znaków';
+      
+      // Enhanced image validation
+      if (imageFile) {
+        const maxSize = 5 * 1024 * 1024; // 5MB
+        if (imageFile.size > maxSize) {
+          newErrors.image = 'Zdjęcie nie może być większe niż 5MB';
+        }
+        const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+        if (!validTypes.includes(imageFile.type)) {
+          newErrors.image = 'Dozwolone formaty: JPG, PNG, WebP';
+        }
+      }
     }
 
     if (step === 2) {
@@ -232,23 +243,24 @@ export default function CreateCampaignPage() {
     const endDate = BigInt(now + parseInt(formData.duration) * 24 * 60 * 60);
 
     try {
-      // Remove all upload logic - use empty metadata hash
-      const metadataHash = ''; // Empty metadata hash - no IPFS upload
+      // No IPFS metadata - use empty string
+      const metadataHash = '';
 
       const selectedAddr = (selectedTokenAddress || networkUsdc) as `0x${string}` | null;
       const selected = tokensList.find(t => t.address.toLowerCase() === (selectedAddr || '').toLowerCase());
       const decimalsUsed = selected?.decimals ?? 6;
       const goalAmount = formData.campaignType === 'target' ? parseUnits(formData.targetAmount || '0', decimalsUsed) : 0n;
       const fundraiserType = mapFundraiserType(formData.campaignType);
-      const images: string[] = []; // No images
+      const images: string[] = []; // No blockchain images
       const videos: string[] = [];
       const location = formData.location || '';
 
-      // Remove all debug logs with imageFile references
       if (process.env.NODE_ENV !== 'production') {
         console.debug('createFundraiser payload', {
-          initialImages: images,
-          metadataHash
+          title: formData.title.trim(),
+          description: formData.description.trim(),
+          location,
+          hasImage: !!imageFile
         });
       }
 
@@ -330,19 +342,20 @@ export default function CreateCampaignPage() {
           isFlexible: formData.campaignType === 'flexible'
         }]
       });
-      if (process.env.NODE_ENV !== 'production') {
-        console.debug('writeContract sent', { initialImages: images });
-      }
+
     } catch (error: any) {
-      console.error('Error creating campaign:', error);
+      console.error('❌ Error creating campaign:', error);
       setFriendlyError(mapError(error?.message || ''));
     }
   };
 
-  // After success – parse FundraiserCreated event; fallback: poll count increment vs preCount
+  // After success – parse FundraiserCreated event and store metadata with image
   useEffect(() => {
     const run = async () => {
       if (!isSuccess || createdId || !publicClient || !hash) return;
+      
+      let campaignId: bigint | null = null;
+      
       try {
         const receipt = await publicClient.getTransactionReceipt({ hash });
         const events = parseEventLogs({
@@ -353,49 +366,116 @@ export default function CreateCampaignPage() {
         const first = events?.[0];
         const evtId = (first?.args as any)?.fundraiserId as bigint | undefined;
         if (evtId != null) {
+          campaignId = evtId;
           setCreatedId(evtId);
-          return;
         }
       } catch {
         // proceed to fallback below
       }
 
-      // NEW: deterministic fallback using preCount -> wait for increment, then use total-1
-      try {
-        const pre = preCountRef.current ?? null;
-        let attempts = 0;
-        while (attempts < 20) {
-          const total: any = await publicClient.readContract({
-            address: ROUTER_ADDRESS,
-            abi: poliDaoRouterAbi as any,
-            functionName: 'getFundraiserCount',
-          });
-          if (typeof total === 'bigint') {
-            if (pre == null) {
-              if (total > 0n) {
+      // Fallback method if event parsing fails
+      if (!campaignId) {
+        try {
+          const pre = preCountRef.current ?? null;
+          let attempts = 0;
+          while (attempts < 20) {
+            const total: any = await publicClient.readContract({
+              address: ROUTER_ADDRESS,
+              abi: poliDaoRouterAbi as any,
+              functionName: 'getFundraiserCount',
+            });
+            if (typeof total === 'bigint') {
+              if (pre == null) {
+                if (total > 0n) {
+                  campaignId = total - 1n;
+                  setCreatedId(total - 1n);
+                  break;
+                }
+              } else if (total > pre) {
+                campaignId = total - 1n;
                 setCreatedId(total - 1n);
-                return;
+                break;
               }
-            } else if (total > pre) {
-              setCreatedId(total - 1n);
-              return;
+            }
+            await new Promise((r) => setTimeout(r, 800));
+            attempts++;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      // Store campaign metadata in database after successful blockchain transaction
+      if (campaignId != null && address) {
+        try {
+          let imageUrl = '';
+          
+          // Upload image if available
+          if (imageFile) {
+            console.log('📤 Uploading image for campaign:', campaignId.toString());
+            
+            // Create FormData for proper file upload
+            const formData = new FormData();
+            formData.append('file', imageFile);
+            
+            try {
+              const uploadResponse = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData,
+              });
+              
+              if (uploadResponse.ok) {
+                const uploadResult = await uploadResponse.json();
+                imageUrl = uploadResult.url || uploadResult.imageUrl || '';
+                console.log('✅ Image uploaded successfully:', imageUrl);
+              } else {
+                const errorText = await uploadResponse.text();
+                console.error('❌ Upload failed:', errorText);
+                setFriendlyError(`Błąd uploadu zdjęcia: ${errorText}`);
+              }
+            } catch (uploadError) {
+              console.error('❌ Upload error:', uploadError);
+              setFriendlyError(`Błąd uploadu zdjęcia: ${uploadError}`);
             }
           }
-          await new Promise((r) => setTimeout(r, 800));
-          attempts++;
+
+          // FIX: Używaj tego samego ID co w URL (campaignId + 1)
+          const displayId = (campaignId + 1n).toString();
+          console.log('💾 Saving to database with displayId:', displayId, 'for redirect URL');
+
+          // Store campaign metadata
+          const metadataResponse = await fetch('/api/campaigns', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              campaignId: displayId, // ← Zapisz z tym samym ID co w URL
+              title: formData.title.trim(),
+              description: formData.description.trim(),
+              imageUrl: imageUrl || undefined,
+              location: formData.location || undefined,
+              creator: address.toLowerCase()
+            }),
+          });
+
+          if (!metadataResponse.ok) {
+            console.warn('Failed to store campaign metadata:', await metadataResponse.text());
+          } else {
+            console.log('✅ Campaign metadata stored successfully with ID:', displayId);
+          }
+        } catch (metaError) {
+          console.error('❌ Error storing campaign metadata:', metaError);
         }
-      } catch {
-        // ignore
       }
     };
     run();
-  }, [isSuccess, createdId, publicClient, hash]);
+  }, [isSuccess, createdId, publicClient, hash, address, imageFile, formData]);
 
   // Auto-redirect po uzyskaniu createdId
   useEffect(() => {
     if (createdId) {
       // Routes are 1-based; on-chain ids are 0-based -> add +1 for display/URL
       const displayId = (createdId + 1n).toString();
+      console.log('🔄 Redirecting to campaign:', displayId);
        const t = setTimeout(() => {
         window.location.href = `/campaigns/${displayId}`;
        }, 2500);
@@ -668,7 +748,87 @@ export default function CreateCampaignPage() {
                     </p>
                   </div>
 
-                  {/* Remove image upload section entirely */}
+                  {/* Enhanced image upload section */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Zdjęcie zbiórki (opcjonalnie)
+                    </label>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-center w-full">
+                        <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                          <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                            <svg className="w-8 h-8 mb-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                              <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
+                            </svg>
+                            <p className="mb-2 text-sm text-gray-500 font-medium">
+                              <span className="font-semibold">Kliknij aby dodać</span> lub przeciągnij zdjęcie
+                            </p>
+                            <p className="text-xs text-gray-500">PNG, JPG, WebP (maks. 5MB)</p>
+                          </div>
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/jpeg,image/jpg,image/png,image/webp"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              setImageFile(file || null);
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                      
+                      {uploadError && (
+                        <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                          <p className="text-sm text-red-600 font-medium">❌ {uploadError}</p>
+                        </div>
+                      )}
+                      
+                      {errors.image && (
+                        <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                          <p className="text-sm text-red-600 font-medium">❌ {errors.image}</p>
+                        </div>
+                      )}
+                      
+                      {imagePreview && (
+                        <div className="relative">
+                          <img 
+                            src={imagePreview} 
+                            alt="Podgląd zdjęcia zbiórki" 
+                            className="w-full max-w-md mx-auto h-48 object-cover rounded-xl border-2 border-gray-200 shadow-lg"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setImageFile(null);
+                              setImagePreview('');
+                              if (fileInputRef.current) {
+                                fileInputRef.current.value = '';
+                              }
+                            }}
+                            className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm transition-colors"
+                          >
+                            ✕
+                          </button>
+                          <div className="mt-2 text-center">
+                            <p className="text-sm text-gray-600 font-medium">
+                              {imageFile?.name} • {imageFile && (imageFile.size / 1024 / 1024).toFixed(1)}MB
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h4 className="font-semibold text-blue-900 mb-2">💡 Wskazówki dotyczące zdjęcia:</h4>
+                        <ul className="text-sm text-blue-800 space-y-1">
+                          <li>• Dodaj zdjęcie które pokazuje problem lub sytuację</li>
+                          <li>• Unikaj zdjęć z danymi osobowymi (dokumenty, dowody)</li>
+                          <li>• Jasne, wysokiej jakości zdjęcia przyciągają więcej darczyńców</li>
+                          <li>• Zdjęcie powinno być związane z celem zbiórki</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

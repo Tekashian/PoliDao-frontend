@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getImageById } from "@/lib/mongodb";
+import { connectToDatabase } from "../../../../lib/mongodb";
+import { GridFSBucket, ObjectId } from "mongodb";
 
 export const runtime = "nodejs";
 
@@ -8,39 +9,64 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Await params before using
+    const { db } = await connectToDatabase();
     const resolvedParams = await params;
-    const imageId = resolvedParams.id;
-    
-    if (!imageId) {
-      return NextResponse.json(
-        { error: "Image ID is required" },
-        { status: 400 }
-      );
+    const bucket = new GridFSBucket(db, { bucketName: "images" });
+
+    console.log("🖼️ Serving image ID:", resolvedParams.id);
+
+    const fileId = new ObjectId(resolvedParams.id);
+
+    // Check if file exists
+    const files = await bucket.find({ _id: fileId }).toArray();
+    if (files.length === 0) {
+      console.log("❌ Image not found:", resolvedParams.id);
+      return NextResponse.json({ error: "Image not found" }, { status: 404 });
     }
 
-    const image = await getImageById(imageId);
-    
-    if (!image) {
-      return NextResponse.json(
-        { error: "Image not found" },
-        { status: 404 }
-      );
-    }
+    const file = files[0];
+    console.log("✅ Image found:", file.filename);
 
-    // Return image as binary data
-    return new NextResponse(image.data, {
-      headers: {
-        'Content-Type': image.mimeType,
-        'Content-Length': image.size.toString(),
-        'Cache-Control': 'public, max-age=31536000', // Cache for 1 year
-        'ETag': `"${imageId}"`,
-      },
+    // Create download stream
+    const downloadStream = bucket.openDownloadStream(fileId);
+
+    // Convert stream to buffer
+    const chunks: Buffer[] = [];
+
+    return new Promise((resolve, reject) => {
+      downloadStream.on("data", (chunk) => {
+        chunks.push(chunk);
+      });
+
+      downloadStream.on("end", () => {
+        const buffer = Buffer.concat(chunks);
+
+        const response = new NextResponse(buffer, {
+          status: 200,
+          headers: {
+            "Content-Type": file.metadata?.contentType || "image/jpeg",
+            "Content-Length": buffer.length.toString(),
+            "Cache-Control": "public, max-age=31536000, immutable",
+          },
+        });
+
+        resolve(response);
+      });
+
+      downloadStream.on("error", (error) => {
+        console.error("❌ Download stream error:", error);
+        resolve(
+          NextResponse.json(
+            { error: "Error downloading image" },
+            { status: 500 }
+          )
+        );
+      });
     });
-  } catch (error: any) {
-    console.error("Error serving image:", error);
+  } catch (error) {
+    console.error("❌ Image serve error:", error);
     return NextResponse.json(
-      { error: "Failed to load image" },
+      { error: "Server error" },
       { status: 500 }
     );
   }
