@@ -5,10 +5,12 @@ export const runtime = "nodejs";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const imageId = params.id;
+    // Await params before using
+    const resolvedParams = await params;
+    const imageId = resolvedParams.id;
     
     if (!imageId) {
       return NextResponse.json(
