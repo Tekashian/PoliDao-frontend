@@ -293,6 +293,7 @@ function FuturisticCarousel({
   space,
   myAccountCardLayout = false,
   simpleNavOnly = false, // NEW
+  staticCount, // NEW: renderuj statycznie N elementów bez przewijania
 }: {
   title: string;
   icon: React.ReactNode;
@@ -304,6 +305,7 @@ function FuturisticCarousel({
   space?: number;
   myAccountCardLayout?: boolean;
   simpleNavOnly?: boolean; // NEW
+  staticCount?: number; // NEW
 }) {
   const theme = useTheme();
   const ACCENT = '#10b981';
@@ -312,18 +314,52 @@ function FuturisticCarousel({
   // Ensure enough slides for seamless loop
   const slides = React.useMemo(() => {
     if (!items || items.length === 0) return [];
-    // NEW: in simple mode do NOT duplicate – keep exact number of items
     if (simpleNavOnly) return items;
     if (items.length >= 9) return items;
     const reps = Math.ceil(9 / Math.max(1, items.length));
     return Array.from({ length: reps }).flatMap(() => items).slice(0, 9);
   }, [items, simpleNavOnly]);
 
+  // NEW: tryb statyczny bez przewijania
+  const staticMode = typeof staticCount === 'number' && staticCount > 0;
+  const displayed = staticMode ? slides.slice(0, Math.min(staticCount!, slides.length)) : slides;
+
   // NEW: custom navigation refs (external buttons)
   const prevRef = React.useRef<HTMLButtonElement | null>(null);
   const nextRef = React.useRef<HTMLButtonElement | null>(null);
 
-  if (!slides || slides.length === 0) return null;
+  if (!displayed || displayed.length === 0) return null;
+
+  // NEW: statyczny render bez Swipera, bez strzałek i bez drag
+  if (staticMode) {
+    return (
+      <Paper elevation={0} sx={{ mb: 6, background: 'transparent', border: 'none', boxShadow: 'none', borderRadius: 0 }}>
+        <Box sx={{ px: 0, py: 0, mb: 1 }}>
+          <Typography variant="h5" component="h2" sx={{ fontWeight: 800 }}>
+            {title}
+          </Typography>
+        </Box>
+        <Box
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            gap: `${GAP}px`,
+            px: 0,
+            pb: 3,
+          }}
+        >
+          {displayed.map((item, index) => (
+            <div key={`${title}-static-${index}`} className="w-full sm:w-[24rem] flex-none">
+              <Box sx={{ borderRadius: 0 }}>
+                {renderItem(item, index)}
+              </Box>
+            </div>
+          ))}
+        </Box>
+      </Paper>
+    );
+  }
 
   return (
     <Paper
@@ -352,6 +388,10 @@ function FuturisticCarousel({
           px: 0,
           pb: 3,
           overflow: 'visible',
+          // NEW: pokaż dokładnie 3 karty na desktopie (24rem * 3 + przerwy)
+          ...(simpleNavOnly && myAccountCardLayout
+            ? { maxWidth: { md: `calc(24rem * 3 + ${GAP}px * 2)` }, mx: 'auto' }
+            : {}),
           '& .swiper-wrapper': { transitionTimingFunction: 'ease-in-out' },
           '& .swiper-slide': {
             marginInlineEnd: `${GAP}px !important`,
@@ -794,11 +834,8 @@ export default function HomePage() {
             title="Najlepsze kampanie i zbiórki"
             icon={<TrendingUp sx={{ fontSize: 28 }} />}
             items={carouselCampaigns}
-            // NEW: turn off autoplay/coverflow/loop; arrows only
             simpleNavOnly={true}
-            // Keep fixed width like "Moje zbiórki"
             myAccountCardLayout={true}
-            // space 24px between cards
             space={24}
             renderItem={(campaign: ModularFundraiser) => {
               const mappedCampaign = {
