@@ -1400,10 +1400,39 @@ export default function AccountPage() {
                 const donatedCampaigns = campaigns.filter((c: any) =>
                   donatedIdsSet.has((c.id ?? 0n).toString())
                 );
-                return donatedCampaigns.length > 0 ? (
-                  // CHANGED: use same layout as "Twoje zbiórki"
+
+                // --- NEW: sort so not reached first, then reached; tie-breakers: closer to goal, newest ---
+                const BIG = 10n ** 40n;
+                const getProg = (c: any) => {
+                  const raised = BigInt(c.raisedAmount ?? c.raised ?? 0n);
+                  const goal = BigInt(c.goalAmount ?? c.target ?? 0n);
+                  return { raised, goal };
+                };
+                const isReached = (c: any) => {
+                  const { raised, goal } = getProg(c);
+                  return goal > 0n && raised >= goal;
+                };
+                const remainingToGoal = (c: any) => {
+                  const { raised, goal } = getProg(c);
+                  if (goal <= 0n) return BIG;
+                  return raised >= goal ? 0n : (goal - raised);
+                };
+                const sortedDonated = donatedCampaigns.slice().sort((a: any, b: any) => {
+                  const aReached = isReached(a);
+                  const bReached = isReached(b);
+                  if (aReached !== bReached) return aReached ? 1 : -1; // not reached first
+                  const aRem = remainingToGoal(a);
+                  const bRem = remainingToGoal(b);
+                  if (aRem !== bRem) return aRem < bRem ? -1 : 1; // closer first
+                  const aid = BigInt(a.id ?? 0n);
+                  const bid = BigInt(b.id ?? 0n);
+                  if (aid !== bid) return aid > bid ? -1 : 1; // newest first
+                  return 0;
+                });
+
+                return sortedDonated.length > 0 ? (
                   <div className="flex flex-wrap justify-center gap-6">
-                    {donatedCampaigns.map((c: any) => {
+                    {sortedDonated.map((c: any) => {
                       const idStr = (c.id ?? 0n).toString();
                       const donationAmount = donatedPerFundraiser.get(idStr) ?? 0n;
 
@@ -1435,8 +1464,8 @@ export default function AccountPage() {
 
                       const isRefundable = canRefundById.get(idStr) ?? false;
                       const isPending = pendingRefund?.id === BigInt(idStr) || isRefundMining;
+                      const reached = isReached(c);
 
-                      // NEW: fixed-width card wrapper matching "Twoje zbiórki"
                       return (
                         <div key={idStr} className="w-full sm:w-[24rem] flex-none">
                           <div
@@ -1452,27 +1481,40 @@ export default function AccountPage() {
                               showDetails
                             />
 
-                            {/* Czerwony overlay i CTA – refund */}
-                            <div className="pointer-events-none absolute left-0 right-0 top-0 h-60 z-10 rounded-t-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                              <div className="absolute inset-0 bg-gradient-to-t from-[#ef4444]/35 via-[#ef4444]/10 to-transparent" />
-                              <div className="absolute inset-0 rounded-t-xl ring-1 ring-[#ef4444]/40 shadow-[inset_0_0_22px_rgba(239,68,68,0.45)]" />
-                              <div className="absolute inset-x-0 bottom-3 flex justify-center">
-                                <button
-                                  className={`pointer-events-auto px-4 py-2 rounded-full text-white text-sm font-semibold ring-1 ring-white/20 transition-shadow
-                                    ${isRefundable ? 'bg-[#ef4444] shadow-[0_0_14px_rgba(239,68,68,0.65)] hover:shadow-[0_0_26px_rgba(239,68,68,0.95)]' : 'bg-[#ef4444]/60'}
-                                    ${isPending ? 'opacity-70 cursor-wait' : ''}`}
-                                  aria-label="Cofnij wsparcie"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    // previously: openRefundDialog(BigInt(idStr))
-                                    doQuickRefund(BigInt(idStr));
-                                  }}
-                                  disabled={isPending}
-                                >
-                                  {isPending ? 'Cofanie...' : 'Cofnij wsparcie'}
-                                </button>
+                            {/* NEW: Festive thank-you overlay for reached campaigns */}
+                            {reached ? (
+                              // ZMIANA: overlay zawsze widoczny (opacity-100), bez group-hover
+                              <div className="pointer-events-none absolute left-0 right-0 top-0 h-60 z-10 rounded-t-xl overflow-hidden opacity-100">
+                                <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/40 via-fuchsia-400/25 to-transparent" />
+                                <div className="absolute inset-0 rounded-t-xl ring-1 ring-white/30 shadow-[inset_0_0_28px_rgba(16,185,129,0.45)]" />
+                                <div className="absolute inset-x-0 bottom-3 flex justify-center">
+                                  <span className="pointer-events-none px-4 py-2 rounded-full bg-white/85 text-emerald-700 text-sm font-semibold ring-1 ring-emerald-300 shadow">
+                                    Dziękujemy za wsparcie! 🎉
+                                  </span>
+                                </div>
                               </div>
-                            </div>
+                            ) : (
+                              // existing red refund overlay for not reached – tylko na hover
+                              <div className="pointer-events-none absolute left-0 right-0 top-0 h-60 z-10 rounded-t-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                <div className="absolute inset-0 bg-gradient-to-t from-[#ef4444]/35 via-[#ef4444]/10 to-transparent" />
+                                <div className="absolute inset-0 rounded-t-xl ring-1 ring-[#ef4444]/40 shadow-[inset_0_0_22px_rgba(239,68,68,0.45)]" />
+                                <div className="absolute inset-x-0 bottom-3 flex justify-center">
+                                  <button
+                                    className={`pointer-events-auto px-4 py-2 rounded-full text-white text-sm font-semibold ring-1 ring-white/20 transition-shadow
+                                      ${isRefundable ? 'bg-[#ef4444] shadow-[0_0_14px_rgba(239,68,68,0.65)] hover:shadow-[0_0_26px_rgba(239,68,68,0.95)]' : 'bg-[#ef4444]/60'}
+                                      ${isPending ? 'opacity-70 cursor-wait' : ''}`}
+                                    aria-label="Cofnij wsparcie"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      doQuickRefund(BigInt(idStr));
+                                    }}
+                                    disabled={isPending}
+                                  >
+                                    {isPending ? 'Cofanie...' : 'Cofnij wsparcie'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
 
                             {/* delikatny ogólny hover dla kart */}
                             <div className="absolute inset-0 rounded-lg transition-opacity duration-200 opacity-0 group-hover:opacity-100 bg-gradient-to-t from-black/30 via-black/10 to-transparent" />
