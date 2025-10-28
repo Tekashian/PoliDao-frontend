@@ -434,14 +434,16 @@ function FuturisticCarousel({
             // @ts-expect-error
             swiper.params.navigation.nextEl = nextRef.current;
           }}
-          // NEW: in simple mode fix slidesPerView to 1/2/3 with breakpoints; turn off centeredSlides
-          slidesPerView={simpleNavOnly ? 3 : (myAccountCardLayout ? 'auto' : 3)}
-          centeredSlides={simpleNavOnly ? false : (myAccountCardLayout ? true : false)}
-          breakpoints={simpleNavOnly ? {
+          // slidesPerView: użyj 'auto' dla layoutu kart jak w "Zbiórkach dnia"
+          slidesPerView={myAccountCardLayout ? 'auto' : (simpleNavOnly ? 3 : 3)}
+          // centrowanie tylko dla coverflow; w trybie simpleNavOnly wyłączone
+          centeredSlides={!simpleNavOnly && myAccountCardLayout ? true : false}
+          // wyłącz breakpoints gdy sterujemy stałą szerokością slajdu
+          breakpoints={myAccountCardLayout ? undefined : (simpleNavOnly ? {
             0:   { slidesPerView: 1, centeredSlides: false },
             640: { slidesPerView: 2, centeredSlides: false },
             1024:{ slidesPerView: 3, centeredSlides: false },
-          } : undefined}
+          } : undefined)}
           slidesPerGroup={1}
           slidesPerGroupAuto={false}
           spaceBetween={GAP}
@@ -460,8 +462,9 @@ function FuturisticCarousel({
           {slides.map((item, index) => (
             <SwiperSlide
               key={`${title}-${index}`}
-              // NEW: no fixed width in simple mode; keep previous fixed width only for account layout
-              className={simpleNavOnly ? undefined : (myAccountCardLayout ? 'w-full sm:w-[24rem] flex-none' : undefined)}
+              // Wymuś szerokość slajdu jak w "Zbiórkach dnia"
+              className={myAccountCardLayout ? 'w-[24rem] max-w-[24rem] flex-none' : undefined}
+              // opcjonalnie można zachować pełną szerokość na mobile zmieniając klasę na: 'w-full sm:w-[24rem] flex-none'
             >
               <Box sx={{ borderRadius: 0 }}>
                 {renderItem(item, index)}
