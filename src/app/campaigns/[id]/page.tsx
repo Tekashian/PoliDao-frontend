@@ -358,6 +358,13 @@ export default function CampaignPage() {
     return chosen;
   }, [updatesAddrFromStorage, updatesModuleAddress]);
 
+  // Diagnostyka: brak adresu modułu Analytics -> zapytania donors są wyłączone
+  useEffect(() => {
+    if (!analyticsResolved) {
+      console.warn('Analytics module address is undefined; donors queries are disabled. Check ANALYTICS_ADDRESS or core.analyticsModule.');
+    }
+  }, [analyticsResolved]);
+
   // Pozostałe useReadContract calls
   const { data: donorsCountData, refetch: refetchDonorsCount } = useReadContract({
     address: analyticsResolved,
@@ -679,26 +686,8 @@ export default function CampaignPage() {
           }
         }
 
-        // 2) Fallback to Router logs if Core empty
-        if (!items.length) {
-          const routerIface = new Interface(poliDaoRouterAbi as any);
-          const routerEv = (routerIface as any).getEvent?.('DonationMade') ?? (routerIface.fragments.find((f: any) => f.type === 'event' && f.name === 'DonationMade'));
-          const routerTopic = (routerIface as any).getEventTopic ? (routerIface as any).getEventTopic(routerEv) : (routerIface as any).getEventTopic?.('DonationMade');
-
-          const routerStart = process.env.NEXT_PUBLIC_ROUTER_START_BLOCK || process.env.NEXT_PUBLIC_CORE_START_BLOCK;
-          const fromBlockRouter = routerStart ? BigInt(routerStart) : 0n;
-
-          const logsRouter = await provider.getLogs({
-            address: ROUTER_ADDRESS as string,
-            fromBlock: fromBlockRouter,
-            toBlock: 'latest',
-            topics: [routerTopic, fundraiserTopic],
-          });
-
-          if (logsRouter.length > 0) {
-            items = await parseLogs(logsRouter, routerIface);
-          }
-        }
+        // 2) Router fallback usunięty – Router nie emituje DonationMade, więc i tak nic nie zwróci.
+        // if (!items.length) { ... }  <-- intentionally removed
 
         if (!disposed) setDonations(items);
       } catch (err) {
