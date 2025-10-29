@@ -58,7 +58,7 @@ import 'swiper/css/navigation'; // + navigation CSS
 import { EffectCoverflow } from 'swiper/modules';
 import 'swiper/css/effect-coverflow';
 
-// Material-UI Proposal Card z nawigacją - ZAKTUALIZOWANE
+// ===== Replaced MUIProposalCard (Polish -> English labels) =====
 function MUIProposalCard({ proposal, onVote, isVoting, votingId }: {
   proposal: Proposal;
   onVote?: (id: bigint, support: boolean) => void;
@@ -78,7 +78,7 @@ function MUIProposalCard({ proposal, onVote, isVoting, votingId }: {
   
   const isActive = timeLeft > 0;
 
-  // ✅ ZMIENIONE: Nawigacja do /votes/[id]
+  // Navigate to proposal details
   const handleCardClick = () => {
     router.push(`/votes/${proposal.id.toString()}`);
   };
@@ -121,7 +121,7 @@ function MUIProposalCard({ proposal, onVote, isVoting, votingId }: {
             </Typography>
             <Chip 
               icon={<HowToVote />}
-              label={`Propozycja #${proposal.id.toString()}`}
+              label={`Proposal #${proposal.id.toString()}`}
               size="small"
               variant="outlined"
               sx={{ mb: 2 }}
@@ -132,7 +132,7 @@ function MUIProposalCard({ proposal, onVote, isVoting, votingId }: {
             label={
               isActive 
                 ? (daysLeft > 0 ? `${daysLeft}d ${hoursLeft}h` : `${hoursLeft}h`)
-                : "Zakończone"
+                : "Closed"
             }
             color={isActive ? "success" : "default"}
             size="small"
@@ -147,10 +147,10 @@ function MUIProposalCard({ proposal, onVote, isVoting, votingId }: {
         <Box sx={{ mb: 3 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
             <Typography variant="body2" color="success.main" sx={{ fontWeight: 600 }}>
-              TAK: {Number(proposal.yesVotes)} ({yesPercentage.toFixed(1)}%)
+              YES: {Number(proposal.yesVotes)} ({yesPercentage.toFixed(1)}%)
             </Typography>
             <Typography variant="body2" color="error.main" sx={{ fontWeight: 600 }}>
-              NIE: {Number(proposal.noVotes)} ({noPercentage.toFixed(1)}%)
+              NO: {Number(proposal.noVotes)} ({noPercentage.toFixed(1)}%)
             </Typography>
           </Box>
           
@@ -193,7 +193,7 @@ function MUIProposalCard({ proposal, onVote, isVoting, votingId }: {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <HowToVote fontSize="small" color="action" />
             <Typography variant="body2" color="text.secondary">
-              Łącznie: {totalVotes}
+              Total: {totalVotes}
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -204,12 +204,11 @@ function MUIProposalCard({ proposal, onVote, isVoting, votingId }: {
           </Box>
         </Box>
 
-        {/* Action Buttons - ✅ ZAKTUALIZOWANE */}
+        {/* Action Buttons */}
         {isActive ? (
           <Stack direction="row" spacing={1}>
             <Button
               variant="contained"
-              // unified green + hover scale + glow
               sx={{ 
                 flex: 1, fontWeight: 600, textTransform: 'none', borderRadius: 2,
                 bgcolor: '#10b981',
@@ -224,7 +223,7 @@ function MUIProposalCard({ proposal, onVote, isVoting, votingId }: {
               onClick={(e) => handleVote(e, true)}
               disabled={disabled}
             >
-              {disabled ? 'Głosowanie...' : 'TAK'}
+              {disabled ? 'Voting...' : 'YES'}
             </Button>
             <Button
               variant="contained"
@@ -238,7 +237,7 @@ function MUIProposalCard({ proposal, onVote, isVoting, votingId }: {
               onClick={(e) => handleVote(e, false)}
               disabled={disabled}
             >
-              {disabled ? 'Głosowanie...' : 'NIE'}
+              {disabled ? 'Voting...' : 'NO'}
             </Button>
             <Button
               variant="outlined"
@@ -272,7 +271,7 @@ function MUIProposalCard({ proposal, onVote, isVoting, votingId }: {
             }}
             startIcon={<VisibilityOutlined />}
           >
-            Zobacz szczegóły
+            View details
           </Button>
         )}
       </CardContent>
@@ -822,12 +821,53 @@ export default function HomePage() {
       <Header />
       <Hero3D />
 
+      {/* Mission overlay card — left on desktop, centered on mobile */}
+      <div className="relative">
+        {/* Overlay card: absolute so it sits over the hero/banner */}
+        <div className="absolute z-30 -top-28 left-4 md:-top-120 md:left-12 lg:left-20 w-[92%] sm:w-80 md:w-96">
+          <div className="bg-white rounded-2xl shadow-xl ring-1 ring-gray-100 p-5 md:p-6">
+            <h3 className="text-lg md:text-xl font-extrabold text-gray-900 mb-2">
+              Our mission — transparent, on‑chain fundraising
+            </h3>
+            <div className="text-xs md:text-sm text-gray-600 space-y-2">
+              <p>
+                PoliDAO coordinates transparent, on‑chain fundraisers: donations are deposited to a secure storage contract and all actions are auditable.
+              </p>
+              <p>
+                The lightweight Core delegates complex logic to specialized modules (governance, security, analytics), improving clarity and upgradeability.
+              </p>
+              <p>
+                Creators withdraw funds according to on‑chain rules; refunds and scheduled payouts respect protocol security policies and state.
+              </p>
+              <p>
+                Fees, module upgrades and permissions are managed on‑chain to guarantee predictable, auditable platform operations.
+              </p>
+            </div>
+
+            <div className="mt-3 flex gap-2">
+              <a
+                href="/create-campaign"
+                className="inline-block px-3 py-2 bg-[#10b981] text-white rounded-lg text-sm font-semibold shadow hover:shadow-lg transition"
+              >
+                Start a Fundraiser
+              </a>
+              <a
+                href="/whitepaper"
+                className="inline-block px-3 py-2 border border-gray-200 rounded-lg text-gray-700 text-sm font-medium hover:bg-gray-50 transition"
+              >
+                Learn more
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      
       <main className="flex-1">
         {/* KARUZELE - pokazują się tylko gdy są dane */}
         <Container maxWidth="xl" sx={{ mt: 4 }}>
           {/* ✅ Karuzela kampanii – tryb prosty, tylko strzałki */}
           <FuturisticCarousel
-            title="Najlepsze kampanie i zbiórki"
+            title="Top Campaigns & Fundraisers"
             icon={<TrendingUp sx={{ fontSize: 28 }} />}
             items={carouselCampaigns}
             simpleNavOnly={true}
@@ -848,11 +888,11 @@ export default function HomePage() {
                 title: campaign.title && campaign.title.length > 0
                   ? campaign.title
                   : (isNoGoalFlexible(campaign)
-                      ? `Elastyczna kampania #${campaign.id}`
-                      : `Zbiórka z celem #${campaign.id}`), // UPDATED
+                      ? `Flexible campaign #${campaign.id}`
+                      : `Targeted fundraiser #${campaign.id}`), // UPDATED
                 description: campaign.description && campaign.description.length > 0
                   ? campaign.description.slice(0, 140)
-                  : `Kampania utworzona przez ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
+                  : `Campaign created by ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
                 image: "/images/zbiorka.png",
               };
 
@@ -864,7 +904,7 @@ export default function HomePage() {
                 />
               );
             }}
-            emptyMessage="Brak aktywnych kampanii i zbiórek"
+            emptyMessage="No active campaigns or fundraisers"
           />
         </Container>
 
@@ -872,8 +912,8 @@ export default function HomePage() {
         {dayPicks && dayPicks.length > 0 && (
           <div className="container mx-auto px-4 mt-10">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold text-gray-800">Zbiórki dnia</h2>
-              <span className="text-sm text-gray-500">Wybrane: najnowsze lub najbliżej celu</span>
+              <h2 className="text-2xl font-bold text-gray-800">Fundraisers of the Day</h2>
+              <span className="text-sm text-gray-500">Selected: newest or closest to goal</span>
             </div>
             <div className="flex flex-wrap justify-center gap-6">
               {dayPicks.map((campaign: ModularFundraiser) => {
@@ -890,11 +930,11 @@ export default function HomePage() {
                   title: campaign.title && campaign.title.length > 0
                     ? campaign.title
                     : (isNoGoalFlexible(campaign)
-                        ? `Elastyczna kampania #${campaign.id}`
-                        : `Zbiórka z celem #${campaign.id}`), // UPDATED
+                        ? `Flexible campaign #${campaign.id}`
+                        : `Targeted fundraiser #${campaign.id}`), // UPDATED
                   description: campaign.description && campaign.description.length > 0
                     ? campaign.description.slice(0, 140)
-                    : `Kampania utworzona przez ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
+                    : `Campaign created by ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
                   image: "/images/zbiorka.png",
                 };
                 return (
@@ -914,9 +954,9 @@ export default function HomePage() {
               {/* Left: Trustworthy */}
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
                 <div className="text-4xl mb-3">🛡️</div>
-                <h3 className="text-lg font-bold text-gray-800 mb-1">Godni zaufania</h3>
+                <h3 className="text-lg font-bold text-gray-800 mb-1">Trustworthy</h3>
                 <p className="text-gray-600 text-sm">
-                  Wszystkie zbiórki przechodzą wieloetapową weryfikację. Środki są rozliczane on‑chain.
+                  All fundraisers undergo multi-step verification. Funds are settled on-chain.
                 </p>
               </div>
 
@@ -926,19 +966,19 @@ export default function HomePage() {
                   {totalRaisedUSDC} USDC
                 </div>
                 <p className="text-sky-700 font-semibold mt-2">
-                  Zebrane na PoliDAO (on‑chain)
+                  Raised on PoliDAO (on‑chain)
                 </p>
                 <p className="text-gray-500 text-sm mt-1">
-                  Aktualizowane na bieżąco na podstawie danych z kontraktów
+                  Updated in real-time based on contract data
                 </p>
               </div>
 
               {/* Right: Something extra (Open-source & on-chain) */}
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
                 <div className="text-4xl mb-3">🔍</div>
-                <h3 className="text-lg font-bold text-gray-800 mb-1">Open‑source i on‑chain</h3>
+                <h3 className="text-lg font-bold text-gray-800 mb-1">Open‑source and on‑chain</h3>
                 <p className="text-gray-600 text-sm">
-                  Kontrakty są publiczne i audytowalne. Pełna transparentność transakcji oraz wyników kampanii.
+                  Contracts are public and auditable. Full transparency of transactions and campaign results.
                 </p>
               </div>
             </div>
@@ -949,8 +989,8 @@ export default function HomePage() {
         {latestFlexibleCampaigns && latestFlexibleCampaigns.length > 0 && (
           <div className="container mx-auto px-4 mt-10">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold text-gray-800">Najnowsze Kampanie</h2>
-              <span className="text-sm text-gray-500">Elastyczne kampanie bez celu</span>
+              <h2 className="text-2xl font-bold text-gray-800">Latest Campaigns</h2>
+              <span className="text-sm text-gray-500">Flexible campaigns with no target</span>
             </div>
             <div className="flex flex-wrap justify-center gap-6">
               {latestFlexibleCampaigns.map((campaign: ModularFundraiser) => {
@@ -966,10 +1006,10 @@ export default function HomePage() {
                 const metadata = {
                   title: campaign.title && campaign.title.length > 0
                     ? campaign.title
-                    : `Elastyczna kampania #${campaign.id}`,
+                    : `Flexible campaign #${campaign.id}`,
                   description: campaign.description && campaign.description.length > 0
                     ? campaign.description.slice(0, 140)
-                    : `Kampania utworzona przez ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
+                    : `Campaign created by ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
                   image: "/images/zbiorka.png",
                 };
                 return (
@@ -986,10 +1026,10 @@ export default function HomePage() {
         <div className="container mx-auto px-4 mt-12">
           <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 md:p-10">
             <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 text-center">
-              Szukasz pomocy dla siebie lub bliskiej osoby?
+              Looking for help for yourself or a loved one?
             </h2>
             <p className="mt-2 text-gray-600 text-center">
-              Wybierz jak chcesz zbierać środki — my Ci w tym pomożemy. Wszystko transparentnie, on‑chain.
+              Choose how you want to raise funds — we will help you. Everything transparently, on‑chain.
             </p>
 
             <div className="mt-8 grid gap-6 md:grid-cols-3 items-center">
@@ -998,22 +1038,22 @@ export default function HomePage() {
                 <div className="flex items-start gap-3">
                   <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">💳</span>
                   <div>
-                    <div className="font-semibold text-gray-800">Wpłaty online</div>
-                    <div className="text-sm text-gray-500">Szybkie i bezpieczne wsparcie w USDC</div>
+                    <div className="font-semibold text-gray-800">Online payments</div>
+                    <div className="text-sm text-gray-500">Fast and secure support in USDC</div>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">📈</span>
                   <div>
-                    <div className="font-semibold text-gray-800">Statystyki i postęp</div>
-                    <div className="text-sm text-gray-500">Pełny wgląd w zebrane środki i wyniki</div>
+                    <div className="font-semibold text-gray-800">Statistics and progress</div>
+                    <div className="text-sm text-gray-500">Full insight into raised funds and results</div>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">🔒</span>
                   <div>
-                    <div className="font-semibold text-gray-800">Zaufanie i bezpieczeństwo</div>
-                    <div className="text-sm text-gray-500">Rozliczenia na blockchainie, publiczne kontrakty</div>
+                    <div className="font-semibold text-gray-800">Trust and security</div>
+                    <div className="text-sm text-gray-500">Settlements on the blockchain, public contracts</div>
                   </div>
                 </div>
               </div>
@@ -1025,10 +1065,10 @@ export default function HomePage() {
                   className="inline-block w-full md:w-auto px-8 py-4 rounded-full bg-[#10b981] no-underline !text-white hover:!text-white focus:!text-white active:!text-white visited:!text-white font-bold shadow hover:shadow-[0_0_22px_rgba(16,185,129,0.45)] transition-transform hover:scale-105"
                   style={{ color: '#fff' }}
                 >
-                  Załóż zbiórkę
+                  Start a Fundraiser
                 </a>
                 <p className="mt-3 text-xs text-gray-500">
-                  Nie wiesz od czego zacząć? Skontaktuj się z nami — pomożemy.
+                  Don't know where to start? Contact us — we will help.
                 </p>
               </div>
 
@@ -1037,22 +1077,22 @@ export default function HomePage() {
                 <div className="flex items-start gap-3">
                   <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">🧰</span>
                   <div>
-                    <div className="font-semibold text-gray-800">Panel zarządzania</div>
-                    <div className="text-sm text-gray-500">Proste dodawanie aktualizacji i multimediów</div>
+                    <div className="font-semibold text-gray-800">Management panel</div>
+                    <div className="text-sm text-gray-500">Easy addition of updates and media</div>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">📣</span>
                   <div>
-                    <div className="font-semibold text-gray-800">Materiały promocyjne</div>
-                    <div className="text-sm text-gray-500">Gotowe grafiki i linki do udostępniania</div>
+                    <div className="font-semibold text-gray-800">Promotional materials</div>
+                    <div className="text-sm text-gray-500">Ready-made graphics and sharing links</div>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">⏱️</span>
                   <div>
-                    <div className="font-semibold text-gray-800">Szybki start</div>
-                    <div className="text-sm text-gray-500">Utwórz kampanię w kilka minut</div>
+                    <div className="font-semibold text-gray-800">Quick start</div>
+                    <div className="text-sm text-gray-500">Create a campaign in minutes</div>
                   </div>
                 </div>
               </div>
@@ -1071,7 +1111,7 @@ export default function HomePage() {
                   : "border-transparent text-gray-600"
               } transform transition-transform hover:scale-105`}
             >
-              🗳️ Wszystkie głosowania ({displayProposalCount})
+              🗳️ All Votes ({displayProposalCount})
             </button>
             <button
               onClick={() => setActiveTab("zbiorki")}
@@ -1081,7 +1121,7 @@ export default function HomePage() {
                   : "border-transparent text-gray-600"
               } transform transition-transform hover:scale-105`}
             >
-              🎯 Wszystkie kampanie i zbiórki ({campaignCount})
+              🎯 All Campaigns & Fundraisers ({campaignCount})
             </button>
           </div>
 
@@ -1091,9 +1131,9 @@ export default function HomePage() {
               <div className="flex items-center">
                 <span className="text-yellow-500 text-xl mr-3">⚠️</span>
                 <div>
-                  <h3 className="font-bold text-yellow-800">Portfel niepołączony</h3>
+                  <h3 className="font-bold text-yellow-800">Wallet not connected</h3>
                   <p className="text-yellow-700 text-sm mt-1">
-                    Połącz swój portfel, aby móc uczestniczyć w zbiórkach i głosowaniach.
+                    Connect your wallet to participate in fundraisers and votes.
                   </p>
                 </div>
               </div>
@@ -1106,7 +1146,7 @@ export default function HomePage() {
               <>
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-2xl font-bold text-gray-800">
-                    Wszystkie głosowania
+                    All Votes
                   </h2>
                   <button
                     onClick={refetchVotes}
@@ -1117,14 +1157,14 @@ export default function HomePage() {
                         : 'bg-[#10b981] hover:bg-[#10b981]'
                     } text-white transform transition-transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]`}
                   >
-                    {votesLoading ? '⏳ Ładowanie...' : '🔄 Odśwież'}
+                    {votesLoading ? '⏳ Loading...' : '🔄 Refresh'}
                   </button>
                 </div>
 
                 {votesLoading && (
                   <div className="flex items-center justify-center py-12">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-                    <span className="ml-3 text-gray-600">Pobieranie danych z kontraktu...</span>
+                    <span className="ml-3 text-gray-600">Fetching on‑chain data...</span>
                   </div>
                 )}
 
@@ -1133,7 +1173,7 @@ export default function HomePage() {
                     <div className="flex items-center">
                       <span className="text-red-500 text-xl mr-3">⚠️</span>
                       <div>
-                        <h3 className="font-bold text-red-800">Błąd ładowania propozycji</h3>
+                        <h3 className="font-bold text-red-800">Error loading proposals</h3>
                         <p className="text-red-700 text-sm mt-1">{proposalsError?.message}</p>
                       </div>
                     </div>
@@ -1157,8 +1197,8 @@ export default function HomePage() {
                     ) : (
                       <div className="text-center py-12 bg-white rounded-lg shadow">
                         <span className="text-4xl mb-4 block">🗳️</span>
-                        <p className="text-gray-500 text-lg">Brak propozycji na kontrakcie</p>
-                        <p className="text-gray-400 mt-2">Utwórz pierwszą propozycję, aby zobaczyć ją tutaj!</p>
+                        <p className="text-gray-500 text-lg">No proposals on the contract</p>
+                        <p className="text-gray-400 mt-2">Create the first proposal to see it here!</p>
                       </div>
                     )}
                   </>
@@ -1170,7 +1210,7 @@ export default function HomePage() {
               <>
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-2xl font-bold text-gray-800">
-                    Wszystkie kampanie i zbiórki
+                    All Campaigns & Fundraisers
                   </h2>
                   <button
                     onClick={refetchCampaigns}
@@ -1179,7 +1219,7 @@ export default function HomePage() {
                       campaignsLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#10b981] hover:bg-[#10b981]'
                     } text-white transform transition-transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]`}
                   >
-                    {campaignsLoading ? '⏳ Ładowanie...' : '🔄 Odśwież'}
+                    {campaignsLoading ? '⏳ Loading...' : '🔄 Refresh'}
                   </button>
                 </div>
 
@@ -1193,7 +1233,7 @@ export default function HomePage() {
                         : "border-transparent text-gray-600 hover:text-[#10b981]"
                     }`}
                   >
-                    📊 Wszystkie ({campaigns ? campaigns.length : 0})
+                    📊 All ({campaigns ? campaigns.length : 0})
                   </button>
                   <button
                     onClick={() => setCampaignFilter("target")}
@@ -1203,7 +1243,7 @@ export default function HomePage() {
                         : "border-transparent text-gray-600 hover:text-[#10b981]"
                     }`}
                   >
-                    🎯 Zbiórki ({targetCount}) {/* UPDATED */}
+                    🎯 Fundraisers ({targetCount}) {/* UPDATED */}
                   </button>
                   <button
                     onClick={() => setCampaignFilter("flexible")}
@@ -1213,14 +1253,14 @@ export default function HomePage() {
                         : "border-transparent text-gray-600 hover:text-[#10b981]"
                     }`}
                   >
-                    🌊 Kampanie ({flexibleCount}) {/* UPDATED */}
+                    🌊 Campaigns ({flexibleCount}) {/* UPDATED */}
                   </button>
                 </div>
 
                 {campaignsLoading && (
                   <div className="flex items-center justify-center py-12">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
-                    <span className="ml-3 text-gray-600">Pobieranie danych z kontraktu...</span>
+                    <span className="ml-3 text-gray-600">Fetching on‑chain data...</span>
                   </div>
                 )}
 
@@ -1229,7 +1269,7 @@ export default function HomePage() {
                     <div className="flex items-center">
                       <span className="text-red-500 text-xl mr-3">⚠️</span>
                       <div>
-                        <h3 className="font-bold text-red-800">Błąd ładowania kampanii</h3>
+                        <h3 className="font-bold text-red-800">Error loading campaigns</h3>
                         <p className="text-red-700 text-sm mt-1">{campaignsError.message}</p>
                       </div>
                     </div>
@@ -1248,8 +1288,8 @@ export default function HomePage() {
                                 {campaignFilter === "target" ? "🎯" : "🌊"}
                               </span>
                               <span className="font-medium">
-                                Wyświetlanie: {campaignFilter === "target" ? "Zbiórek z celem" : "Kampanie"} 
-                                ({filteredCampaigns.length} z {campaigns?.length || 0})
+                                Showing: {campaignFilter === "target" ? "Targeted Fundraisers" : "Flexible Campaigns"} 
+                                ({filteredCampaigns.length} of {campaigns?.length || 0})
                               </span>
                             </div>
                           </div>
@@ -1270,10 +1310,10 @@ export default function HomePage() {
                             const metadata = {
                               title: campaign.title && campaign.title.length > 0
                                 ? campaign.title
-                                : (isNoGoalFlexible(campaign) ? `Elastyczna kampania #${campaign.id}` : `Zbiórka #${campaign.id}`),
+                                : (isNoGoalFlexible(campaign) ? `Flexible campaign #${campaign.id}` : `Fundraiser #${campaign.id}`),
                               description: campaign.description && campaign.description.length > 0
                                 ? campaign.description.slice(0, 140)
-                                : `Kampania utworzona przez ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
+                                : `Campaign created by ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
                               image: "/images/zbiorka.png"
                             };
 
@@ -1307,7 +1347,7 @@ export default function HomePage() {
                                 color: showMoreHover ? '#ffffff' : '#10b981',
                               }}
                             >
-                              Pokaż więcej kampanii →
+                              Show more campaigns →
                             </button>
                           </div>
                         )}
@@ -1319,24 +1359,24 @@ export default function HomePage() {
                           {campaignFilter === "target" ? "🎯" : campaignFilter === "flexible" ? "🌊" : "🔍"}
                         </span>
                         <p className="text-gray-500 text-lg">
-                          Brak typu: {campaignFilter === "target" ? "Zbiórek z celem" : campaignFilter === "flexible" ? "Kampanii" : ""}
+                          No type: {campaignFilter === "target" ? "Targeted Fundraisers" : campaignFilter === "flexible" ? "Flexible Campaigns" : ""}
                         </p>
                         <p className="text-gray-400 mt-2">
-                          Spróbuj wybrać inny filtr lub utwórz nowy projekt tego typu.
+                          Try selecting a different filter or create a new project of this type.
                         </p>
                         <button
                           onClick={() => setCampaignFilter("all")}
                           className="mt-3 px-4 py-2 bg-[#10b981] hover:bg-[#10b981] text-white rounded-lg transition-colors transform transition-transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]"
                         >
-                          🔄 Pokaż wszystkie projekty
+                          🔄 Show all projects
                         </button>
                       </div>
                     ) : (
                       // Brak kampanii w ogóle
                       <div className="text-center py-12 bg-white rounded-lg shadow">
                         <span className="text-4xl mb-4 block">🌱</span>
-                        <p className="text-gray-500 text-lg">Brak kampanii i zbiórek na kontrakcie</p>
-                        <p className="text-gray-400 mt-2">Utwórz pierwszy projekt, aby zobaczyć go tutaj!</p>
+                        <p className="text-gray-500 text-lg">No campaigns or fundraisers on the contract</p>
+                        <p className="text-gray-400 mt-2">Create the first project to see it here!</p>
                       </div>
                     )}
                   </>
