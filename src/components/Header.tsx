@@ -423,11 +423,11 @@ const Header = () => {
             className={styles.logoWrapper}
             onMouseEnter={() => setIsLogoHovered(true)}
             onMouseLeave={() => setIsLogoHovered(false)}
-            aria-label="PoliDao Home"
+            aria-label="PolyFund Home"
           >
             <Image
               src="/images/logo2.png" // changed: use public/images/logo2.png
-              alt="PoliDao"
+              alt="PolyFund"
               width={140}
               height={30}
               className={styles.logoImage}
@@ -438,7 +438,7 @@ const Header = () => {
             My Account
           </Link>
           <Link href="/whitepaper" className={styles.navLink}>
-            WhitePaper
+            Whitepaper
           </Link>
           <Link href="/contact" className={styles.navLink}>
             Contact
@@ -452,7 +452,7 @@ const Header = () => {
             className={styles.createCampaignButton}
           >
             <span className={styles.buttonIcon}>🚀</span>
-            Create Campaign
+            Create Fundraiser
           </button>
         </div>
 
@@ -509,7 +509,7 @@ const Header = () => {
               className={styles.mobileNavLink} 
               onClick={toggleMobileMenu}
             >
-              WhitePaper
+              Whitepaper
             </Link>
             <Link 
               href="/contact" 
@@ -528,7 +528,7 @@ const Header = () => {
               }}
               className={styles.mobileNavLink}
             >
-              🚀 Create Campaign
+              🚀 Create Fundraiser
             </button>
             <div className={styles.mobileConnectWalletWrapper}>
               <w3m-button />

@@ -830,7 +830,7 @@ export default function AccountPage() {
   useEffect(() => {
     if (isRefundSuccess && pendingRefund) {
       setAvailableRefundsCount((c) => Math.max(0, c - 1));
-      setRefundUi('Zwrot potwierdzony.');
+      setRefundUi('Refund confirmed.');
       setPendingRefund(null);
       setChainRefresh((v) => v + 1); // refresh reads
       setTimeout(() => setRefundOpen(false), 900);
@@ -839,7 +839,7 @@ export default function AccountPage() {
 
   useEffect(() => {
     if (isWithdrawSuccess && pendingWithdraw) {
-      setWithdrawUi('Wypłata potwierdzona.');
+      setWithdrawUi('Withdrawal confirmed.');
       setPendingWithdraw(null);
       setChainRefresh((v) => v + 1); // refresh reads
       setTimeout(() => setWithdrawOpen(false), 900);
@@ -849,7 +849,7 @@ export default function AccountPage() {
   // Helpers
   function toBaseUnits(amount: string, decimals = 6): bigint {
     const s = amount.trim().replace(',', '.');
-    if (!/^\d+(\.\d{0,18})?$/.test(s)) throw new Error('Nieprawidłowa kwota');
+    if (!/^\d+(\.\d{0,18})?$/.test(s)) throw new Error('Invalid amount');
     const [intPart, fracPartRaw] = s.split('.');
     const frac = (fracPartRaw || '').padEnd(decimals, '0').slice(0, decimals);
     return BigInt(intPart || '0') * (10n ** BigInt(decimals)) + BigInt(frac || '0');
@@ -972,8 +972,8 @@ export default function AccountPage() {
       camp?.title && String(camp.title).trim().length > 0
         ? camp.title
         : camp?.isFlexible
-          ? `Elastyczna kampania #${idStr}`
-          : `Zbiórka #${idStr}`;
+          ? `Flexible campaign #${idStr}`
+          : `Fundraiser #${idStr}`;
     const isRefundable = canRefundById.get(idStr) ?? false;
     const reason = canRefundReasonById.get(idStr) || '';
     setRefundCtx({ fid, donated, title, isRefundable, reason });
@@ -1013,8 +1013,8 @@ export default function AccountPage() {
       camp?.title && String(camp.title).trim().length > 0
         ? camp.title
         : camp?.isFlexible
-          ? `Elastyczna kampania #${idStr}`
-          : `Zbiórka #${idStr}`;
+          ? `Flexible campaign #${idStr}`
+          : `Fundraiser #${idStr}`;
     const raised = BigInt(camp?.raisedAmount ?? camp?.raised ?? 0n);
     const goal = BigInt(camp?.goalAmount ?? camp?.target ?? 0n);
     const isFlexible = Boolean(camp?.isFlexible);
@@ -1045,7 +1045,7 @@ export default function AccountPage() {
         setRefundCtx((prev) => prev ? { ...prev, allowedNow: sim.allowedNow, nextAt: sim.nextAt, remaining: sim.remaining } : prev);
         if (!refundCtx.isRefundable && sim.allowedNow === 0n) {
           const when = sim.nextAt ? new Date(Number(sim.nextAt) * 1000).toLocaleString('pl-PL') : '';
-          setRefundUi(when ? `Zwrot w transzach niedostępny teraz. Spróbuj po: ${when}` : 'Zwrot chwilowo niedostępny (Security).');
+          setRefundUi(when ? `Refund in tranches not available yet. Try after: ${when}` : 'Refund temporarily unavailable (Security).');
           return;
         }
       }
@@ -1064,7 +1064,7 @@ export default function AccountPage() {
           args,
         });
         setPendingRefund({ id: refundCtx.fid, hash: txHash });
-        setRefundUi('Zwrot zainicjowany. Oczekiwanie na potwierdzenie...');
+        setRefundUi('Refund initiated. Waiting for confirmation...');
         return;
       }
 
@@ -1078,7 +1078,7 @@ export default function AccountPage() {
           args: [refundCtx.fid],
         });
         setPendingRefund({ id: refundCtx.fid, hash: txHash });
-        setRefundUi('Zwrot zainicjowany. Oczekiwanie na potwierdzenie...');
+        setRefundUi('Refund initiated. Waiting for confirmation...');
       } else {
         // Scheduled path: 1) set/consume schedule 2) claim payout
         const schedHash = await writeContractAsync({
@@ -1087,7 +1087,7 @@ export default function AccountPage() {
           functionName: 'refundWithSchedule',
           args: [refundCtx.fid, donationAmount],
         });
-        setRefundUi('Ustalono harmonogram. Przygotowanie wypłaty...');
+        setRefundUi('Schedule set. Preparing payout...');
         // Wait for schedule tx before claiming
         if (publicClient) {
           await publicClient.waitForTransactionReceipt({ hash: schedHash });
@@ -1099,10 +1099,10 @@ export default function AccountPage() {
           args: [refundCtx.fid],
         });
         setPendingRefund({ id: refundCtx.fid, hash: claimHash });
-        setRefundUi('Wypłata zainicjowana. Oczekiwanie na potwierdzenie...');
+        setRefundUi('Payout initiated. Waiting for confirmation...');
       }
     } catch (err: any) {
-      setRefundUi(err?.shortMessage || err?.message || 'Nie udało się wykonać zwrotu.');
+      setRefundUi(err?.shortMessage || err?.message || 'Failed to process refund.');
     }
   };
 
@@ -1112,11 +1112,11 @@ export default function AccountPage() {
       const idStr = fid.toString();
       const donatedAgg = donatedPerFundraiser.get(idStr) ?? 0n;
       const camp = (campaigns as any[])?.find((x) => x?.id?.toString?.() === idStr);
-      const title = camp?.title && String(camp.title).trim().length > 0 ? camp.title : (camp?.isFlexible ? `Elastyczna kampania #${idStr}` : `Zbiórka #${idStr}`);
+      const title = camp?.title && String(camp.title).trim().length > 0 ? camp.title : (camp?.isFlexible ? `Flexible campaign #${idStr}` : `Fundraiser #${idStr}`);
       const refundable = canRefundById.get(idStr) ?? false;
       const reason = canRefundReasonById.get(idStr) || '';
       setRefundCtx({ fid, donated: donatedAgg, title, isRefundable: refundable, reason });
-      setRefundUi('Inicjowanie zwrotu...');
+      setRefundUi('Initiating refund...');
       setRefundOpen(true);
 
       // Load diagnostics (Storage donation and commission)
@@ -1127,7 +1127,7 @@ export default function AccountPage() {
       const donationAmount = ((diag as any)?.donationStorage as bigint | undefined) ?? donatedAgg;
 
       if (donationAmount <= 0n) {
-        setRefundUi('Brak wpłat do zwrotu.');
+        setRefundUi('No donations to refund.');
         return;
       }
 
@@ -1139,7 +1139,7 @@ export default function AccountPage() {
         setRefundCtx((prev) => prev ? { ...prev, allowedNow: sim.allowedNow, nextAt: sim.nextAt, remaining: sim.remaining, expectedNet } : prev);
         if (!refundable && sim.allowedNow === 0n) {
           const when = sim.nextAt ? new Date(Number(sim.nextAt) * 1000).toLocaleString('pl-PL') : '';
-          setRefundUi(when ? `Zwrot w transzach niedostępny teraz. Spróbuj po: ${when}` : 'Zwrot chwilowo niedostępny (Security).');
+          setRefundUi(when ? `Refund in tranches not available yet. Try after: ${when}` : 'Refund temporarily unavailable (Security).');
           return;
         }
       }
@@ -1153,7 +1153,7 @@ export default function AccountPage() {
           args: [fid],
         });
         setPendingRefund({ id: fid, hash: txHash });
-        setRefundUi('Zwrot zainicjowany. Oczekiwanie na potwierdzenie...');
+        setRefundUi('Refund initiated. Waiting for confirmation...');
         return;
       }
 
@@ -1164,7 +1164,7 @@ export default function AccountPage() {
         functionName: 'refundWithSchedule',
         args: [fid, donationAmount],
       });
-      setRefundUi('Ustalono harmonogram. Przygotowanie wypłaty...');
+      setRefundUi('Schedule set. Preparing payout...');
       if (publicClient) {
         await publicClient.waitForTransactionReceipt({ hash: schedHash });
       }
@@ -1175,9 +1175,9 @@ export default function AccountPage() {
         args: [fid],
       });
       setPendingRefund({ id: fid, hash: claimHash });
-      setRefundUi('Wypłata zainicjowana. Oczekiwanie na potwierdzenie...');
+      setRefundUi('Payout initiated. Waiting for confirmation...');
     } catch (err: any) {
-      setRefundUi(err?.shortMessage || err?.message || 'Nie udało się wykonać zwrotu.');
+      setRefundUi(err?.shortMessage || err?.message || 'Failed to process refund.');
     }
   };
 
@@ -1195,19 +1195,19 @@ export default function AccountPage() {
           args: [withdrawCtx.fid],
         });
         setPendingWithdraw({ id: withdrawCtx.fid, hash: txHash });
-        setWithdrawUi('Wypłata zainicjowana. Oczekiwanie na potwierdzenie...');
+        setWithdrawUi('Withdrawal initiated. Waiting for confirmation...');
         return;
       }
       // Partial — simulate schedule and withdraw allowed part
       const requested = withdrawCtx.raised;
       if (requested <= 0n) {
-        setWithdrawUi('Brak środków do wypłaty.');
+        setWithdrawUi('No funds to withdraw.');
         return;
       }
       const sim = await simulateWithdrawSchedule(withdrawCtx.fid, requested);
       if (!sim || sim.allowedNow === 0n) {
         const when = sim?.nextAt ? new Date(Number(sim.nextAt) * 1000).toLocaleString('pl-PL') : '';
-        setWithdrawUi(sim ? `Wypłata w transzach niedostępna teraz. Spróbuj po: ${when}` : 'Wypłata chwilowo niedostępna (Security).');
+        setWithdrawUi(sim ? `Withdrawal in tranches not available yet. Try after: ${when}` : 'Withdrawal temporarily unavailable (Security).');
         return;
       }
       const txHash = await writeContractAsync({
@@ -1217,9 +1217,9 @@ export default function AccountPage() {
         args: [withdrawCtx.fid, requested],
       });
       setPendingWithdraw({ id: withdrawCtx.fid, hash: txHash });
-      setWithdrawUi('Wypłata zainicjowana. Oczekiwanie na potwierdzenie...');
+      setWithdrawUi('Withdrawal initiated. Waiting for confirmation...');
     } catch (err: any) {
-      setWithdrawUi(err?.shortMessage || err?.message || 'Nie udało się wykonać wypłaty.');
+      setWithdrawUi(err?.shortMessage || err?.message || 'Failed to process withdrawal.');
     }
   };
 
@@ -1228,13 +1228,13 @@ export default function AccountPage() {
     try {
       const requested = toBaseUnits(withdrawInput || '0', 6);
       if (requested <= 0n) {
-        setWithdrawUi('Kwota musi być większa niż 0.');
+        setWithdrawUi('Amount must be greater than 0.');
         return;
       }
       const sim = await simulateWithdrawSchedule(withdrawCtx.fid, requested);
       if (!sim || sim.allowedNow === 0n) {
         const when = sim?.nextAt ? new Date(Number(sim.nextAt) * 1000).toLocaleString('pl-PL') : '';
-        setWithdrawUi(sim ? `Wypłata w transzach niedostępna teraz. Spróbuj po: ${when}` : 'Wypłata chwilowo niedostępna (Security).');
+        setWithdrawUi(sim ? `Withdrawal in tranches not available yet. Try after: ${when}` : 'Withdrawal temporarily unavailable (Security).');
         return;
       }
       const txHash = await writeContractAsync({
@@ -1244,9 +1244,9 @@ export default function AccountPage() {
         args: [withdrawCtx.fid, requested],
       });
       setPendingWithdraw({ id: withdrawCtx.fid, hash: txHash });
-      setWithdrawUi('Wypłata zainicjowana. Oczekiwanie na potwierdzenie...');
+      setWithdrawUi('Withdrawal initiated. Waiting for confirmation...');
     } catch (err: any) {
-      setWithdrawUi(err?.shortMessage || err?.message || 'Nie udało się wykonać wypłaty.');
+      setWithdrawUi(err?.shortMessage || err?.message || 'Failed to process withdrawal.');
     }
   };
 
@@ -1328,7 +1328,7 @@ export default function AccountPage() {
           <div className="flex space-x-4">
             <button
               onClick={() => setActiveTab('dashboard')}
-              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${
+              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${ 
                 activeTab === 'dashboard'
                   ? 'bg-[#10b981] text-white shadow-md'
                   : 'bg-gray-100 text-gray-700 hover:bg-[#10b981]/10 hover:text-[#10b981]'
@@ -1338,23 +1338,23 @@ export default function AccountPage() {
             </button>
             <button
               onClick={() => setActiveTab('donations')}
-              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${
+              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${ 
                 activeTab === 'donations'
                   ? 'bg-[#10b981] text-white shadow-md'
                   : 'bg-gray-100 text-gray-700 hover:bg-[#10b981]/10 hover:text-[#10b981]'
               } transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]`}
             >
-              Wspierane zbiórki
+              Donations
             </button>
             <button
               onClick={() => setActiveTab('fundraisers')}
-              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${
+              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${ 
                 activeTab === 'fundraisers'
                   ? 'bg-[#10b981] text-white shadow-md'
                   : 'bg-gray-100 text-gray-700 hover:bg-[#10b981]/10 hover:text-[#10b981]'
               } transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]`}
             >
-              Twoje zbiórki
+              Your Fundraisers
             </button>
             {/* removed "Głosowania" tab button */}
           </div>
@@ -1362,27 +1362,24 @@ export default function AccountPage() {
 
         {activeTab === 'dashboard' && (
           <div className="p-4 bg-white rounded-lg shadow-md">
-            <h2 className="text-xl font-semibold mb-4">Podsumowanie</h2>
+            <h2 className="text-xl font-semibold mb-4">Summary</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div
                 onClick={() => setHistoryOpen(true)}
                 className="p-4 bg-gray-100 rounded-lg cursor-pointer hover:bg-[#10b981]/10 transition-colors"
-                title="Kliknij, aby zobaczyć historię Twoich darowizn"
+                title="Click to view your donation history"
               >
-                <h3 className="text-lg font-semibold mb-2">Całkowita liczba darowizn</h3>
+                <h3 className="text-lg font-semibold mb-2">Total number of donations</h3>
                 <p className="text-2xl font-bold">{totalDonationsCount}</p>
               </div>
+
               <div
                 onClick={() => setHistoryOpen(true)}
                 className="p-4 bg-gray-100 rounded-lg cursor-pointer hover:bg-[#10b981]/10 transition-colors"
-                title="Kliknij, aby zobaczyć historię Twoich darowizn"
+                title="Click to view your donation history"
               >
-                <h3 className="text-lg font-semibold mb-2">Całkowita suma darowizn</h3>
+                <h3 className="text-lg font-semibold mb-2">Total volume</h3>
                 <p className="text-2xl font-bold">{totalDonationsSum}</p>
-              </div>
-              <div className="p-4 bg-gray-100 rounded-lg">
-                <h3 className="text-lg font-semibold mb-2">Dostępne do zwrotu</h3>
-                <p className="text-2xl font-bold">{availableRefundsCount}</p>
               </div>
             </div>
           </div>
@@ -1390,11 +1387,11 @@ export default function AccountPage() {
 
         {activeTab === 'donations' && (
           <div className="p-4 bg-white rounded-lg shadow-md">
-            <h2 className="text-xl font-semibold mb-4">Moje darowizny</h2>
+            <h2 className="text-xl font-semibold mb-4">My donations</h2>
             {campaignsLoading ? (
-              <p>Ładowanie...</p>
+              <p>Loading...</p>
             ) : campaignsError ? (
-              <p className="text-red-500">Błąd podczas ładowania darowizn</p>
+              <p className="text-red-500">Error loading donations</p>
             ) : campaigns && campaigns.length > 0 ? (
               (() => {
                 const donatedCampaigns = campaigns.filter((c: any) =>
@@ -1453,12 +1450,12 @@ export default function AccountPage() {
                           (c.title && String(c.title).trim().length > 0)
                             ? c.title
                             : c.isFlexible
-                              ? `Elastyczna kampania #${idStr}`
-                              : `Zbiórka #${idStr}`,
+                              ? `Flexible campaign #${idStr}`
+                              : `Fundraiser #${idStr}`,
                         description:
                           donationAmount > 0n
-                            ? `Twoje wpłaty: ${(Number(donationAmount) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC`
-                            : `Kampania utworzona przez ${String(c.creator).slice(0, 6)}...${String(c.creator).slice(-4)}`,
+                            ? `Your donations: ${(Number(donationAmount) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC`
+                            : `Campaign created by ${String(c.creator).slice(0, 6)}...${String(c.creator).slice(-4)}`,
                         image: "/images/zbiorka.png",
                       };
 
@@ -1471,7 +1468,7 @@ export default function AccountPage() {
                           <div
                             className="relative group cursor-pointer transition-transform"
                             onClick={() => router.push(`/campaigns/${idStr}`)}
-                            title="Przejdź do strony zbiórki"
+                            title="Go to campaign page"
                           >
                             <CampaignCard
                               campaign={mappedCampaign}
@@ -1489,7 +1486,7 @@ export default function AccountPage() {
                                 <div className="absolute inset-0 rounded-t-xl ring-1 ring-white/30 shadow-[inset_0_0_28px_rgba(16,185,129,0.45)]" />
                                 <div className="absolute inset-x-0 bottom-3 flex justify-center">
                                   <span className="pointer-events-none px-4 py-2 rounded-full bg-white/85 text-emerald-700 text-sm font-semibold ring-1 ring-emerald-300 shadow">
-                                    Dziękujemy za wsparcie! 🎉
+                                    Thank you for your support! 🎉
                                   </span>
                                 </div>
                               </div>
@@ -1503,14 +1500,14 @@ export default function AccountPage() {
                                     className={`pointer-events-auto px-4 py-2 rounded-full text-white text-sm font-semibold ring-1 ring-white/20 transition-shadow
                                       ${isRefundable ? 'bg-[#ef4444] shadow-[0_0_14px_rgba(239,68,68,0.65)] hover:shadow-[0_0_26px_rgba(239,68,68,0.95)]' : 'bg-[#ef4444]/60'}
                                       ${isPending ? 'opacity-70 cursor-wait' : ''}`}
-                                    aria-label="Cofnij wsparcie"
+                                    aria-label="Revoke donation"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       doQuickRefund(BigInt(idStr));
                                     }}
                                     disabled={isPending}
                                   >
-                                    {isPending ? 'Cofanie...' : 'Cofnij wsparcie'}
+                                    {isPending ? 'Revoking...' : 'Revoke donation'}
                                   </button>
                                 </div>
                               </div>
@@ -1524,24 +1521,24 @@ export default function AccountPage() {
                     })}
                   </div>
                 ) : (
-                  <p>Nie masz jeszcze żadnych darowizn.</p>
+                  <p>You haven't made any donations yet.</p>
                 );
               })()
             ) : (
-              <p>Nie masz jeszcze żadnych darowizn.</p>
+              <p>You haven't made any donations yet.</p>
             )}
           </div>
         )}
 
         {activeTab === 'fundraisers' && (
           <div className="p-4 bg-white rounded-lg shadow-md">
-            <h2 className="text-xl font-semibold mb-4 text-center">Twoje zbiórki</h2>
+            <h2 className="text-xl font-semibold mb-4 text-center">Your Fundraisers</h2>
             {!address ? (
-              <p>Połącz portfel, aby zobaczyć swoje zbiórki.</p>
+              <p>Connect your wallet to see your fundraisers.</p>
             ) : campaignsLoading ? (
-              <p>Ładowanie...</p>
+              <p>Loading...</p>
             ) : campaignsError ? (
-              <p className="text-red-500">Błąd podczas ładowania zbiórek</p>
+              <p className="text-red-500">Error loading fundraisers</p>
             ) : myCampaigns.length > 0 ? (
               <div className="flex flex-wrap justify-center gap-6">
                 {(() => {
@@ -1620,7 +1617,7 @@ export default function AccountPage() {
                 })()}
               </div>
             ) : (
-              <p>Nie utworzyłeś jeszcze żadnej zbiórki.</p>
+              <p>You haven't created any fundraisers yet.</p>
             )}
           </div>
         )}
@@ -1631,12 +1628,12 @@ export default function AccountPage() {
 
       {/* NEW: Historia darowizn – modal */}
       <Dialog open={historyOpen} onClose={() => setHistoryOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Historia Twoich darowizn</DialogTitle>
+        <DialogTitle>Donation history</DialogTitle>
         <DialogContent dividers>
           {historyLoading ? (
-            <p>Ładowanie historii...</p>
+            <p>Loading history...</p>
           ) : donationHistory.length === 0 ? (
-            <p className="text-gray-600">Brak zapisanych wpłat dla tego konta.</p>
+            <p className="text-gray-600">No recorded donations for this account.</p>
           ) : (
             <ul className="divide-y divide-gray-100">
               {donationHistory.map((d, idx) => {
@@ -1645,8 +1642,8 @@ export default function AccountPage() {
                 const title = camp?.title && String(camp.title).trim().length >  0
                   ? camp.title
                   : camp?.isFlexible
-                    ? `Elastyczna kampania #${fid}`
-                    : `Zbiórka #${fid}`;
+                    ? `Flexible campaign #${fid}`
+                    : `Fundraiser #${fid}`;
                 return (
                   <li key={`${d.txHash}-${idx}`} className="flex items-center justify-between py-3">
                     <div>
@@ -1677,8 +1674,7 @@ export default function AccountPage() {
           )}
         </DialogContent>
         <DialogActions>
-         
-          <Button onClick={() => setHistoryOpen(false)}>Zamknij</Button>
+          <Button onClick={() => setHistoryOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
 
@@ -1687,22 +1683,19 @@ export default function AccountPage() {
         <DialogTitle>
           <div className="flex items-center gap-3">
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#ef4444]/10 text-[#ef4444]">↩</span>
-            <span>Cofnij wsparcie</span>
+            <span>Revoke donation</span>
           </div>
         </DialogTitle>
         <DialogContent dividers>
           {!refundCtx ? (
-            <p>Ładowanie...</p>
+            <p>Loading...</p>
           ) : (
             <div className="space-y-4">
               <div className="rounded-xl bg-gray-50 p-4 ring-1 ring-gray-100 shadow-sm">
-                <p className="text-sm text-gray-500">Zbiórka</p>
+                <p className="text-sm text-gray-500">Fundraiser</p>
                 <p className="text-base font-semibold">{refundCtx.title}</p>
                 <div className="mt-3 flex items-center justify-between">
-                  <span className="text-sm text-gray-500">Twoje wpłaty</span>
-                  {/*
-                    Prefer Storage value; fallback to aggregated Router value
-                  */}
+                  <span className="text-sm text-gray-500">Your donations</span>
                   {(() => {
                     const donatedNow = (typeof refundCtx.donationStorage === 'bigint'
                       ? refundCtx.donationStorage
@@ -1717,33 +1710,33 @@ export default function AccountPage() {
                 <div className="mt-3 space-y-2">
                   {refundCtx.isRefundable ? (
                     <span className="inline-flex items-center rounded-full bg-[#10b981]/10 px-2.5 py-1 text-xs font-semibold text-[#10b981] ring-1 ring-[#10b981]/20">
-                      Pełny zwrot dostępny
+                      Full refund available
                     </span>
                   ) : refundCtx.allowedNow != null ? (
                     refundCtx.allowedNow > 0n ? (
                       <div className="flex flex-col gap-1">
                         <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
-                          Dostępne teraz: {(Number(refundCtx.allowedNow) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC
+                          Available now: {(Number(refundCtx.allowedNow) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC
                         </span>
                         {typeof refundCtx.refundCommissionBps === 'bigint' && (
                           <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">
-                            Otrzymasz netto ~{(Number(refundCtx.expectedNet ?? 0n) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC (prowizja {refundCtx.refundCommissionBps.toString()} bps)
+                            Estimated net ~{(Number(refundCtx.expectedNet ?? 0n) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC (fee {refundCtx.refundCommissionBps.toString()} bps)
                           </span>
                         )}
                         {refundCtx.remaining != null && refundCtx.remaining > 0n && (
                           <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-100">
-                            Pozostało po tej transzy: {(Number(refundCtx.remaining) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC
+                            Remaining after this tranche: {(Number(refundCtx.remaining) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC
                           </span>
                         )}
                       </div>
                     ) : (
                       <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
-                        Następna transza po: {refundCtx.nextAt ? new Date(Number(refundCtx.nextAt) * 1000).toLocaleString('pl-PL') : 'wkrótce'}
+                        Next tranche at: {refundCtx.nextAt ? new Date(Number(refundCtx.nextAt) * 1000).toLocaleString('pl-PL') : 'soon'}
                       </span>
                     )
                   ) : (
                     <span className="inline-flex items-center rounded-full bg-[#ef4444]/10 px-2.5 py-1 text-xs font-semibold text-[#ef4444] ring-1 ring-[#ef4444]/20">
-                      {refundCtx.reason || 'Zwrot nie jest aktualnie dostępny'}
+                      {refundCtx.reason || 'Refund currently unavailable'}
                     </span>
                   )}
                 </div>
@@ -1761,14 +1754,14 @@ export default function AccountPage() {
                   const disabled = isPending || noFunds || blockedBySchedule || blockedByReason;
 
                   const label = isRefundMining
-                    ? 'Przetwarzanie...'
+                    ? 'Processing...'
                     : (() => {
                         if (refundCtx.allowedNow != null) {
                           const gross = (Number(refundCtx.allowedNow) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 });
                           const net = (Number(refundCtx.expectedNet ?? refundCtx.allowedNow) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 });
-                          return `Zwrot teraz (dostępne: ${gross} USDC, netto: ${net} USDC)`;
+                          return `Refund now (available: ${gross} USDC, net: ${net} USDC)`;
                         }
-                        return 'Zwrot teraz';
+                        return 'Refund now';
                       })();
 
                   return (
@@ -1784,37 +1777,30 @@ export default function AccountPage() {
                   );
                 })()}
 
-                {/* REMOVED: custom-amount input and action */}
-                {/* ...previous custom amount UI removed... */}
-
                 {refundUi && (
                   <p className="mt-3 text-xs text-gray-600">{refundUi}</p>
                 )}
               </div>
 
-              {/* Diagnostics (unchanged) + commission details */}
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-gray-600">
-                {/* ...existing diagnostics cards... */}
-                {/* Add commission row */}
                 <div className="rounded-md bg-white p-2 ring-1 ring-gray-100">
-                  <div className="font-semibold text-gray-700">Prowizja refundu (bps)</div>
+                  <div className="font-semibold text-gray-700">Refund fee (bps)</div>
                   <div>{typeof refundCtx.refundCommissionBps === 'bigint' ? refundCtx.refundCommissionBps.toString() : '—'}</div>
                 </div>
                 <div className="rounded-md bg-white p-2 ring-1 ring-gray-100">
-                  <div className="font-semibold text-gray-700">Szacowane netto</div>
+                  <div className="font-semibold text-gray-700">Estimated net</div>
                   <div>
                     {typeof refundCtx.expectedNet === 'bigint'
                       ? `${(Number(refundCtx.expectedNet) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC`
                       : '—'}
                   </div>
                 </div>
-                {/* ...existing diagnostics cards... */}
               </div>
             </div>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRefundOpen(false)}>Zamknij</Button>
+          <Button onClick={() => setRefundOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
 
@@ -1823,19 +1809,19 @@ export default function AccountPage() {
         <DialogTitle>
           <div className="flex items-center gap-3">
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#10b981]/10 text-[#10b981]">⬇</span>
-            <span>Wypłać środki</span>
+            <span>Withdraw funds</span>
           </div>
         </DialogTitle>
         <DialogContent dividers>
           {!withdrawCtx ? (
-            <p>Ładowanie...</p>
+            <p>Loading...</p>
           ) : (
             <div className="space-y-4">
               <div className="rounded-xl bg-gray-50 p-4 ring-1 ring-gray-100 shadow-sm">
-                <p className="text-sm text-gray-500">Zbiórka</p>
+                <p className="text-sm text-gray-500">Fundraiser</p>
                 <p className="text-base font-semibold">{withdrawCtx.title}</p>
                 <div className="mt-3 flex items-center justify-between">
-                  <span className="text-sm text-gray-500">Zebrano</span>
+                  <span className="text-sm text-gray-500">Raised</span>
                   <span className="text-sm font-semibold text-gray-900">
                     {(Number(withdrawCtx.raised) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC
                   </span>
@@ -1843,11 +1829,11 @@ export default function AccountPage() {
                 <div className="mt-3">
                   {withdrawCtx.goal > 0n && withdrawCtx.raised >= withdrawCtx.goal ? (
                     <span className="inline-flex items-center rounded-full bg-[#10b981]/10 px-2.5 py-1 text-xs font-semibold text-[#10b981] ring-1 ring-[#10b981]/20">
-                      Cel osiągnięty — pełna wypłata dostępna
+                      Goal reached — full withdrawal available
                     </span>
                   ) : (
                     <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
-                      Wypłata częściowa — kontrakt podzieli na transze
+                      Partial withdrawal — contract will split into tranches
                     </span>
                   )}
                 </div>
@@ -1861,28 +1847,28 @@ export default function AccountPage() {
                     ${withdrawCtx.goal > 0n && withdrawCtx.raised >= withdrawCtx.goal ? 'bg-[#10b981]' : 'bg-[#10b981]'}
                     ${isWithdrawMining ? 'opacity-70 cursor-wait' : 'hover:shadow-[0_0_22px_rgba(16,185,129,0.35)]'}`}
                 >
-                  {isWithdrawMining ? 'Przetwarzanie...' : 'Wypłać całość teraz'}
+                  {isWithdrawMining ? 'Processing...' : 'Withdraw full amount now'}
                 </button>
 
                 <div className="mt-4">
                   <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Lub wypłać wybraną kwotę (USDC)
+                    Or withdraw a custom amount (USDC)
                   </label>
                   <div className="flex gap-2">
                     <input
                       type="text"
                       inputMode="decimal"
-                      placeholder="np. 250.00"
+                      placeholder="e.g. 250.00"
                       value={withdrawInput}
                       onChange={(e) => setWithdrawInput(e.target.value)}
                       className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#10b981]/30"
                     />
                     <button
                       onClick={doCustomWithdraw}
-                                           disabled={isWithdrawMining}
+                      disabled={isWithdrawMining}
                       className={`px-4 py-2 rounded-lg text-white text-sm font-semibold bg-[#10b981] transition ${isWithdrawMining ? 'opacity-70 cursor-wait' : 'hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]'}`}
                     >
-                      Wypłać kwotę
+                      Withdraw amount
                     </button>
                   </div>
                 </div>
@@ -1895,7 +1881,7 @@ export default function AccountPage() {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setWithdrawOpen(false)}>Zamknij</Button>
+          <Button onClick={() => setWithdrawOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
 
@@ -1940,10 +1926,10 @@ function MyCampaignCard({
       (campaign.title && String(campaign.title).trim().length > 0)
         ? campaign.title
         : campaign.isFlexible
-          ? `Elastyczna kampania #${idStr}`
-          : `Zbiórka #${idStr}`,
+          ? `Flexible campaign #${idStr}`
+          : `Fundraiser #${idStr}`,
     description:
-      `Kampania utworzona przez ${String(campaign.creator).slice(0, 6)}...${String(campaign.creator).slice(-4)}`,
+      `Campaign created by ${String(campaign.creator).slice(0, 6)}...${String(campaign.creator).slice(-4)}`,
     image: "/images/zbiorka.png",
   };
 
@@ -1961,7 +1947,7 @@ function MyCampaignCard({
           <div className="absolute inset-0 bg-gradient-to-t from-gray-500/30 via-gray-300/10 to-transparent" />
           <div className="absolute left-3 top-3">
             <span className="inline-flex items-center rounded-full bg-gray-800/80 text-white text-xs font-semibold px-2.5 py-1 ring-1 ring-white/10 shadow">
-              Zakończona sukcesem
+              Successful
             </span>
           </div>
         </div>
@@ -1974,14 +1960,14 @@ function MyCampaignCard({
             <div className="absolute inset-x-0 bottom-3 flex justify-center">
               <button
                 className="pointer-events-auto px-4 py-2 rounded-full bg-[#10b981] text-white text-sm font-semibold ring-1 ring-white/20 shadow-[0_0_14px_rgba(16,185,129,0.65)] hover:shadow-[0_0_26px_rgba(16,185,129,0.95)] transition-shadow"
-                aria-label="Wypłać środki – kampania osiągnęła cel"
+                aria-label="Withdraw funds – campaign reached goal"
                 onClick={(e) => {
                   e.stopPropagation();
                   if (onWithdraw) onWithdraw(idStr);
                   else router.push(`/campaigns/${idStr}`);
                 }}
               >
-                Wypłać środki
+                Withdraw funds
               </button>
             </div>
           </div>

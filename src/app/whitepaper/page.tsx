@@ -42,38 +42,38 @@ export default function WhitePaperPage() {
   };
 
   const sections = [
-    { id: 'executive-summary', title: 'Streszczenie zarządcze', icon: '📋' },
-    { id: 'problem', title: 'Opis problemu', icon: '❗' },
-    { id: 'solution', title: 'Nasze rozwiązanie', icon: '💡' },
-    { id: 'technology', title: 'Technologia', icon: '⚙️' },
-    { id: 'tokenomics', title: 'Tokenomika', icon: '💰' },
-    { id: 'roadmap', title: 'Mapa drogowa', icon: '🗺️' },
-    { id: 'team', title: 'Zespół', icon: '👥' },
-    { id: 'legal', title: 'Aspekty prawne', icon: '⚖️' }
+    { id: 'executive-summary', title: 'Executive Summary', icon: '📋' },
+    { id: 'problem', title: 'Problem Statement', icon: '❗' },
+    { id: 'solution', title: 'Solution & Architecture', icon: '💡' },
+    { id: 'technology', title: 'Core Contract & Modules', icon: '⚙️' },
+    { id: 'tokenomics', title: 'Tokenomics', icon: '💰' },
+    { id: 'roadmap', title: 'Roadmap', icon: '🗺️' },
+    { id: 'team', title: 'Team & Advisors', icon: '👥' },
+    { id: 'legal', title: 'Legal & Risk', icon: '⚖️' }
   ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       <Header />
       
-      {/* Progress Bar */}
+      {/* Progress Bar (green accent) */}
       <div className="fixed top-0 left-0 w-full h-1 bg-gray-200 z-50">
         <div 
-          className="h-full bg-gradient-to-r from-blue-600 to-purple-600 transition-all duration-300"
-          style={{ width: `${scrollProgress}%` }}
+          className="h-full transition-all duration-300"
+          style={{ width: `${scrollProgress}%`, background: 'linear-gradient(90deg,#10b981,#065f46)' }}
         />
       </div>
 
       {/* Floating Navigation */}
       <div className="fixed right-8 top-1/2 transform -translate-y-1/2 z-40 hidden lg:block">
-        <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-xl border border-white/20 p-2">
+        <div className="bg-white/90 backdrop-blur-lg rounded-2xl shadow-xl border border-white/20 p-2">
           {sections.map((section) => (
             <button
               key={section.id}
               onClick={() => scrollToSection(section.id)}
               className={`flex items-center w-full p-3 mb-2 last:mb-0 rounded-xl transition-all duration-300 ${
                 activeSection === section.id
-                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg'
+                  ? 'bg-gradient-to-r from-[#10b981] to-[#065f46] text-white shadow-lg'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
               title={section.title}
@@ -85,126 +85,120 @@ export default function WhitePaperPage() {
         </div>
       </div>
 
-      {/* Hero Section */}
+      {/* Hero Section (PolyFund, green theme) */}
       <div className="relative pt-20 pb-16 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 to-purple-600/20 backdrop-blur-3xl"></div>
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(90deg, rgba(16,185,129,0.12), rgba(6,95,70,0.06))', backdropFilter: 'blur(18px)' }} />
+
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
-            <h1 className="text-6xl md:text-8xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-blue-800 bg-clip-text text-transparent mb-8">
-              Biała Księga
+            <h1 className="text-6xl md:text-7xl font-extrabold bg-clip-text text-transparent mb-6" style={{ backgroundImage: 'linear-gradient(90deg,#10b981,#065f46)' }}>
+              PolyFund Whitepaper
             </h1>
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-6">
-              PoliDAO: Zdecentralizowane Zarządzanie Demokratyczne
+            <h2 className="text-2xl md:text-3xl font-semibold text-gray-900 mb-6">
+              PolyFund: Decentralized Community Funding & Governance
             </h2>
-            <p className="text-xl text-gray-600 max-w-4xl mx-auto leading-relaxed mb-12">
-              Kompleksowy przegląd techniczny i strategiczny wizji PoliDAO dla uczestnictwa demokratycznego 
-              opartego na blockchain, mechanizmów finansowania społecznościowego i zdecentralizowanego zarządzania autonomicznego.
+            <p className="text-lg text-gray-700 max-w-4xl mx-auto leading-relaxed mb-10">
+              This document describes PolyFund's architecture and the lightweight core contract (PolyFundCore) that coordinates storage, modules, and extensions.
+              It explains fundraising primitives, governance interactions, fee mechanics, withdrawal and refund behavior, and security considerations.
             </p>
-            
+
             <div className="flex flex-col sm:flex-row gap-6 justify-center items-center">
-              <button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-4 px-8 rounded-2xl transition-all duration-300 transform hover:scale-105 shadow-xl flex items-center">
+              <a
+                href="/polyfund-whitepaper.pdf"
+                download
+                className="inline-flex items-center bg-gradient-to-r from-[#10b981] to-[#065f46] text-white font-bold py-3 px-6 rounded-2xl transition-transform hover:scale-105 shadow-lg"
+                aria-label="Download PolyFund Whitepaper PDF"
+              >
                 <span className="mr-3 text-xl">📄</span>
-                Pobierz wersję PDF
-              </button>
+                Download PDF
+              </a>
               <button 
                 onClick={() => scrollToSection('executive-summary')}
-                className="bg-white/80 backdrop-blur-sm hover:bg-white text-gray-900 font-bold py-4 px-8 rounded-2xl transition-all duration-300 border border-gray-200 hover:shadow-lg flex items-center"
+                className="bg-white/90 hover:bg-white text-gray-900 font-bold py-3 px-6 rounded-2xl transition-all duration-200 border border-gray-200 shadow-sm"
               >
-                <span className="mr-3 text-xl">👇</span>
-                Czytaj online
+                <span className="mr-2 text-lg">👇</span>
+                Read online
               </button>
             </div>
 
             <div className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-6 max-w-4xl mx-auto">
-              <div className="bg-white/60 backdrop-blur-lg rounded-2xl p-6 text-center">
-                <div className="text-3xl font-bold text-blue-600">50+</div>
-                <div className="text-gray-600">Stron</div>
+              <div className="bg-white rounded-2xl p-6 text-center border">
+                <div className="text-3xl font-bold text-[#10b981]">50+</div>
+                <div className="text-gray-600">Pages</div>
               </div>
-              <div className="bg-white/60 backdrop-blur-lg rounded-2xl p-6 text-center">
-                <div className="text-3xl font-bold text-purple-600">8</div>
-                <div className="text-gray-600">Sekcji</div>
+              <div className="bg-white rounded-2xl p-6 text-center border">
+                <div className="text-3xl font-bold text-[#10b981]">8</div>
+                <div className="text-gray-600">Sections</div>
               </div>
-              <div className="bg-white/60 backdrop-blur-lg rounded-2xl p-6 text-center">
-                <div className="text-3xl font-bold text-green-600">2024</div>
-                <div className="text-gray-600">Wersja</div>
+              <div className="bg-white rounded-2xl p-6 text-center border">
+                <div className="text-3xl font-bold text-[#10b981]">2024</div>
+                <div className="text-gray-600">Version</div>
               </div>
-              <div className="bg-white/60 backdrop-blur-lg rounded-2xl p-6 text-center">
-                <div className="text-3xl font-bold text-orange-600">Darmowy</div>
-                <div className="text-gray-600">Dostęp</div>
+              <div className="bg-white rounded-2xl p-6 text-center border">
+                <div className="text-3xl font-bold text-[#10b981]">Free</div>
+                <div className="text-gray-600">Access</div>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Content */}
+      {/* Main Content (English, contract-driven) */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
         
         {/* Executive Summary */}
         <section id="executive-summary" className="mb-20">
-          <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-8 md:p-12">
-            <div className="flex items-center mb-8">
-              <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mr-6">
-                <span className="text-3xl">📋</span>
+          <div className="bg-white rounded-3xl shadow-xl border p-8 md:p-12">
+            <div className="flex items-center mb-6">
+              <div className="w-14 h-14 bg-[#10b981] bg-opacity-12 rounded-2xl flex items-center justify-center mr-4">
+                <span className="text-2xl">📋</span>
               </div>
               <div>
-                <h2 className="text-4xl font-bold text-gray-900 mb-2">Streszczenie zarządcze</h2>
-                <p className="text-gray-600">Kluczowe założenia i przegląd strategiczny</p>
+                <h2 className="text-3xl font-bold text-gray-900 mb-1">Executive Summary</h2>
+                <p className="text-gray-600">An overview of PolyFund's mission, approach and core contract.</p>
               </div>
             </div>
 
             <div className="grid md:grid-cols-2 gap-8">
               <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-4">🎯 Misja</h3>
-                <p className="text-gray-700 leading-relaxed mb-6">
-                  PoliDAO rewolucjonizuje udział demokratyczny poprzez połączenie technologii blockchain 
-                  z przejrzystymi mechanizmami zarządzania. Umożliwiamy społecznościom tworzenie, finansowanie 
-                  i głosowanie nad propozycjami w pełni zdecentralizowanym środowisku.
+                <h3 className="text-2xl font-bold text-gray-900 mb-4">Mission</h3>
+                <p className="text-gray-700 leading-relaxed mb-4">
+                  PolyFund provides a transparent on‑chain framework for community fundraising and governance.
+                  A lightweight core contract (PolyFundCore) coordinates immutable storage and modular extensions,
+                  delegating complex behavior to specialized modules (governance, security, analytics, web3 integrations).
                 </p>
 
-                <h3 className="text-2xl font-bold text-gray-900 mb-4">🔑 Kluczowe funkcje</h3>
-                <ul className="space-y-3">
-                  <li className="flex items-center text-gray-700">
-                    <span className="w-2 h-2 bg-blue-500 rounded-full mr-3"></span>
-                    Zdecentralizowane tworzenie propozycji i głosowanie
-                  </li>
-                  <li className="flex items-center text-gray-700">
-                    <span className="w-2 h-2 bg-purple-500 rounded-full mr-3"></span>
-                    Elastyczne i celowane kampanie crowdfundingowe
-                  </li>
-                  <li className="flex items-center text-gray-700">
-                    <span className="w-2 h-2 bg-green-500 rounded-full mr-3"></span>
-                    Przejrzyste zarządzanie i dystrybucja środków
-                  </li>
-                  <li className="flex items-center text-gray-700">
-                    <span className="w-2 h-2 bg-orange-500 rounded-full mr-3"></span>
-                    Mechanizmy zarządzania napędzane przez społeczność
-                  </li>
+                <h3 className="text-2xl font-bold text-gray-900 mb-3">Key Capabilities</h3>
+                <ul className="space-y-3 text-gray-700">
+                  <li>• Decentralized proposal creation and token-weighted voting</li>
+                  <li>• Flexible (no-goal) and targeted fundraisers</li>
+                  <li>• Transparent fund settlement and withdrawal lifecycle</li>
+                  <li>• Modular architecture enabling upgrades and security policies</li>
                 </ul>
               </div>
 
               <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-4">📊 Możliwości rynkowe</h3>
-                <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-2xl p-6 mb-6">
+                <h3 className="text-2xl font-bold text-gray-900 mb-4">Market Opportunity</h3>
+                <div className="rounded-2xl p-6 mb-6 border">
                   <div className="text-center">
-                    <div className="text-4xl font-bold text-blue-600 mb-2">$2.3B</div>
-                    <div className="text-gray-600">Światowy rynek crowdfundingu do 2028</div>
+                    <div className="text-2xl font-bold text-[#10b981] mb-1">$2.3B</div>
+                    <div className="text-gray-600">Crowdfunding market (projected)</div>
                   </div>
                 </div>
 
-                <h3 className="text-2xl font-bold text-gray-900 mb-4">🚀 Przewaga konkurencyjna</h3>
+                <h3 className="text-2xl font-bold text-gray-900 mb-3">Competitive Advantages</h3>
                 <div className="space-y-3">
-                  <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                    <div className="font-semibold text-green-800">Przejrzystość blockchain</div>
-                    <div className="text-green-700 text-sm">Wszystkie transakcje są publicznie weryfikowalne</div>
+                  <div className="rounded-xl p-4 border">
+                    <div className="font-semibold text-[#10b981]">Blockchain transparency</div>
+                    <div className="text-sm text-gray-600">All transactions and state transitions are auditable on-chain</div>
                   </div>
-                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                    <div className="font-semibold text-blue-800">Niższe opłaty</div>
-                    <div className="text-blue-700 text-sm">Zmniejszone koszty pośredników</div>
+                  <div className="rounded-xl p-4 border">
+                    <div className="font-semibold text-[#10b981]">Low platform fees</div>
+                    <div className="text-sm text-gray-600">On-chain settlement and fee configurability</div>
                   </div>
-                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-                    <div className="font-semibold text-purple-800">Globalny dostęp</div>
-                    <div className="text-purple-700 text-sm">Brak ograniczeń geograficznych</div>
+                  <div className="rounded-xl p-4 border">
+                    <div className="font-semibold text-[#10b981]">Global accessibility</div>
+                    <div className="text-sm text-gray-600">Open to contributors worldwide</div>
                   </div>
                 </div>
               </div>
@@ -214,68 +208,38 @@ export default function WhitePaperPage() {
 
         {/* Problem Statement */}
         <section id="problem" className="mb-20">
-          <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-8 md:p-12">
-            <div className="flex items-center mb-8">
-              <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mr-6">
-                <span className="text-3xl">❗</span>
+          <div className="bg-white rounded-3xl shadow-xl border p-8 md:p-12">
+            <div className="flex items-center mb-6">
+              <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center mr-4">
+                <span className="text-2xl">❗</span>
               </div>
               <div>
-                <h2 className="text-4xl font-bold text-gray-900 mb-2">Problem Statement</h2>
-                <p className="text-gray-600">Current challenges in democratic participation and fundraising</p>
+                <h2 className="text-3xl font-bold text-gray-900 mb-1">Problem Statement</h2>
+                <p className="text-gray-600">Key challenges in governance and community fundraising today.</p>
               </div>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-8">
-              <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
-                <h3 className="text-xl font-bold text-red-800 mb-4">🏛️ Traditional Democracy Limitations</h3>
-                <ul className="space-y-2 text-red-700">
-                  <li>• Limited participation mechanisms</li>
-                  <li>• Lack of transparency in decision-making</li>
-                  <li>• Geographical and time constraints</li>
-                  <li>• High barriers to entry for proposals</li>
+            <div className="grid md:grid-cols-3 gap-6">
+              <div className="rounded-2xl p-5 border">
+                <h3 className="text-lg font-semibold mb-3">Traditional Governance Limits</h3>
+                <ul className="text-gray-700 space-y-1 text-sm">
+                  <li>• Low participation and limited transparency</li>
+                  <li>• Centralized control and slow decision cycles</li>
                 </ul>
               </div>
-
-              <div className="bg-orange-50 border border-orange-200 rounded-2xl p-6">
-                <h3 className="text-xl font-bold text-orange-800 mb-4">💸 Centralized Fundraising Issues</h3>
-                <ul className="space-y-2 text-orange-700">
-                  <li>• High platform fees (5-10%)</li>
-                  <li>• Payment processor limitations</li>
-                  <li>• Risk of fund mismanagement</li>
-                  <li>• Limited global accessibility</li>
+              <div className="rounded-2xl p-5 border">
+                <h3 className="text-lg font-semibold mb-3">Centralized Fundraising Problems</h3>
+                <ul className="text-gray-700 space-y-1 text-sm">
+                  <li>• High middleman fees and limited auditability</li>
+                  <li>• Fragmented tooling for global donors</li>
                 </ul>
               </div>
-
-              <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-6">
-                <h3 className="text-xl font-bold text-yellow-800 mb-4">🔒 Trust and Accountability</h3>
-                <ul className="space-y-2 text-yellow-700">
-                  <li>• Opaque fund allocation</li>
-                  <li>• Limited tracking of outcomes</li>
-                  <li>• Centralized control points</li>
-                  <li>• Voter manipulation risks</li>
+              <div className="rounded-2xl p-5 border">
+                <h3 className="text-lg font-semibold mb-3">Trust & Accountability</h3>
+                <ul className="text-gray-700 space-y-1 text-sm">
+                  <li>• Difficulty tracking funds and outcomes</li>
+                  <li>• Insufficient automated governance controls</li>
                 </ul>
-              </div>
-            </div>
-
-            <div className="mt-12 bg-gradient-to-r from-gray-50 to-gray-100 rounded-2xl p-8">
-              <h3 className="text-2xl font-bold text-gray-900 mb-6 text-center">📈 Market Statistics</h3>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 text-center">
-                <div>
-                  <div className="text-3xl font-bold text-red-600">73%</div>
-                  <div className="text-gray-600">of people feel disconnected from political decisions</div>
-                </div>
-                <div>
-                  <div className="text-3xl font-bold text-orange-600">$1.2B</div>
-                  <div className="text-gray-600">lost annually to crowdfunding platform fees</div>
-                </div>
-                <div>
-                  <div className="text-3xl font-bold text-yellow-600">45%</div>
-                  <div className="text-gray-600">of campaigns fail due to trust issues</div>
-                </div>
-                <div>
-                  <div className="text-3xl font-bold text-purple-600">2.8B</div>
-                  <div className="text-gray-600">people lack access to democratic participation</div>
-                </div>
               </div>
             </div>
           </div>
@@ -283,171 +247,168 @@ export default function WhitePaperPage() {
 
         {/* Solution */}
         <section id="solution" className="mb-20">
-          <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-8 md:p-12">
+          <div className="bg-white rounded-3xl shadow-xl border p-8 md:p-12">
             <div className="flex items-center mb-8">
               <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center mr-6">
                 <span className="text-3xl">💡</span>
               </div>
               <div>
-                <h2 className="text-4xl font-bold text-gray-900 mb-2">Our Solution</h2>
-                <p className="text-gray-600">How PoliDAO addresses current market gaps</p>
+                <h2 className="text-3xl font-bold text-gray-900 mb-1">Our Solution</h2>
+                <p className="text-gray-600">How PolyFund's design addresses the gaps with a lightweight core + modules</p>
               </div>
             </div>
-
-            <div className="mb-12">
-              <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-2xl p-8 text-center">
-                <h3 className="text-3xl font-bold text-gray-900 mb-4">🌐 Decentralized Democratic Platform</h3>
-                <p className="text-xl text-gray-700 max-w-4xl mx-auto leading-relaxed">
-                  PoliDAO leverages blockchain technology to create a transparent, accessible, and efficient 
-                  platform for democratic participation and community fundraising.
+ 
+            <div className="mb-8">
+              <div className="rounded-2xl p-6 text-center border">
+                <h3 className="text-2xl font-bold text-gray-900 mb-3">Decentralized Democratic Platform</h3>
+                <p className="text-gray-700 max-w-3xl mx-auto leading-relaxed">
+                  PolyFund combines a slim Core contract coordinating Storage and Modules with specialized libraries for Withdraw and Refund logic.
+                  This enables auditable donations, configurable fees, and modular governance execution.
                 </p>
               </div>
             </div>
-
+ 
             <div className="grid md:grid-cols-2 gap-8 mb-12">
-              <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-6">🗳️ Governance Solutions</h3>
-                <div className="space-y-4">
-                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                    <h4 className="font-bold text-blue-800">Token-Based Voting</h4>
-                    <p className="text-blue-700 text-sm">Proportional representation based on stake</p>
-                  </div>
-                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-                    <h4 className="font-bold text-purple-800">Proposal Creation</h4>
-                    <p className="text-purple-700 text-sm">Democratic proposal submission and discussion</p>
-                  </div>
-                  <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                    <h4 className="font-bold text-green-800">Transparent Results</h4>
-                    <p className="text-green-700 text-sm">Real-time, immutable voting records</p>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-6">💰 Fundraising Solutions</h3>
-                <div className="space-y-4">
-                  <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-                    <h4 className="font-bold text-orange-800">Flexible Campaigns</h4>
-                    <p className="text-orange-700 text-sm">Both target-based and continuous funding</p>
-                  </div>
-                  <div className="bg-pink-50 border border-pink-200 rounded-xl p-4">
-                    <h4 className="font-bold text-pink-800">Low Fees</h4>
-                    <p className="text-pink-700 text-sm">Minimal transaction costs on blockchain</p>
-                  </div>
-                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
-                    <h4 className="font-bold text-indigo-800">Global Access</h4>
-                    <p className="text-indigo-700 text-sm">No geographical or currency restrictions</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl p-8 text-white">
+               <div>
+                 <h3 className="text-2xl font-bold text-gray-900 mb-6">🗳️ Governance Solutions</h3>
+                 <div className="space-y-4">
+                   <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                     <h4 className="font-bold text-blue-800">Token-Based Voting</h4>
+                     <p className="text-blue-700 text-sm">Proportional representation based on stake</p>
+                   </div>
+                   <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                     <h4 className="font-bold text-purple-800">Proposal Creation</h4>
+                     <p className="text-purple-700 text-sm">Democratic proposal submission and discussion</p>
+                   </div>
+                   <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                     <h4 className="font-bold text-green-800">Transparent Results</h4>
+                     <p className="text-green-700 text-sm">Real-time, immutable voting records</p>
+                   </div>
+                 </div>
+               </div>
+ 
+               <div>
+                 <h3 className="text-2xl font-bold text-gray-900 mb-6">💰 Fundraising Solutions</h3>
+                 <div className="space-y-4">
+                   <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+                     <h4 className="font-bold text-orange-800">Flexible Campaigns</h4>
+                     <p className="text-orange-700 text-sm">Both target-based and continuous funding</p>
+                   </div>
+                   <div className="bg-pink-50 border border-pink-200 rounded-xl p-4">
+                     <h4 className="font-bold text-pink-800">Low Fees</h4>
+                     <p className="text-pink-700 text-sm">Minimal transaction costs on blockchain</p>
+                   </div>
+                   <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+                     <h4 className="font-bold text-indigo-800">Global Access</h4>
+                     <p className="text-indigo-700 text-sm">No geographical or currency restrictions</p>
+                   </div>
+                 </div>
+               </div>
+             </div>
+ 
+            <div className="rounded-2xl p-8 border bg-white">
               <h3 className="text-2xl font-bold mb-6 text-center">🔗 Core Platform Features</h3>
-              <div className="grid md:grid-cols-3 gap-6 text-center">
+               <div className="grid md:grid-cols-3 gap-6 text-center">
                 <div>
-                  <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <div className="w-14 h-14 bg-[#10b981]/10 rounded-2xl flex items-center justify-center mx-auto mb-3">
                     <span className="text-2xl">🛡️</span>
                   </div>
-                  <h4 className="text-xl font-bold mb-2">Security First</h4>
-                  <p className="text-blue-100">Audited smart contracts and secure fund management</p>
+                  <h4 className="text-lg font-bold mb-1">Security First</h4>
+                  <p className="text-gray-600 text-sm">Audited contracts and strict withdrawal controls</p>
                 </div>
                 <div>
-                  <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <div className="w-14 h-14 bg-[#10b981]/10 rounded-2xl flex items-center justify-center mx-auto mb-3">
                     <span className="text-2xl">⚡</span>
                   </div>
-                  <h4 className="text-xl font-bold mb-2">Fast & Efficient</h4>
-                  <p className="text-blue-100">Quick transactions and real-time updates</p>
+                  <h4 className="text-lg font-bold mb-1">Efficient</h4>
+                  <p className="text-gray-600 text-sm">Simple Core delegates to optimized libraries (WithdrawLogic, RefundLogic)</p>
                 </div>
                 <div>
-                  <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <div className="w-14 h-14 bg-[#10b981]/10 rounded-2xl flex items-center justify-center mx-auto mb-3">
                     <span className="text-2xl">🌍</span>
                   </div>
-                  <h4 className="text-xl font-bold mb-2">Globally Accessible</h4>
-                  <p className="text-blue-100">Available to anyone with internet access</p>
+                  <h4 className="text-lg font-bold mb-1">Globally Accessible</h4>
+                  <p className="text-gray-600 text-sm">Composable modules enable multi-network deployment</p>
                 </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Technology */}
-        <section id="technology" className="mb-20">
-          <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-8 md:p-12">
-            <div className="flex items-center mb-8">
-              <div className="w-16 h-16 bg-purple-100 rounded-2xl flex items-center justify-center mr-6">
-                <span className="text-3xl">⚙️</span>
-              </div>
-              <div>
-                <h2 className="text-4xl font-bold text-gray-900 mb-2">Technology Stack</h2>
-                <p className="text-gray-600">Blockchain infrastructure and smart contract architecture</p>
-              </div>
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-8 mb-12">
-              <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-6">🔗 Blockchain Layer</h3>
-                <div className="space-y-4">
-                  <div className="border border-gray-200 rounded-xl p-4">
-                    <h4 className="font-bold text-gray-800 flex items-center mb-2">
+               </div>
+             </div>
+           </div>
+         </section>
+ 
+        {/* Technology / Core Contract */}
+         <section id="technology" className="mb-20">
+          <div className="bg-white rounded-3xl shadow-xl border p-8 md:p-12">
+             <div className="flex items-center mb-8">
+               <div className="w-16 h-16 bg-purple-100 rounded-2xl flex items-center justify-center mr-6">
+                 <span className="text-3xl">⚙️</span>
+               </div>
+               <div>
+                <h2 className="text-3xl font-bold text-gray-900 mb-1">PolyFundCore — Lightweight Core</h2>
+                <p className="text-gray-600">The Core coordinates storage and modules and delegates complex logic to specialized libraries.</p>
+               </div>
+             </div>
+ 
+             <div className="grid md:grid-cols-2 gap-8 mb-12">
+               <div>
+                <h3 className="text-2xl font-bold text-gray-900 mb-6">Blockchain Layer</h3>
+                 <div className="space-y-4">
+                   <div className="border border-gray-200 rounded-xl p-4">
+                     <h4 className="font-bold text-gray-800 flex items-center mb-2">
                       <span className="w-3 h-3 bg-blue-500 rounded-full mr-3"></span>
                       Ethereum Mainnet
                     </h4>
                     <p className="text-gray-600 text-sm">Primary deployment for maximum security and decentralization</p>
-                  </div>
-                  <div className="border border-gray-200 rounded-xl p-4">
-                    <h4 className="font-bold text-gray-800 flex items-center mb-2">
+                   </div>
+                   <div className="border border-gray-200 rounded-xl p-4">
+                     <h4 className="font-bold text-gray-800 flex items-center mb-2">
                       <span className="w-3 h-3 bg-purple-500 rounded-full mr-3"></span>
                       Polygon Network
                     </h4>
                     <p className="text-gray-600 text-sm">Layer 2 scaling for faster and cheaper transactions</p>
-                  </div>
-                  <div className="border border-gray-200 rounded-xl p-4">
-                    <h4 className="font-bold text-gray-800 flex items-center mb-2">
+                   </div>
+                   <div className="border border-gray-200 rounded-xl p-4">
+                     <h4 className="font-bold text-gray-800 flex items-center mb-2">
                       <span className="w-3 h-3 bg-green-500 rounded-full mr-3"></span>
                       Multi-Chain Support
                     </h4>
                     <p className="text-gray-600 text-sm">Future expansion to additional networks</p>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-6">📝 Smart Contracts</h3>
-                <div className="bg-gray-50 rounded-2xl p-6">
-                  <div className="space-y-4">
-                    <div>
-                      <h4 className="font-bold text-gray-800 mb-2">Governance Contract</h4>
+                   </div>
+                 </div>
+               </div>
+ 
+               <div>
+                <h3 className="text-2xl font-bold text-gray-900 mb-6">Core Contract & Libraries</h3>
+                 <div className="bg-gray-50 rounded-2xl p-6">
+                   <div className="space-y-4">
+                     <div>
+                      <h4 className="font-bold text-gray-800 mb-2">Core: PolyFundCore</h4>
+                      <p className="text-sm text-gray-600 mb-2">
+                        A thin controller (PolyFundCore) that: resolves module addresses, coordinates router/extension calls, and exposes view functions (getFundraiserDetails, getFundraiserCount, getDonationAmount).
+                      </p>
+                      <h4 className="font-bold text-gray-800 mb-2">Libraries & Modules</h4>
+                       <ul className="text-sm text-gray-600 space-y-1">
+                        <li>• WithdrawLogic — robust withdrawal flow with fee handling and analytics recording</li>
+                        <li>• RefundLogic — controlled refund claiming, blocked when withdrawals start</li>
+                        <li>• FundraiserLogic — creation and basic validation</li>
+                       </ul>
+                     </div>
+                     <div>
+                      <h4 className="font-bold text-gray-800 mb-2">Core Behaviors (high level)</h4>
                       <ul className="text-sm text-gray-600 space-y-1">
-                        <li>• Proposal creation and voting</li>
-                        <li>• Token-weighted democracy</li>
-                        <li>• Result calculation and execution</li>
+                        <li>• Fee configuration: donationFeeBps, successWithdrawFeeBps, flexibleWithdrawFeeBps</li>
+                        <li>• Donation flow: transfer to Core → Core forwards net to Storage and records donation event</li>
+                        <li>• Withdrawals: WithdrawLogic executes net payouts and marks withdrawalsStarted to block refunds in some scenarios</li>
+                        <li>• Refunds: RefundLogic.claimRefund allows controlled refunds; refund() direct call is disabled (reverts RefundNotAllowed)</li>
                       </ul>
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-gray-800 mb-2">Fundraising Contract</h4>
-                      <ul className="text-sm text-gray-600 space-y-1">
-                        <li>• Campaign creation and management</li>
-                        <li>• Fund collection and distribution</li>
-                        <li>• Refund mechanisms</li>
-                      </ul>
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-gray-800 mb-2">Token Contract</h4>
-                      <ul className="text-sm text-gray-600 space-y-1">
-                        <li>• ERC-20 governance token</li>
-                        <li>• Staking and rewards</li>
-                        <li>• Voting power calculation</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl p-8 text-white">
-              <h3 className="text-2xl font-bold mb-6">💻 Technical Architecture</h3>
-              <div className="grid md:grid-cols-4 gap-6">
+                     </div>
+                   </div>
+                 </div>
+               </div>
+             </div>
+ 
+            <div className="rounded-2xl p-6 border bg-white">
+              <h3 className="text-2xl font-bold mb-6">Technical Architecture</h3>
+               <div className="grid md:grid-cols-4 gap-6">
                 <div className="text-center">
                   <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
                     <span className="text-2xl">🌐</span>
@@ -476,52 +437,52 @@ export default function WhitePaperPage() {
                   <h4 className="font-bold mb-2">Infrastructure</h4>
                   <p className="text-gray-300 text-sm">IPFS, Vercel, Alchemy</p>
                 </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
+               </div>
+             </div>
+           </div>
+         </section>
+ 
         {/* Tokenomics */}
-        <section id="tokenomics" className="mb-20">
-          <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-8 md:p-12">
-            <div className="flex items-center mb-8">
-              <div className="w-16 h-16 bg-yellow-100 rounded-2xl flex items-center justify-center mr-6">
-                <span className="text-3xl">💰</span>
-              </div>
-              <div>
-                <h2 className="text-4xl font-bold text-gray-900 mb-2">Tokenomics</h2>
-                <p className="text-gray-600">POLI token economics and distribution model</p>
-              </div>
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-8 mb-12">
-              <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-6">🪙 Token Overview</h3>
-                <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-6">
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
+         <section id="tokenomics" className="mb-20">
+          <div className="bg-white rounded-3xl shadow-xl border p-8 md:p-12">
+             <div className="flex items-center mb-8">
+               <div className="w-16 h-16 bg-yellow-100 rounded-2xl flex items-center justify-center mr-6">
+                 <span className="text-3xl">💰</span>
+               </div>
+               <div>
+                 <h2 className="text-4xl font-bold text-gray-900 mb-2">Tokenomics</h2>
+                 <p className="text-gray-600">POLI token economics and distribution model</p>
+               </div>
+             </div>
+ 
+             <div className="grid md:grid-cols-2 gap-8 mb-12">
+               <div>
+                 <h3 className="text-2xl font-bold text-gray-900 mb-6">🪙 Token Overview</h3>
+                 <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-6">
+                   <div className="space-y-4">
+                     <div className="flex justify-between items-center">
                       <span className="font-medium text-gray-700">Token Name:</span>
                       <span className="font-bold text-gray-900">PoliDAO Token</span>
-                    </div>
-                    <div className="flex justify-between items-center">
+                     </div>
+                     <div className="flex justify-between items-center">
                       <span className="font-medium text-gray-700">Symbol:</span>
                       <span className="font-bold text-gray-900">POLI</span>
-                    </div>
-                    <div className="flex justify-between items-center">
+                     </div>
+                     <div className="flex justify-between items-center">
                       <span className="font-medium text-gray-700">Total Supply:</span>
                       <span className="font-bold text-gray-900">1,000,000,000 POLI</span>
-                    </div>
-                    <div className="flex justify-between items-center">
+                     </div>
+                     <div className="flex justify-between items-center">
                       <span className="font-medium text-gray-700">Standard:</span>
                       <span className="font-bold text-gray-900">ERC-20</span>
-                    </div>
-                    <div className="flex justify-between items-center">
+                     </div>
+                     <div className="flex justify-between items-center">
                       <span className="font-medium text-gray-700">Decimals:</span>
                       <span className="font-bold text-gray-900">18</span>
-                    </div>
-                  </div>
-                </div>
-
+                     </div>
+                   </div>
+                 </div>
+ 
                 <h4 className="text-xl font-bold text-gray-900 mt-8 mb-4">🎯 Token Utility</h4>
                 <div className="space-y-3">
                   <div className="flex items-center text-gray-700">
@@ -541,11 +502,11 @@ export default function WhitePaperPage() {
                     Proposal creation requirements
                   </div>
                 </div>
-              </div>
-
-              <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-6">📊 Token Distribution</h3>
-                <div className="space-y-4">
+               </div>
+ 
+               <div>
+                 <h3 className="text-2xl font-bold text-gray-900 mb-6">📊 Token Distribution</h3>
+                 <div className="space-y-4">
                   <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                     <div className="flex justify-between items-center mb-2">
                       <span className="font-bold text-blue-800">Community & Ecosystem</span>
@@ -589,11 +550,11 @@ export default function WhitePaperPage() {
                     </div>
                     <p className="text-orange-700 text-sm mt-2">150M POLI for platform development</p>
                   </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-r from-yellow-600 to-orange-600 rounded-2xl p-8 text-white">
+                 </div>
+               </div>
+             </div>
+ 
+             <div className="bg-gradient-to-r from-yellow-600 to-orange-600 rounded-2xl p-8 text-white">
               <h3 className="text-2xl font-bold mb-6 text-center">💎 Staking & Rewards</h3>
               <div className="grid md:grid-cols-3 gap-6 text-center">
                 <div>
@@ -611,22 +572,22 @@ export default function WhitePaperPage() {
               </div>
             </div>
           </div>
-        </section>
-
+         </section>
+ 
         {/* Roadmap */}
-        <section id="roadmap" className="mb-20">
-          <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-8 md:p-12">
-            <div className="flex items-center mb-8">
-              <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mr-6">
-                <span className="text-3xl">🗺️</span>
-              </div>
-              <div>
-                <h2 className="text-4xl font-bold text-gray-900 mb-2">Development Roadmap</h2>
-                <p className="text-gray-600">Strategic milestones and timeline</p>
-              </div>
-            </div>
-
-            <div className="space-y-8">
+         <section id="roadmap" className="mb-20">
+          <div className="bg-white rounded-3xl shadow-xl border p-8 md:p-12">
+             <div className="flex items-center mb-8">
+               <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mr-6">
+                 <span className="text-3xl">🗺️</span>
+               </div>
+               <div>
+                 <h2 className="text-4xl font-bold text-gray-900 mb-2">Development Roadmap</h2>
+                 <p className="text-gray-600">Strategic milestones and timeline</p>
+               </div>
+             </div>
+ 
+             <div className="space-y-8">
               {/* Q1 2024 */}
               <div className="flex items-start space-x-6">
                 <div className="flex-shrink-0">
@@ -654,7 +615,7 @@ export default function WhitePaperPage() {
                   </div>
                 </div>
               </div>
-
+ 
               {/* Q2 2024 */}
               <div className="flex items-start space-x-6">
                 <div className="flex-shrink-0">
@@ -682,7 +643,7 @@ export default function WhitePaperPage() {
                   </div>
                 </div>
               </div>
-
+ 
               {/* Q3 2024 */}
               <div className="flex items-start space-x-6">
                 <div className="flex-shrink-0">
@@ -710,7 +671,7 @@ export default function WhitePaperPage() {
                   </div>
                 </div>
               </div>
-
+ 
               {/* Q4 2024 */}
               <div className="flex items-start space-x-6">
                 <div className="flex-shrink-0">
@@ -740,22 +701,22 @@ export default function WhitePaperPage() {
               </div>
             </div>
           </div>
-        </section>
-
+         </section>
+ 
         {/* Team */}
-        <section id="team" className="mb-20">
-          <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-8 md:p-12">
-            <div className="flex items-center mb-8">
-              <div className="w-16 h-16 bg-pink-100 rounded-2xl flex items-center justify-center mr-6">
-                <span className="text-3xl">👥</span>
-              </div>
-              <div>
-                <h2 className="text-4xl font-bold text-gray-900 mb-2">Team & Advisors</h2>
-                <p className="text-gray-600">Meet the team building the future of democratic participation</p>
-              </div>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-8 mb-12">
+         <section id="team" className="mb-20">
+          <div className="bg-white rounded-3xl shadow-xl border p-8 md:p-12">
+             <div className="flex items-center mb-8">
+               <div className="w-16 h-16 bg-pink-100 rounded-2xl flex items-center justify-center mr-6">
+                 <span className="text-3xl">👥</span>
+               </div>
+               <div>
+                 <h2 className="text-4xl font-bold text-gray-900 mb-2">Team & Advisors</h2>
+                 <p className="text-gray-600">Meet the team building the future of democratic participation</p>
+               </div>
+             </div>
+ 
+             <div className="grid md:grid-cols-3 gap-8 mb-12">
               <div className="text-center">
                 <div className="w-32 h-32 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
                   <span className="text-4xl text-white">👨‍💻</span>
@@ -815,9 +776,9 @@ export default function WhitePaperPage() {
                   </span>
                 </div>
               </div>
-            </div>
-
-            <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl p-8">
+             </div>
+ 
+             <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl p-8">
               <h3 className="text-2xl font-bold text-gray-900 mb-6 text-center">🎓 Advisory Board</h3>
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="flex items-center space-x-4">
@@ -864,27 +825,27 @@ export default function WhitePaperPage() {
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-        </section>
-
+             </div>
+           </div>
+         </section>
+ 
         {/* Legal & Compliance */}
-        <section id="legal" className="mb-20">
-          <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-8 md:p-12">
-            <div className="flex items-center mb-8">
-              <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mr-6">
-                <span className="text-3xl">⚖️</span>
-              </div>
-              <div>
-                <h2 className="text-4xl font-bold text-gray-900 mb-2">Legal & Compliance</h2>
-                <p className="text-gray-600">Regulatory framework and risk management</p>
-              </div>
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-8 mb-12">
-              <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-6">📋 Regulatory Compliance</h3>
-                <div className="space-y-4">
+         <section id="legal" className="mb-20">
+          <div className="bg-white rounded-3xl shadow-xl border p-8 md:p-12">
+             <div className="flex items-center mb-8">
+               <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mr-6">
+                 <span className="text-3xl">⚖️</span>
+               </div>
+               <div>
+                 <h2 className="text-4xl font-bold text-gray-900 mb-2">Legal & Compliance</h2>
+                 <p className="text-gray-600">Regulatory framework and risk management</p>
+               </div>
+             </div>
+ 
+             <div className="grid md:grid-cols-2 gap-8 mb-12">
+               <div>
+                 <h3 className="text-2xl font-bold text-gray-900 mb-6">📋 Regulatory Compliance</h3>
+                 <div className="space-y-4">
                   <div className="bg-green-50 border border-green-200 rounded-xl p-4">
                     <h4 className="font-bold text-green-800 mb-2">✅ Know Your Customer (KYC)</h4>
                     <p className="text-green-700 text-sm">
@@ -903,12 +864,12 @@ export default function WhitePaperPage() {
                       Adherence to international regulatory standards and local requirements
                     </p>
                   </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-6">⚠️ Risk Factors</h3>
-                <div className="space-y-4">
+                 </div>
+               </div>
+ 
+               <div>
+                 <h3 className="text-2xl font-bold text-gray-900 mb-6">⚠️ Risk Factors</h3>
+                 <div className="space-y-4">
                   <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
                     <h4 className="font-bold text-yellow-800 mb-2">📊 Market Risk</h4>
                     <p className="text-yellow-700 text-sm">
@@ -927,11 +888,11 @@ export default function WhitePaperPage() {
                       Potential changes in cryptocurrency and DAO regulations
                     </p>
                   </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-gray-900 rounded-2xl p-8 text-white">
+                 </div>
+               </div>
+             </div>
+ 
+             <div className="bg-gray-900 rounded-2xl p-8 text-white">
               <h3 className="text-2xl font-bold mb-6 text-center">📄 Legal Documentation</h3>
               <div className="grid md:grid-cols-4 gap-6 text-center">
                 <div>
@@ -963,10 +924,10 @@ export default function WhitePaperPage() {
                   <p className="text-gray-300 text-sm">Third-party security assessment</p>
                 </div>
               </div>
-            </div>
-
-            <div className="mt-12 bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-8">
-              <h3 className="text-2xl font-bold text-gray-900 mb-6 text-center">⚠️ Important Disclaimers</h3>
+             </div>
+ 
+             <div className="mt-12 bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-8">
+              <h3 className="text-2xl font-bold mb-6 text-center">⚠️ Important Disclaimers</h3>
               <div className="space-y-4 text-gray-700">
                 <p className="text-sm leading-relaxed">
                   <strong>Investment Risk:</strong> Participation in PoliDAO involves significant risk. 
@@ -985,30 +946,30 @@ export default function WhitePaperPage() {
                   Smart contracts may contain bugs or vulnerabilities despite thorough auditing.
                 </p>
               </div>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      {/* CTA Section */}
+             </div>
+           </div>
+         </section>
+       </div>
+ 
+      {/* CTA Section (green themed) */}
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
-        <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-3xl p-12 text-center text-white">
-          <h2 className="text-4xl font-bold mb-6">Ready to Join the Future of Democracy?</h2>
-          <p className="text-xl text-blue-100 mb-8 max-w-2xl mx-auto">
-            Be part of the revolutionary platform that's democratizing governance and fundraising through blockchain technology.
+        <div className="rounded-3xl p-12 text-center border" style={{ background: 'linear-gradient(90deg, rgba(16,185,129,0.06), rgba(6,95,70,0.03))' }}>
+          <h2 className="text-3xl font-bold mb-4">Ready to collaborate with PolyFund?</h2>
+          <p className="text-gray-700 mb-6 max-w-2xl mx-auto">
+            Review the architecture above and download the full specification to integrate or deploy PolyFund modules.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="bg-white text-blue-600 font-bold py-4 px-8 rounded-2xl hover:bg-gray-100 transition-all duration-300 transform hover:scale-105">
-              📄 Download Full White Paper
-            </button>
-            <button className="bg-white/20 backdrop-blur-sm text-white font-bold py-4 px-8 rounded-2xl hover:bg-white/30 transition-all duration-300 border border-white/30">
-              🚀 Join Our Community
-            </button>
+            <a href="/polyfund-whitepaper.pdf" download className="inline-flex items-center bg-[#10b981] text-white font-bold py-3 px-6 rounded-2xl shadow hover:opacity-95">
+              📄 Download Full Whitepaper
+            </a>
+            <a href="/contact" className="inline-flex items-center border border-[#10b981] text-[#10b981] font-semibold py-3 px-6 rounded-2xl hover:bg-[#10b981]/10">
+              🚀 Contact the Team
+            </a>
           </div>
         </div>
       </div>
-
-      <Footer />
-    </div>
-  );
-}
+ 
+       <Footer />
+     </div>
+   );
+ }
