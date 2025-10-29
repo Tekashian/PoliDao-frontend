@@ -686,6 +686,8 @@ export default function HomePage() {
   // NEW: pagination (6 at a time)
   const PAGE_SIZE = 6;
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  // NEW: hover state for Show More button to guarantee color change
+  const [showMoreHover, setShowMoreHover] = useState(false);
 
   // Filtruj kampanie na podstawie wybranego filtru
   const campaigns = fundraisers; // alias dla istniejącej logiki poniżej
@@ -1291,7 +1293,19 @@ export default function HomePage() {
                           <div className="mt-6 flex justify-center">
                             <button
                               onClick={() => setVisibleCount(Math.min(visibleCount + PAGE_SIZE, filteredCampaigns.length))}
-                              className="px-5 py-2 rounded-full bg-white border border-[#10b981] text-[#10b981] font-semibold hover:bg-[#10b981]/10 transition"
+                              onMouseEnter={() => setShowMoreHover(true)}
+                              onMouseLeave={() => setShowMoreHover(false)}
+                              onFocus={() => setShowMoreHover(true)}
+                              onBlur={() => setShowMoreHover(false)}
+                              className="
+                                px-5 py-2 rounded-full border border-[#10b981] font-semibold
+                                transition-colors transition-transform duration-200 transform
+                                focus:outline-none focus:ring-2 focus:ring-[#10b981]/30
+                              "
+                              style={{
+                                backgroundColor: showMoreHover ? '#10b981' : '#ffffff',
+                                color: showMoreHover ? '#ffffff' : '#10b981',
+                              }}
                             >
                               Pokaż więcej kampanii →
                             </button>

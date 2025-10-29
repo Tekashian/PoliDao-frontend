@@ -1,0 +1,252 @@
+/* Global theme variables and helpers */
+
+/* Default (light) palette — will be overridden by .dark or by JS runtime (applyTheme) */
+:root {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --muted: #6b7280;
+  --text: #0f172a;
+  --primary: #10b981;
+  --accent: #1f4e79;
+  --border: rgba(229,231,235,0.7);
+  --shadow: 0 8px 24px rgba(16,24,40,0.06);
+  --transition-duration: 0.15s;
+  color-scheme: light;
+}
+
+/* Dark palette fallback: JS also toggles `document.documentElement.classList.toggle('dark')` */
+:root.dark,
+html.dark {
+  --bg: #0b1220;
+  --surface: #0f1724;
+  --muted: #9ca3af;
+  --text: #ffffff; /* force pure white for maximum contrast */
+  --primary: #34d399;
+  --accent: #60a5fa;
+  --border: rgba(255,255,255,0.06);
+  /* white-ish shadows for dark mode for improved contrast */
+  --shadow: 0 8px 30px rgba(255,255,255,0.06);
+  color-scheme: dark;
+}
+
+/* NEW: ensure common shadow utilities switch to white-ish shadows in dark mode */
+html.dark .shadow,
+html.dark .shadow-sm,
+html.dark .shadow-md,
+html.dark .shadow-lg,
+html.dark .shadow-xl,
+html.dark .shadow-2xl,
+html.dark .shadow-inner {
+  box-shadow: var(--shadow) !important;
+}
+
+/* Tailwind-style drop-shadow uses filter: drop-shadow(...) -> override to white tint */
+html.dark .drop-shadow,
+html.dark .filter-drop-shadow {
+  filter: drop-shadow(0 8px 16px rgba(255,255,255,0.06)) !important;
+}
+
+/* Also ensure important components use the white shadow variable */
+html.dark .card,
+html.dark .btn-primary,
+html.dark .campaign-card,
+html.dark .header,
+html.dark .nav,
+html.dark .mobileMenu,
+html.dark .mobileMenuContent {
+  box-shadow: var(--shadow) !important;
+}
+
+/* Force all text to use --text in dark mode to avoid utility conflicts */
+html.dark, html.dark body, html.dark #__next, html.dark * {
+  color: var(--text) !important;
+}
+
+/* Smooth theme transition helper (Header will add/remove 'theme-transition' temporarily) */
+:root.theme-transition,
+html.theme-transition {
+  transition:
+    background-color var(--transition-duration),
+    color var(--transition-duration),
+    border-color var(--transition-duration),
+    box-shadow var(--transition-duration);
+}
+
+/* Global base */
+html, body, #__next {
+  height: 100%;
+  background-color: var(--bg);
+  color: var(--text);
+  margin: 0;
+  padding: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Generic surface / card helpers */
+.bg-surface { background: var(--surface); }
+.border-default { border-color: var(--border); }
+.text-muted { color: var(--muted); }
+.text-accent { color: var(--accent); }
+.btn-primary {
+  background-color: var(--primary);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: var(--shadow);
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+/* CampaignCard visual emphasis + hover lift/scale (adjusted for stronger effect) */
+.campaign-card {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  overflow: hidden;
+  will-change: transform, box-shadow, border-color;
+  /* slightly faster snappier transition */
+  transition: transform 200ms cubic-bezier(.2,.8,.2,1), box-shadow 220ms cubic-bezier(.2,.8,.2,1), border-color 180ms ease;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.08);
+  /* ensure consistent stacking during lift */
+  transform-origin: center;
+}
+
+/* Stronger base card styling (applies to explicit campaign-card and link-wrapped cards) */
+.campaign-card,
+a[href^="/campaigns/"] {
+  transform-origin: center;
+  transition: transform 220ms cubic-bezier(.2,.9,.2,1), box-shadow 240ms cubic-bezier(.2,.9,.2,1), border-color 180ms ease;
+  border-radius: 12px;
+  will-change: transform, box-shadow, border-color;
+  /* subtle frosted surface to separate card from dark background */
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border: 1px solid var(--border);
+}
+
+/* Hover / focus: lift + scale for emphasis in all modes */
+.campaign-card:hover,
+.campaign-card:focus-within,
+a[href^="/campaigns/"]:hover,
+a[href^="/campaigns/"]:focus-within {
+  transform: translateY(-12px) scale(1.05);
+  border-color: color-mix(in srgb, var(--primary) 18%, var(--border));
+  box-shadow: 0 28px 80px rgba(0,0,0,0.18);
+}
+
+/* Light-mode: crisp, deeper shadow for depth */
+:root .campaign-card,
+:root a[href^="/campaigns/"] {
+  box-shadow: 0 10px 30px rgba(2,6,23,0.12);
+}
+
+/* Dark-mode: pronounced white-ish glow to make cards "pop" */
+html.dark .campaign-card,
+html.dark a[href^="/campaigns/"] {
+  box-shadow: 0 20px 80px rgba(255,255,255,0.10) !important;
+  border: 1px solid rgba(255,255,255,0.06) !important;
+  background: color-mix(in srgb, var(--surface) 96%, rgba(255,255,255,0.02)) !important;
+}
+html.dark .campaign-card:hover,
+html.dark a[href^="/campaigns/"]:hover {
+  box-shadow: 0 36px 120px rgba(255,255,255,0.16) !important;
+  transform: translateY(-14px) scale(1.06);
+  border-color: rgba(255,255,255,0.10) !important;
+}
+
+/* Ensure progress track + fill are visible and above card effects */
+.progress-track,
+.campaign-card .progress-track,
+a[href^="/campaigns/"] .progress-track {
+  position: relative !important;
+  overflow: visible !important;    /* allow glow to render outside */
+  border-radius: 999px !important;
+  height: 0.625rem !important;
+  background: color-mix(in srgb, var(--surface) 82%, #000 10%) !important;
+}
+
+/* Fill: render above overlays, strong gradient and glow */
+.progress-fill,
+.campaign-card .progress-fill,
+a[href^="/campaigns/"] .progress-fill {
+  position: relative !important;
+  z-index: 50 !important; /* high so it stays above overlays and shadows */
+  border-radius: 999px !important;
+  height: 0.625rem !important;
+  display: block !important;
+  background: linear-gradient(90deg, var(--primary) 0%, color-mix(in srgb, var(--primary) 65%, var(--accent) 35%)) !important;
+  box-shadow: 0 12px 36px rgba(16,185,129,0.16) !important;
+  transform: translateZ(0); /* improve rendering */
+  pointer-events: none;
+}
+
+/* Dark-mode: brighter fill and stronger glow */
+html.dark .progress-track,
+html.dark .campaign-card .progress-track {
+  background: rgba(255,255,255,0.045) !important;
+}
+html.dark .progress-fill,
+html.dark .campaign-card .progress-fill {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 60%, #fff 12%), color-mix(in srgb, var(--accent) 55%, #fff 8%)) !important;
+  box-shadow: 0 18px 46px rgba(52,211,153,0.22) !important;
+}
+
+/* Keep consistent rounding */
+.progress-track .progress-fill { border-radius: 999px !important; }
+
+/* Make sure inner text inherits correct color in dark mode */
+html.dark .campaign-card * { color: var(--text) !important; }
+
+/* Accessibility: respect user's prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  :root.theme-transition, html.theme-transition {
+    transition: none !important;
+  }
+  * { transition-duration: 0s !important; animation-duration: 0s !important; }
+}
+
+/* Image scale on card hover (keeps progress bar visible) */
+.campaign-image-wrapper {
+  overflow: hidden; /* ensures scaled image is clipped to card */
+  position: relative;
+}
+
+.campaign-image-img {
+  transition: transform 420ms cubic-bezier(.2,.9,.2,1), filter 320ms ease;
+  transform-origin: center;
+  will-change: transform;
+  /* ensure image occupies its layer for smooth GPU-accelerated scaling */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+}
+
+/* scale the image when the whole card is hovered/focused */
+.campaign-card:hover .campaign-image-img,
+a[href^="/campaigns/"]:hover .campaign-image-img,
+.campaign-card:focus-within .campaign-image-img,
+a[href^="/campaigns/"]:focus-within .campaign-image-img {
+  transform: scale(1.12);
+}
+
+/* Slightly stronger scale in dark mode for added emphasis */
+html.dark .campaign-card:hover .campaign-image-img,
+html.dark a[href^="/campaigns/"]:hover .campaign-image-img {
+  transform: scale(1.16);
+}
+
+/* Optionally reduce motion for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .campaign-image-img,
+  .campaign-card,
+  a[href^="/campaigns/"] {
+    transition: none !important;
+    transform: none !important;
+  }
+}

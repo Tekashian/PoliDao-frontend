@@ -116,15 +116,120 @@ const Header = () => {
   // Enhanced scroll detection z lepszą responsywnością
   useEffect(() => {
     setIsMounted(true);
-    const savedTheme = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
-      setDarkMode(true);
-      document.documentElement.classList.add('dark');
-    } else {
-      setDarkMode(false);
-      document.documentElement.classList.remove('dark');
-    }
+    // NEW: robust theme application on mount
+    const themePalettes = {
+      light: {
+        '--bg': '#f8fafc',
+        '--surface': '#ffffff',
+        '--muted': '#6b7280',
+        '--text': '#0f172a',
+        '--primary': '#10b981',
+        '--accent': '#1f4e79',
+        '--border': 'rgba(229,231,235,0.7)',
+        'meta': '#ffffff',
+        'mode': 'light'
+      },
+      dark: {
+        '--bg': '#0b1220',
+        '--surface': '#0f1724',
+        '--muted': '#9ca3af',
+        '--text': '#ffffff', // changed to pure white
+        '--primary': '#34d399',
+        '--accent': '#60a5fa',
+        '--border': 'rgba(255,255,255,0.06)',
+        'meta': '#0f1724',
+        'mode': 'dark'
+      }
+    } as const;
+
+    const injectOverridesOnce = () => {
+      if (document.getElementById('polidao-theme-overrides')) return;
+      const el = document.createElement('style');
+      el.id = 'polidao-theme-overrides';
+      el.textContent = `
+        /* quick runtime overrides to make utility classes theme-aware */
+        .bg-white { background: var(--surface) !important; }
+        .text-gray-800 { color: var(--text) !important; }
+        .text-gray-500 { color: var(--muted) !important; }
+        .bg-gray-50 { background: color-mix(in srgb, var(--surface) 80%, transparent) !important; }
+        .border-gray-100 { border-color: var(--border) !important; }
+
+        /* Force all text color in dark mode immediately */
+        html.dark, html.dark body, html.dark #__next, html.dark * { color: var(--text) !important; }
+
+        /* Shadow overrides: ensure white-ish shadows in dark mode */
+        html.dark .shadow,
+        html.dark .shadow-sm,
+        html.dark .shadow-md,
+        html.dark .shadow-lg,
+        html.dark .shadow-xl,
+        html.dark .shadow-2xl,
+        html.dark .shadow-inner {
+          box-shadow: var(--shadow) !important;
+        }
+        html.dark .drop-shadow,
+        html.dark .filter-drop-shadow {
+          filter: drop-shadow(0 8px 16px rgba(255,255,255,0.06)) !important;
+        }
+
+        /* Footer: ensure darker background and readable text */
+        footer, .site-footer {
+          background: color-mix(in srgb, var(--surface) 88%, #000000 6%) !important;
+          color: var(--text) !important;
+          border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent 40%) !important;
+          box-shadow: var(--shadow) !important;
+        }
+        html.dark footer, html.dark .site-footer {
+          background: color-mix(in srgb, var(--surface) 70%, #000000 30%) !important;
+          color: #ffffff !important;
+          border-top: 1px solid rgba(255,255,255,0.06) !important;
+        }
+        footer a, .site-footer a { color: var(--primary) !important; }
+
+        /* CampaignCard protection: explicit non-blend styles */
+        .campaign-card {
+          background: var(--surface) !important;
+          color: var(--text) !important;
+          border: 1px solid var(--border) !important;
+          border-radius: 12px !important;
+          box-shadow: var(--shadow) !important;
+        }
+        .campaign-card * {
+          color: inherit !important;
+          background: transparent !important;
+        }
+      `;
+      document.head.appendChild(el);
+    };
+
+    const applyTheme = (t: 'light' | 'dark') => {
+      const pal = themePalettes[t];
+      const root = document.documentElement;
+      // set variables
+      Object.keys(pal).forEach(k => {
+        if (k.startsWith('--')) root.style.setProperty(k, (pal as any)[k]);
+      });
+      // color-scheme + class for libs
+      root.style.setProperty('color-scheme', (pal as any).mode);
+      root.classList.toggle('dark', t === 'dark');
+      // apply basic body colors (immediate fallback)
+      try {
+        document.body.style.backgroundColor = (pal as any)['--bg'];
+        document.body.style.color = (pal as any)['--text'];
+      } catch {}
+      // meta theme-color
+      let meta = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement|null;
+      if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
+      meta.content = (pal as any).meta;
+      injectOverridesOnce();
+    };
+
+    // decide initial theme
+    const saved = localStorage.getItem('theme') as 'light' | 'dark' | null;
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const initial = saved === 'dark' || (!saved && prefersDark) ? 'dark' : 'light';
+    setDarkMode(initial === 'dark');
+    applyTheme(initial);
   }, []);
 
   // Enhanced scroll handling z backdrop blur effect
@@ -183,19 +288,97 @@ const Header = () => {
 
   // Enhanced dark mode toggle z smooth transition
   const toggleDarkMode = () => {
-    setDarkMode((prev) => {
+    setDarkMode(prev => {
       const next = !prev;
-      
-      // Add transition class temporarily
-      document.documentElement.style.setProperty('--transition-duration', '0.3s');
-      document.documentElement.classList.toggle('dark', next);
-      localStorage.setItem('theme', next ? 'dark' : 'light');
-      
-      // Remove transition after animation
+      document.documentElement.classList.add('theme-transition');
+      // apply variables + body + meta + overrides (reuse applyTheme above by re-creating palette)
+      const themeToApply = next ? 'dark' : 'light';
+      // set duration variable for transition
+      document.documentElement.style.setProperty('--transition-duration', '0.25s');
+      // apply palette (recompute inline to avoid moving applyTheme outside)
+      const pal = themeToApply === 'dark'
+        ? { '--bg': '#0b1220', '--surface': '#0f1724', '--muted': '#9ca3af', '--text': '#e6eef8', '--primary': '#34d399', '--border': 'rgba(255,255,255,0.06)', meta: '#0f1724', mode: 'dark' }
+        // update inline palette dark text -> white
+        : { '--bg': '#f8fafc', '--surface': '#ffffff', '--muted': '#6b7280', '--text': '#0f172a', '--primary': '#10b981', '--border': 'rgba(229,231,235,0.7)', meta: '#ffffff', mode: 'light' };
+
+      // Fix: ensure dark branch uses white text
+      if (themeToApply === 'dark') {
+        pal['--text'] = '#ffffff';
+      }
+
+      const root = document.documentElement;
+      Object.keys(pal).forEach(k => { if ((k as string).startsWith('--')) root.style.setProperty(k, (pal as any)[k]); });
+      root.style.setProperty('color-scheme', (pal as any).mode);
+      root.classList.toggle('dark', themeToApply === 'dark');
+      try { document.body.style.backgroundColor = (pal as any)['--bg']; document.body.style.color = (pal as any)['--text']; } catch {}
+      let meta = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement|null;
+      if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
+      meta.content = (pal as any).meta;
+      localStorage.setItem('theme', themeToApply);
+
+      // remove transition helper shortly
       setTimeout(() => {
+        document.documentElement.classList.remove('theme-transition');
         document.documentElement.style.removeProperty('--transition-duration');
       }, 300);
-      
+
+      // ensure overrides are present when toggling
+      if (!document.getElementById('polidao-theme-overrides')) {
+        const el = document.createElement('style');
+        el.id = 'polidao-theme-overrides';
+        el.textContent = `
+          /* Force all text color in dark mode immediately */
+          html.dark, html.dark body, html.dark #__next, html.dark * { color: var(--text) !important; }
+
+          .bg-white { background: var(--surface) !important; }
+          .text-gray-800 { color: var(--text) !important; }
+          .text-gray-500 { color: var(--muted) !important; }
+          .bg-gray-50 { background: color-mix(in srgb, var(--surface) 80%, transparent) !important; }
+          .border-gray-100 { border-color: var(--border) !important; }
+
+          /* Shadow overrides */
+          html.dark .shadow,
+          html.dark .shadow-sm,
+          html.dark .shadow-md,
+          html.dark .shadow-lg,
+          html.dark .shadow-xl,
+          html.dark .shadow-2xl,
+          html.dark .shadow-inner {
+            box-shadow: var(--shadow) !important;
+          }
+          html.dark .drop-shadow,
+          html.dark .filter-drop-shadow {
+            filter: drop-shadow(0 8px 16px rgba(255,255,255,0.06)) !important;
+          }
+
+          footer, .site-footer {
+            background: color-mix(in srgb, var(--surface) 88%, #000000 6%) !important;
+            color: var(--text) !important;
+            border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent 40%) !important;
+            box-shadow: var(--shadow) !important;
+          }
+          html.dark footer, html.dark .site-footer {
+            background: color-mix(in srgb, var(--surface) 70%, #000000 30%) !important;
+            color: #ffffff !important;
+            border-top: 1px solid rgba(255,255,255,0.06) !important;
+          }
+          footer a, .site-footer a { color: var(--primary) !important; }
+
+          .campaign-card {
+            background: var(--surface) !important;
+            color: var(--text) !important;
+            border: 1px solid var(--border) !important;
+            border-radius: 12px !important;
+            box-shadow: var(--shadow) !important;
+          }
+          .campaign-card * {
+            color: inherit !important;
+            background: transparent !important;
+          }
+        `;
+        document.head.appendChild(el);
+      }
+
       return next;
     });
   };
@@ -243,7 +426,7 @@ const Header = () => {
             aria-label="PoliDao Home"
           >
             <Image
-              src="/images/PoliDaoLogoPro.png"
+              src="/images/logo2.png" // changed: use public/images/logo2.png
               alt="PoliDao"
               width={140}
               height={30}
