@@ -905,38 +905,45 @@ export default function HomePage() {
         {/* Zbiórki dnia (3 najciekawsze) */}
         {dayPicks && dayPicks.length > 0 && (
           <div className="container mx-auto px-4 mt-10">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold text-gray-800">Fundraisers of the Day</h2>
-              <span className="text-sm text-gray-500">Selected: newest or closest to goal</span>
+            {/* inner wrapper matches width of 3 cards (24rem each) + gap (gap-6 = 1.5rem) */}
+            <div className="mx-auto w-full" style={{ maxWidth: 'calc(24rem * 3 + 1.5rem * 2)' }}>
+              <div className="flex items-center justify-between mb-4">
+                {/* left-aligned header inside the limited-width wrapper */}
+                <h2 className="text-2xl font-bold text-gray-800">Fundraisers of the Day</h2>
+                <span className="text-sm text-gray-500">Selected: newest or closest to goal</span>
+              </div>
             </div>
-            <div className="flex flex-wrap justify-center gap-6">
-              {dayPicks.map((campaign: ModularFundraiser) => {
-                const mappedCampaign = {
-                  campaignId: campaign.id.toString(),
-                  targetAmount: campaign.goalAmount ?? 0n,
-                  raisedAmount: campaign.raisedAmount ?? 0n,
-                  creator: campaign.creator,
-                  token: campaign.token,
-                  endTime: campaign.endDate ?? 0n,
-                  isFlexible: isNoGoalFlexible(campaign), // UPDATED
-                };
-                const metadata = {
-                  title: campaign.title && campaign.title.length > 0
-                    ? campaign.title
-                    : (isNoGoalFlexible(campaign)
-                        ? `Flexible campaign #${campaign.id}`
-                        : `Targeted fundraiser #${campaign.id}`), // UPDATED
-                  description: campaign.description && campaign.description.length > 0
-                    ? campaign.description.slice(0, 140)
-                    : `Campaign created by ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
-                  image: "/images/zbiorka.png",
-                };
-                return (
-                  <div key={campaign.id.toString()} className="w-full sm:w-[24rem] flex-none">
-                    <CampaignCard campaign={mappedCampaign} metadata={metadata} />
-                  </div>
-                );
-              })}
+            <div className="mx-auto w-full" style={{ maxWidth: 'calc(24rem * 3 + 1.5rem * 2)' }}>
+              <div className="flex flex-wrap justify-center gap-6">
+               {dayPicks.map((campaign: ModularFundraiser) => {
+                 const mappedCampaign = {
+                   campaignId: campaign.id.toString(),
+                   targetAmount: campaign.goalAmount ?? 0n,
+                   raisedAmount: campaign.raisedAmount ?? 0n,
+                   creator: campaign.creator,
+                   token: campaign.token,
+                   endTime: campaign.endDate ?? 0n,
+                   isFlexible: isNoGoalFlexible(campaign), // UPDATED
+                 };
+
+                 const metadata = {
+                   title: campaign.title && campaign.title.length > 0
+                     ? campaign.title
+                     : (isNoGoalFlexible(campaign)
+                         ? `Flexible campaign #${campaign.id}`
+                         : `Targeted fundraiser #${campaign.id}`), // UPDATED
+                   description: campaign.description && campaign.description.length > 0
+                     ? campaign.description.slice(0, 140)
+                     : `Campaign created by ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
+                   image: "/images/zbiorka.png",
+                 };
+                 return (
+                   <div key={campaign.id.toString()} className="w-full sm:w-[24rem] flex-none">
+                     <CampaignCard campaign={mappedCampaign} metadata={metadata} />
+                   </div>
+                 );
+               })}
+              </div>
             </div>
           </div>
         )}
@@ -982,39 +989,43 @@ export default function HomePage() {
         {/* NEW: Najnowsze Kampanie (flexible, up to 3) */}
         {latestFlexibleCampaigns && latestFlexibleCampaigns.length > 0 && (
           <div className="container mx-auto px-4 mt-10">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold text-gray-800">Latest Campaigns</h2>
-              <span className="text-sm text-gray-500">Flexible campaigns with no target</span>
+            <div className="mx-auto w-full" style={{ maxWidth: 'calc(24rem * 3 + 1.5rem * 2)' }}>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-gray-800">Latest Campaigns</h2>
+                <span className="text-sm text-gray-500">Flexible campaigns with no target</span>
+              </div>
             </div>
-            <div className="flex flex-wrap justify-center gap-6">
-              {latestFlexibleCampaigns.map((campaign: ModularFundraiser) => {
-                const mappedCampaign = {
-                  campaignId: campaign.id.toString(),
-                  targetAmount: campaign.goalAmount ?? 0n,
-                  raisedAmount: campaign.raisedAmount ?? 0n,
-                  creator: campaign.creator,
-                  token: campaign.token,
-                  endTime: campaign.endDate ?? 0n,
-                  isFlexible: isNoGoalFlexible(campaign), // UPDATED
-                };
-                const metadata = {
-                  title: campaign.title && campaign.title.length > 0
-                    ? campaign.title
-                    : `Flexible campaign #${campaign.id}`,
-                  description: campaign.description && campaign.description.length > 0
-                    ? campaign.description.slice(0, 140)
-                    : `Campaign created by ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
-                  image: "/images/zbiorka.png",
-                };
-                return (
-                  <div key={campaign.id.toString()} className="w-full sm:w-[24rem] flex-none">
-                    <CampaignCard campaign={mappedCampaign} metadata={metadata} />
-                  </div>
-                );
-              })}
+            <div className="mx-auto w-full" style={{ maxWidth: 'calc(24rem * 3 + 1.5rem * 2)' }}>
+              <div className="flex flex-wrap justify-center gap-6">
+               {latestFlexibleCampaigns.map((campaign: ModularFundraiser) => {
+                 const mappedCampaign = {
+                   campaignId: campaign.id.toString(),
+                   targetAmount: campaign.goalAmount ?? 0n,
+                   raisedAmount: campaign.raisedAmount ?? 0n,
+                   creator: campaign.creator,
+                   token: campaign.token,
+                   endTime: campaign.endDate ?? 0n,
+                   isFlexible: isNoGoalFlexible(campaign), // UPDATED
+                 };
+                 const metadata = {
+                   title: campaign.title && campaign.title.length > 0
+                     ? campaign.title
+                     : `Flexible campaign #${campaign.id}`,
+                   description: campaign.description && campaign.description.length > 0
+                     ? campaign.description.slice(0, 140)
+                     : `Campaign created by ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
+                   image: "/images/zbiorka.png",
+                 };
+                 return (
+                   <div key={campaign.id.toString()} className="w-full sm:w-[24rem] flex-none">
+                     <CampaignCard campaign={mappedCampaign} metadata={metadata} />
+                   </div>
+                 );
+               })}
+              </div>
             </div>
           </div>
-        )}
+         )}
 
         {/* NEW: Onboarding/Start fundraising segment (under "Najnowsze Kampanie") */}
         <div className="container mx-auto px-4 mt-12">
@@ -1290,36 +1301,39 @@ export default function HomePage() {
                         )}
                         
                         {/* Grid: show only visibleCampaigns */}
-                        <div className="flex flex-wrap justify-center gap-6">
-                          {visibleCampaigns.map((campaign: ModularFundraiser) => {
-                            const mappedCampaign = {
-                              campaignId: campaign.id.toString(),
-                              targetAmount: campaign.goalAmount ?? 0n,
-                              raisedAmount: campaign.raisedAmount ?? 0n,
-                              creator: campaign.creator,
-                              token: campaign.token,
-                              endTime: campaign.endDate ?? 0n,
-                              isFlexible: isNoGoalFlexible(campaign),
-                            };
-                            const metadata = {
-                              title: campaign.title && campaign.title.length > 0
-                                ? campaign.title
-                                : (isNoGoalFlexible(campaign) ? `Flexible campaign #${campaign.id}` : `Fundraiser #${campaign.id}`),
-                              description: campaign.description && campaign.description.length > 0
-                                ? campaign.description.slice(0, 140)
-                                : `Campaign created by ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
-                              image: "/images/zbiorka.png"
-                            };
+                        {/* limit width so H2 aligns with first card while cards remain centered */}
+                        <div className="mx-auto w-full" style={{ maxWidth: 'calc(24rem * 3 + 1.5rem * 2)' }}>
+                          <div className="flex flex-wrap justify-center gap-6">
+                           {visibleCampaigns.map((campaign: ModularFundraiser) => {
+                             const mappedCampaign = {
+                               campaignId: campaign.id.toString(),
+                               targetAmount: campaign.goalAmount ?? 0n,
+                               raisedAmount: campaign.raisedAmount ?? 0n,
+                               creator: campaign.creator,
+                               token: campaign.token,
+                               endTime: campaign.endDate ?? 0n,
+                               isFlexible: isNoGoalFlexible(campaign),
+                             };
+                             const metadata = {
+                               title: campaign.title && campaign.title.length > 0
+                                 ? campaign.title
+                                 : (isNoGoalFlexible(campaign) ? `Flexible campaign #${campaign.id}` : `Fundraiser #${campaign.id}`),
+                               description: campaign.description && campaign.description.length > 0
+                                 ? campaign.description.slice(0, 140)
+                                 : `Campaign created by ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
+                               image: "/images/zbiorka.png"
+                             };
 
-                            return (
-                              <div key={campaign.id.toString()} className="w-full sm:w-[24rem] flex-none">
-                                <CampaignCard
-                                  campaign={mappedCampaign}
-                                  metadata={metadata}
-                                />
-                              </div>
-                            );
-                          })}
+                             return (
+                               <div key={campaign.id.toString()} className="w-full sm:w-[24rem] flex-none">
+                                 <CampaignCard
+                                   campaign={mappedCampaign}
+                                   metadata={metadata}
+                                 />
+                               </div>
+                             );
+                           })}
+                          </div>
                         </div>
 
                         {/* NEW: "Pokaż więcej" – load next 6 until all are shown */}
