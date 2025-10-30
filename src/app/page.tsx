@@ -735,7 +735,24 @@ export default function HomePage() {
   const getCarouselCampaigns = () => {
     if (!campaigns || campaigns.length === 0) return [];
     const now = Math.floor(Date.now() / 1000);
-    return [...campaigns].sort((a: any, b: any) => {
+
+    // Filter out target campaigns that already reached their goal.
+    const stillValid = campaigns.filter((c: any) => {
+      try {
+        // flexible / no-goal keep always
+        if (isNoGoalFlexible(c)) return true;
+        const raised = BigInt(c.raisedAmount ?? 0n);
+        const goal = BigInt(c.goalAmount ?? 0n);
+        // if goal is zero treat as flexible (already handled), otherwise exclude when raised >= goal
+        if (goal > 0n && raised >= goal) return false;
+        return true;
+      } catch {
+        // be conservative: include if parsing fails
+        return true;
+      }
+    });
+
+    return [...stillValid].sort((a: any, b: any) => {
       const timeLeftA = Number(a.endDate ?? 0) - now;
       const timeLeftB = Number(b.endDate ?? 0) - now;
       const isActiveA = timeLeftA > 0;
@@ -860,47 +877,50 @@ export default function HomePage() {
         {/* KARUZELE - pokazują się tylko gdy są dane */}
         <Container maxWidth="xl" sx={{ mt: 4 }}>
           {/* ✅ Karuzela kampanii – tryb prosty, tylko strzałki */}
-          <FuturisticCarousel
-            title="Top Campaigns & Fundraisers"
-            icon={<TrendingUp sx={{ fontSize: 28 }} />}
-            items={carouselCampaigns}
-            simpleNavOnly={true}
-            myAccountCardLayout={true}
-            space={24}
-            renderItem={(campaign: ModularFundraiser) => {
-              const mappedCampaign = {
-                campaignId: campaign.id.toString(),
-                targetAmount: campaign.goalAmount ?? 0n,
-                raisedAmount: campaign.raisedAmount ?? 0n,
-                creator: campaign.creator,
-                token: campaign.token,
-                endTime: campaign.endDate ?? 0n,
-                isFlexible: isNoGoalFlexible(campaign), // UPDATED
-              };
+          {/* constrain wrapper so header aligns with first (centered) card */}
+          <div className="mx-auto w-full" style={{ maxWidth: 'calc(24rem * 3 + 1.5rem * 2)' }}>
+            <FuturisticCarousel
+             title="Top Campaigns & Fundraisers"
+             icon={<TrendingUp sx={{ fontSize: 28 }} />}
+             items={carouselCampaigns}
+             simpleNavOnly={true}
+             myAccountCardLayout={true}
+             space={24}
+             renderItem={(campaign: ModularFundraiser) => {
+               const mappedCampaign = {
+                 campaignId: campaign.id.toString(),
+                 targetAmount: campaign.goalAmount ?? 0n,
+                 raisedAmount: campaign.raisedAmount ?? 0n,
+                 creator: campaign.creator,
+                 token: campaign.token,
+                 endTime: campaign.endDate ?? 0n,
+                 isFlexible: isNoGoalFlexible(campaign), // UPDATED
+               };
 
-              const metadata = {
-                title: campaign.title && campaign.title.length > 0
-                  ? campaign.title
-                  : (isNoGoalFlexible(campaign)
-                      ? `Flexible campaign #${campaign.id}`
-                      : `Targeted fundraiser #${campaign.id}`), // UPDATED
-                description: campaign.description && campaign.description.length > 0
-                  ? campaign.description.slice(0, 140)
-                  : `Campaign created by ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
-                image: "/images/zbiorka.png",
-              };
+               const metadata = {
+                 title: campaign.title && campaign.title.length > 0
+                   ? campaign.title
+                   : (isNoGoalFlexible(campaign)
+                       ? `Flexible campaign #${campaign.id}`
+                       : `Targeted fundraiser #${campaign.id}`), // UPDATED
+                 description: campaign.description && campaign.description.length > 0
+                   ? campaign.description.slice(0, 140)
+                   : `Campaign created by ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
+                 image: "/images/zbiorka.png",
+               };
 
-              return (
-                <CampaignCard
-                  key={campaign.id.toString()}
-                  campaign={mappedCampaign}
-                  metadata={metadata}
-                />
-              );
-            }}
-            emptyMessage="No active campaigns or fundraisers"
-          />
-        </Container>
+               return (
+                 <CampaignCard
+                   key={campaign.id.toString()}
+                   campaign={mappedCampaign}
+                   metadata={metadata}
+                 />
+               );
+             }}
+             emptyMessage="No active campaigns or fundraisers"
+           />
+          </div>
+         </Container>
 
         {/* Zbiórki dnia (3 najciekawsze) */}
         {dayPicks && dayPicks.length > 0 && (
