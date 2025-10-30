@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -68,7 +69,7 @@ const CloseIcon = () => (
   </svg>
 );
 
-// --- Enhanced SearchBar komponent z lepszymi efektami ---
+// --- Enhanced SearchBar komponent z lepszymi efektami (controlled, debounced, clear) ---
 const SearchBar = ({
   isFocused,
   setFocused,
@@ -77,28 +78,106 @@ const SearchBar = ({
   isFocused: boolean;
   setFocused: (b: boolean) => void;
   isMobile?: boolean;
-}) => (
-  <div
-    className={`
-      ${styles.searchBarContainer}
-      ${isFocused ? styles.searchBarShadow : ''}
-      ${isMobile ? styles.mobileSearchBarContainer : ''}
-    `}
-    onMouseEnter={!isMobile ? () => setFocused(true) : undefined}
-    onMouseLeave={!isMobile ? () => setFocused(false) : undefined}
-  >
-    <input
-      type="text"
-      placeholder="Fund id or title."
-      className={styles.searchInput}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-    />
-    <button onClick={() => console.log('Search clicked')} className={styles.searchButton}>
-      Search
-    </button>
-  </div>
-);
+}) => {
+  const [value, setValue] = React.useState('');
+
+  // simple debounce for live suggestions (placeholder for real API)
+  React.useEffect(() => {
+    const t = setTimeout(() => {
+      if (value && value.length >= 2) {
+        // eslint-disable-next-line no-console
+        console.log('live search:', value);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [value]);
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // final search action - replace with navigation/fetch when ready
+    // eslint-disable-next-line no-console
+    console.log('submit search:', value);
+  };
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      role="search"
+      aria-label="Search funds"
+      className={`${styles.searchBarContainer} ${isFocused ? styles.searchBarShadow : ''} ${isMobile ? styles.mobileSearchBarContainer : ''}`}
+      onMouseEnter={!isMobile ? () => setFocused(true) : undefined}
+      onMouseLeave={!isMobile ? () => setFocused(false) : undefined}
+      style={{
+        display: 'flex',
+        flexDirection: isMobile ? 'column' : 'row',
+        alignItems: isMobile ? 'stretch' : 'center',
+        gap: 8,
+        width: isMobile ? '100%' : undefined,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+        <input
+          type="search"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Search by fund ID or title"
+          aria-label="Search by fund ID or title"
+          autoComplete="off"
+          className={styles.searchInput}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          style={{
+            width: '100%',
+            padding: '10px 12px',
+            borderRadius: 10,
+            border: '1px solid rgba(0,0,0,0.08)',
+            background: 'var(--surface, #fff)',
+            color: 'var(--text, #000)',
+            fontSize: 14,
+          }}
+        />
+
+        {value.length > 0 && !isMobile && (
+          <button
+            type="button"
+            onClick={() => setValue('')}
+            aria-label="Clear search"
+            style={{ background: 'transparent', border: 'none', fontSize: 18, cursor: 'pointer', color: 'var(--muted, #6b7280)' }}
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {/* Desktop: small inline button; Mobile: prominent full-width button below input */}
+      {!isMobile ? (
+        <button type="submit" className={styles.searchButton} aria-label="Execute search" style={{ flexShrink: 0 }}>
+          Search
+        </button>
+      ) : (
+        <button
+          type="submit"
+          aria-label="Execute search"
+          style={{
+            marginTop: 6,
+            width: '100%',
+            background: 'linear-gradient(90deg,#10b981,#065f46)',
+            color: '#fff',
+            padding: '12px 14px',
+            borderRadius: 12,
+            border: 'none',
+            fontWeight: 700,
+            fontSize: 15,
+            boxShadow: '0 8px 20px rgba(16,185,129,0.20)',
+            cursor: 'pointer',
+          }}
+        >
+          Search
+        </button>
+      )}
+    </form>
+  );
+};
 
 // --- GŁÓWNY KOMPONENT HEADER Z ENHANCED EFFECTS ---
 const Header = () => {
@@ -112,6 +191,7 @@ const Header = () => {
   // NEW: Add scroll progress for dynamic blur effect
   const [scrollProgress, setScrollProgress] = useState(0);
   const headerRef = useRef<HTMLElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Enhanced scroll detection z lepszą responsywnością
   useEffect(() => {
@@ -258,9 +338,12 @@ const Header = () => {
   // Enhanced outside click handling
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (headerRef.current && !headerRef.current.contains(e.target as Node)) {
-        setIsMobileMenuOpen(false);
-      }
+      // If click happened inside the mobile menu portal, ignore
+      if (mobileMenuRef.current && mobileMenuRef.current.contains(e.target as Node)) return;
+      // If click happened inside header, ignore
+      if (headerRef.current && headerRef.current.contains(e.target as Node)) return;
+      // otherwise close menu
+      setIsMobileMenuOpen(false);
     };
     
     const handleEscapeKey = (e: KeyboardEvent) => {
@@ -284,6 +367,19 @@ const Header = () => {
       document.removeEventListener('keydown', handleEscapeKey);
       document.body.style.overflow = '';
     };
+  }, [isMobileMenuOpen]);
+
+  // Close mobile menu when viewport becomes larger (avoid stuck menu after resize)
+  useEffect(() => {
+    const onResize = () => {
+      try {
+        if (isMobileMenuOpen && window.innerWidth >= 768) {
+          setIsMobileMenuOpen(false);
+        }
+      } catch {}
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, [isMobileMenuOpen]);
 
   // Enhanced dark mode toggle z smooth transition
@@ -493,49 +589,116 @@ const Header = () => {
         </div>
       </nav>
 
-      {/* --- Enhanced mobile menu z lepszymi animacjami --- */}
-      {isMobileMenuOpen && (
-        <div className={`${styles.mobileMenu} ${styles.mobileMenuOpen}`}>
-          <div className={styles.mobileMenuContent}>
-            <Link 
-              href="/my-account" 
-              className={styles.mobileNavLink} 
-              onClick={toggleMobileMenu}
-            >
-              My Account
-            </Link>
-            <Link 
-              href="/whitepaper" 
-              className={styles.mobileNavLink} 
-              onClick={toggleMobileMenu}
-            >
-              Whitepaper
-            </Link>
-            <Link 
-              href="/contact" 
-              className={styles.mobileNavLink} 
-              onClick={toggleMobileMenu}
-            >
-              Contact
-            </Link>
-            <div className={`${styles.mobileMenuItem} ${styles.mobileMenuItemSpecial}`}>
+      {/* --- Enhanced mobile menu z lepszymi animacjami */}
+      {isMobileMenuOpen && typeof document !== 'undefined' ? createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Mobile menu"
+          onClick={() => setIsMobileMenuOpen(false)} // backdrop click closes
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1400,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0,0,0,0.65)',
+            padding: '1.25rem',
+          }}
+        >
+          <div
+            ref={mobileMenuRef}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(560px, 96%)',
+              maxHeight: 'calc(100vh - 3rem)',
+              overflowY: 'auto',
+              background: 'var(--surface, #fff)',
+              color: 'var(--text, #000)',
+              borderRadius: 16,
+              padding: '1rem',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.5rem',
+            }}
+          >
+            {/* panel header with close control (title absolutely centered) */}
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.25rem 0' }}>
+              <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', fontWeight: 700, letterSpacing: '1px', fontSize: 16, color: 'var(--text)' }}>
+                Menu
+              </div>
+              <button
+                onClick={() => setIsMobileMenuOpen(false)}
+                aria-label="Close menu"
+                style={{
+                  position: 'absolute',
+                  right: 4,
+                  top: 2,
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 6,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <CloseIcon />
+              </button>
+            </div>
+
+            {/* links list (centered, large, spaced) */}
+            <nav aria-label="Mobile primary" style={{ display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center', padding: '0.5rem 0' }}>
+              <Link href="/my-account" onClick={toggleMobileMenu} style={{ fontWeight: 700, fontSize: 18, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--text)', textDecoration: 'none' }}>
+                My Account
+              </Link>
+              <div style={{ height: 1, background: 'rgba(0,0,0,0.06)', width: '60%' }} />
+              <Link href="/whitepaper" onClick={toggleMobileMenu} style={{ fontWeight: 700, fontSize: 18, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--text)', textDecoration: 'none' }}>
+                Whitepaper
+              </Link>
+              <div style={{ height: 1, background: 'rgba(0,0,0,0.06)', width: '60%' }} />
+              <Link href="/contact" onClick={toggleMobileMenu} style={{ fontWeight: 700, fontSize: 18, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--text)', textDecoration: 'none' }}>
+                Contact
+              </Link>
+            </nav>
+
+            {/* search and CTA */}
+            <div style={{ padding: '8px 4px' }}>
               <SearchBar isFocused={isSearchFocused} setFocused={setIsSearchFocused} isMobile />
             </div>
-            <button
-              onClick={() => {
-                router.push('/create-campaign');
-                toggleMobileMenu();
-              }}
-              className={styles.mobileNavLink}
-            >
-              🚀 Create Fundraiser
-            </button>
-            <div className={styles.mobileConnectWalletWrapper}>
-              <w3m-button />
+
+            <div style={{ padding: '0.5rem 0' }}>
+              <button
+                onClick={() => { router.push('/create-campaign'); setIsMobileMenuOpen(false); }}
+                style={{
+                  width: '100%',
+                  background: 'linear-gradient(90deg,#10b981,#065f46)',
+                  color: '#fff',
+                  padding: '12px 16px',
+                  borderRadius: 12,
+                  border: 'none',
+                  fontWeight: 800,
+                  fontSize: 16,
+                  boxShadow: '0 8px 24px rgba(16,185,129,0.25)',
+                  cursor: 'pointer',
+                }}
+              >
+                🚀 Create Fundraiser
+              </button>
+            </div>
+
+            {/* wallet / connect area fixed to panel bottom */}
+            <div style={{ marginTop: 'auto', paddingTop: 8, borderTop: '1px solid rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <w3m-button />
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+        document.body
+      ) : null}
     </header>
   );
 };
