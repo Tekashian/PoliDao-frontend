@@ -77,8 +77,10 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
 
   return (
     <Link 
-      href={`/campaigns/${campaign.campaignId}`} 
-      className="block w-full max-w-full bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow"
+      href={`/campaigns/${campaign.campaignId}`}
+      // group + GPU transform for smooth scale & lift + accessible focus ring
+      className="group block w-full max-w-full bg-white rounded-xl shadow-md overflow-hidden transform-gpu transition-all duration-300 hover:scale-105 hover:-translate-y-2 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#10b981]/20"
+      style={{ willChange: 'transform' }}
     >
       <div className="relative w-full h-60">
         {imageLoading ? (
@@ -91,7 +93,8 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
             alt={metadata?.title || `Kampania #${campaign.campaignId}`}
             fill
             style={{ objectFit: 'cover' }}
-            className="rounded-t-xl"
+            // gentle image zoom on parent hover for depth
+            className="rounded-t-xl transform-gpu transition-transform duration-500 group-hover:scale-105"
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
             onError={() => setImgSrc(DEFAULT_IMG)}
           />
