@@ -781,37 +781,43 @@ export default function HomePage() {
   const carouselCampaigns = getCarouselCampaigns();
 
   // NEW: pick top-3 “Zbiórki dnia”
+  // Prefer target campaigns (with a goal) that are closest to their goal (highest progress but not reached).
+  // If none are "active and not reached", fall back to the newest target campaigns.
   const dayPicks = React.useMemo(() => {
     if (!campaigns || campaigns.length === 0) return [];
-    const now = Math.floor(Date.now() / 1000);
 
-    const score = (c: ModularFundraiser) => {
-      if (c.isFlexible) return Number(c.raisedAmount ?? 0);
-      const goal = Math.max(Number(c.goalAmount ?? 0), 1);
-      return Number(c.raisedAmount ?? 0) / goal; // progress: 0..1+
-    };
+    // only campaigns that actually have a goal (not flexible)
+    const targetCampaigns = campaigns.filter((c: any) => !isNoGoalFlexible(c));
+    if (targetCampaigns.length === 0) return [];
 
-    const sorted = [...campaigns].sort((a, b) => {
-      const aActive = Number(a.endDate ?? 0) > now;
-      const bActive = Number(b.endDate ?? 0) > now;
-      if (aActive && !bActive) return -1;
-      if (!aActive && bActive) return 1;
-
-      // both active: compare by “closeness” to goal
-      if (aActive && bActive) {
-        const sa = score(a);
-        const sb = score(b);
-        if (sb !== sa) return sb - sa;
-        // tie-breaker: sooner deadline
-        return Number(a.endDate ?? 0) - Number(b.endDate ?? 0);
+    // campaigns with goal where raised < goal (still need funds)
+    const notReached = targetCampaigns.filter((c: any) => {
+      try {
+        const raised = Number(c.raisedAmount ?? 0);
+        const goal = Number(c.goalAmount ?? 0);
+        return goal > 0 && raised < goal;
+      } catch {
+        return false;
       }
-
-      // both inactive: newest first
-      return Number(b.endDate ?? 0) - Number(a.endDate ?? 0);
     });
 
-    return sorted.slice(0, 3);
-  }, [campaigns]);
+    if (notReached.length > 0) {
+      // sort by progress (raised/goal) desc; tie-breaker: sooner deadline, then newest
+      const sortedByProgress = [...notReached].sort((a: any, b: any) => {
+        const pa = Number(a.raisedAmount ?? 0) / Math.max(Number(a.goalAmount ?? 1), 1);
+        const pb = Number(b.raisedAmount ?? 0) / Math.max(Number(b.goalAmount ?? 1), 1);
+        if (pb !== pa) return pb - pa;
+        const deadlineDiff = Number(a.endDate ?? 0) - Number(b.endDate ?? 0);
+        if (deadlineDiff !== 0) return deadlineDiff;
+        return (b.id ?? 0) - (a.id ?? 0);
+      });
+      return sortedByProgress.slice(0, 3);
+    }
+
+    // fallback: no in-progress target campaigns — show newest target campaigns
+    const newestTargets = [...targetCampaigns].sort((a: any, b: any) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+    return newestTargets.slice(0, 3);
+  }, [campaigns, isNoGoalFlexible]);
 
   // NEW: total raised (USDC-style formatting: 6 decimals truncated to whole USDC for large counter)
   const totalRaisedRaw = React.useMemo(() => {
@@ -824,13 +830,30 @@ export default function HomePage() {
   };
   const totalRaisedUSDC = formatUSDCInteger(totalRaisedRaw);
 
-  // NEW: latest flexible campaigns (no goal) – newest first, up to 3
+  // NEW: latest flexible campaigns (no goal) – pick top by raised USDC, fallback to newest
   const latestFlexibleCampaigns = React.useMemo(() => {
     if (!campaigns || campaigns.length === 0) return [];
-    return [...campaigns]
-      .filter((c: any) => isNoGoalFlexible(c))
-      .sort((a: any, b: any) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
-      .slice(0, 3);
+    const flex = [...campaigns].filter((c: any) => isNoGoalFlexible(c));
+    if (flex.length === 0) return [];
+
+    // Helper to safely parse raisedAmount to numeric (tries bigint first)
+    const parseRaised = (c: any) => {
+      try { return Number(BigInt(c.raisedAmount ?? 0n)); } catch { return Number(c.raisedAmount ?? 0); }
+    };
+
+    // Sort by raisedAmount descending
+    const byRaised = [...flex].sort((a: any, b: any) => parseRaised(b) - parseRaised(a));
+    const topByRaised = byRaised.slice(0, 3);
+
+    // If any of topByRaised have funds (>0) use them, otherwise fallback to newest flexible campaigns
+    const topHasFunds = topByRaised.some((c: any) => {
+      try { return BigInt(c.raisedAmount ?? 0n) > 0n; } catch { return Number(c.raisedAmount ?? 0) > 0; }
+    });
+
+    if (topHasFunds) return topByRaised;
+
+    // Fallback: newest flexible campaigns (by id desc)
+    return [...flex].sort((a: any, b: any) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)).slice(0, 3);
   }, [campaigns, isNoGoalFlexible]);
 
   return (
@@ -874,54 +897,8 @@ export default function HomePage() {
       </div>
       
       <main className="flex-1">
-        {/* KARUZELE - pokazują się tylko gdy są dane */}
-        <Container maxWidth="xl" sx={{ mt: 4 }}>
-          {/* ✅ Karuzela kampanii – tryb prosty, tylko strzałki */}
-          {/* constrain wrapper so header aligns with first (centered) card */}
-          <div className="mx-auto w-full" style={{ maxWidth: 'calc(24rem * 3 + 1.5rem * 2)' }}>
-            <FuturisticCarousel
-             title="Top Campaigns & Fundraisers"
-             icon={<TrendingUp sx={{ fontSize: 28 }} />}
-             items={carouselCampaigns}
-             simpleNavOnly={true}
-             myAccountCardLayout={true}
-             space={24}
-             renderItem={(campaign: ModularFundraiser) => {
-               const mappedCampaign = {
-                 campaignId: campaign.id.toString(),
-                 targetAmount: campaign.goalAmount ?? 0n,
-                 raisedAmount: campaign.raisedAmount ?? 0n,
-                 creator: campaign.creator,
-                 token: campaign.token,
-                 endTime: campaign.endDate ?? 0n,
-                 isFlexible: isNoGoalFlexible(campaign), // UPDATED
-               };
-
-               const metadata = {
-                 title: campaign.title && campaign.title.length > 0
-                   ? campaign.title
-                   : (isNoGoalFlexible(campaign)
-                       ? `Flexible campaign #${campaign.id}`
-                       : `Targeted fundraiser #${campaign.id}`), // UPDATED
-                 description: campaign.description && campaign.description.length > 0
-                   ? campaign.description.slice(0, 140)
-                   : `Campaign created by ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
-                 image: "/images/zbiorka.png",
-               };
-
-               return (
-                 <CampaignCard
-                   key={campaign.id.toString()}
-                   campaign={mappedCampaign}
-                   metadata={metadata}
-                 />
-               );
-             }}
-             emptyMessage="No active campaigns or fundraisers"
-           />
-          </div>
-         </Container>
-
+        {/* Top carousel removed */}
+ 
         {/* Zbiórki dnia (3 najciekawsze) */}
         {dayPicks && dayPicks.length > 0 && (
           <div className="container mx-auto px-4 mt-10">
@@ -1011,7 +988,7 @@ export default function HomePage() {
           <div className="container mx-auto px-4 mt-10">
             <div className="mx-auto w-full" style={{ maxWidth: 'calc(24rem * 3 + 1.5rem * 2)' }}>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold text-gray-800">Latest Campaigns</h2>
+                <h2 className="text-2xl font-bold text-gray-800">Campaigns of the Day</h2>
                 <span className="text-sm text-gray-500">Flexible campaigns with no target</span>
               </div>
             </div>

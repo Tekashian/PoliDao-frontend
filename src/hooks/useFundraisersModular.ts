@@ -72,9 +72,17 @@ export function useFundraisersModular(page = 0, pageSize = 50) {
         return;
       }
 
-      // Zakładamy ID 1..total
-      const start = page * pageSize + 1;
-      const end = Math.min(start + pageSize - 1, total);
+      // NEW: allow fetching all items on first page up to a safe cap to avoid silent truncation
+      const MAX_FETCH_ALL = Number(process.env.NEXT_PUBLIC_MAX_FETCH_ALL ?? 1000);
+      let start = page * pageSize + 1;
+      let end = Math.min(start + pageSize - 1, total);
+
+      // If we're on the first page and total is modest, fetch the full range (1..total)
+      if (page === 0 && total > pageSize && total <= MAX_FETCH_ALL) {
+        start = 1;
+        end = total;
+      }
+
       const ids = Array.from({ length: Math.max(end - start + 1, 0) }, (_, i) => start + i);
 
       const rows = await Promise.all(ids.map((id) => fetchFundraiser(provider as ethers.AbstractProvider, id)));
