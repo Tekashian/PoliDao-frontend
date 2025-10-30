@@ -1125,288 +1125,280 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* TABS */}
+        {/* TABS — constrained wrapper so H2 and sub-tabs align with centered cards */}
         <div className="container mx-auto px-4 mt-8">
-          <div className="flex border-b border-gray-300">
-            <button
-              onClick={() => setActiveTab("glosowania")}
-              className={`py-2 px-4 -mb-px border-b-2 font-medium ${
-                activeTab === "glosowania"
-                  ? "border-[#10b981] text-[#10b981]"
-                  : "border-transparent text-gray-600"
-              } transform transition-transform hover:scale-105`}
-            >
-              🗳️ All Votes ({displayProposalCount})
-            </button>
-            <button
-              onClick={() => setActiveTab("zbiorki")}
-              className={`py-2 px-4 -mb-px border-b-2 font-medium ${
-                activeTab === "zbiorki"
-                  ? "border-[#10b981] text-[#10b981]"
-                  : "border-transparent text-gray-600"
-              } transform transition-transform hover:scale-105`}
-            >
-              🎯 All Campaigns & Fundraisers ({campaignCount})
-            </button>
-          </div>
-
-          {/* Informacja o połączeniu */}
-          {!isConnected && (
-            <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <div className="flex items-center">
-                <span className="text-yellow-500 text-xl mr-3">⚠️</span>
-                <div>
-                  <h3 className="font-bold text-yellow-800">Wallet not connected</h3>
-                  <p className="text-yellow-700 text-sm mt-1">
-                    Connect your wallet to participate in fundraisers and votes.
-                  </p>
+          <div className="mx-auto w-full" style={{ maxWidth: 'calc(24rem * 3 + 1.5rem * 2)' }}>
+            <div className="flex border-b border-gray-300">
+              <button
+                onClick={() => setActiveTab("glosowania")}
+                className={`py-2 px-4 -mb-px border-b-2 font-medium ${
+                  activeTab === "glosowania"
+                    ? "border-[#10b981] text-[#10b981]"
+                    : "border-transparent text-gray-600"
+                } transform transition-transform hover:scale-105`}
+              >
+                🗳️ All Votes ({displayProposalCount})
+              </button>
+              <button
+                onClick={() => setActiveTab("zbiorki")}
+                className={`py-2 px-4 -mb-px border-b-2 font-medium ${
+                  activeTab === "zbiorki"
+                    ? "border-[#10b981] text-[#10b981]"
+                    : "border-transparent text-gray-600"
+                } transform transition-transform hover:scale-105`}
+              >
+                🎯 All Campaigns & Fundraisers ({campaignCount})
+              </button>
+            </div>
+            
+            {/* Informacja o połączeniu (kept inside wrapper) */}
+            {!isConnected && (
+              <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-center">
+                  <span className="text-yellow-500 text-xl mr-3">⚠️</span>
+                  <div>
+                    <h3 className="font-bold text-yellow-800">Wallet not connected</h3>
+                    <p className="text-yellow-700 text-sm mt-1">
+                      Connect your wallet to participate in fundraisers and votes.
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* CONTENT */}
-          <div className="mt-6 pb-12">
-            {activeTab === "glosowania" && (
-              <>
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-bold text-gray-800">
-                    All Votes
-                  </h2>
-                  <button
-                    onClick={refetchVotes}
-                    disabled={votesLoading}
-                    className={`px-4 py-2 rounded-lg transition-colors ${
-                      votesLoading
-                        ? 'bg-gray-400 cursor-not-allowed'
-                        : 'bg-[#10b981] hover:bg-[#10b981]'
-                    } text-white transform transition-transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]`}
-                  >
-                    {votesLoading ? '⏳ Loading...' : '🔄 Refresh'}
-                  </button>
-                </div>
-
-                {votesLoading && (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-                    <span className="ml-3 text-gray-600">Fetching on‑chain data...</span>
-                  </div>
-                )}
-
-                {votesError && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-                    <div className="flex items-center">
-                      <span className="text-red-500 text-xl mr-3">⚠️</span>
-                      <div>
-                        <h3 className="font-bold text-red-800">Error loading proposals</h3>
-                        <p className="text-red-700 text-sm mt-1">{proposalsError?.message}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {!votesLoading && (
-                  <>
-                    {displayProposals && displayProposals.length > 0 ? (
-                      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                        {displayProposals.map((proposal: Proposal) => (
-                          <MUIProposalCard
-                            key={proposal.id.toString()}
-                            proposal={proposal}
-                            onVote={onVoteProposal}
-                            isVoting={isVotePending || isVoteConfirming}
-                            votingId={votingId}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-12 bg-white rounded-lg shadow">
-                        <span className="text-4xl mb-4 block">🗳️</span>
-                        <p className="text-gray-500 text-lg">No proposals on the contract</p>
-                        <p className="text-gray-400 mt-2">Create the first proposal to see it here!</p>
-                      </div>
-                    )}
-                  </>
-                )}
-              </>
             )}
 
-            {activeTab === "zbiorki" && (
-              <>
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-bold text-gray-800">
-                    All Campaigns & Fundraisers
-                  </h2>
-                  <button
-                    onClick={refetchCampaigns}
-                    disabled={campaignsLoading}
-                    className={`px-4 py-2 rounded-lg transition-colors ${
-                      campaignsLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#10b981] hover:bg-[#10b981]'
-                    } text-white transform transition-transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]`}
-                  >
-                    {campaignsLoading ? '⏳ Loading...' : '🔄 Refresh'}
-                  </button>
-                </div>
-
-                {/* Sub-tabs dla filtrowania kampanii */}
-                <div className="flex border-b border-gray-200 mb-6 bg-white rounded-t-lg px-4">
-                  <button
-                    onClick={() => setCampaignFilter("all")}
-                    className={`py-3 px-6 -mb-px border-b-2 font-medium transition-colors ${
-                      campaignFilter === "all"
-                        ? "border-[#10b981] text-[#10b981] bg-[#10b981]/10"
-                        : "border-transparent text-gray-600 hover:text-[#10b981]"
-                    }`}
-                  >
-                    📊 All ({campaigns ? campaigns.length : 0})
-                  </button>
-                  <button
-                    onClick={() => setCampaignFilter("target")}
-                    className={`py-3 px-6 -mb-px border-b-2 font-medium transition-colors ${
-                      campaignFilter === "target"
-                        ? "border-[#10b981] text-[#10b981] bg-[#10b981]/10"
-                        : "border-transparent text-gray-600 hover:text-[#10b981]"
-                    }`}
-                  >
-                    🎯 Fundraisers ({targetCount}) {/* UPDATED */}
-                  </button>
-                  <button
-                    onClick={() => setCampaignFilter("flexible")}
-                    className={`py-3 px-6 -mb-px border-b-2 font-medium transition-colors ${
-                      campaignFilter === "flexible"
-                        ? "border-[#10b981] text-[#10b981] bg-[#10b981]/10"
-                        : "border-transparent text-gray-600 hover:text-[#10b981]"
-                    }`}
-                  >
-                    🌊 Campaigns ({flexibleCount}) {/* UPDATED */}
-                  </button>
-                </div>
-
-                {campaignsLoading && (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
-                    <span className="ml-3 text-gray-600">Fetching on‑chain data...</span>
+            {/* CONTENT (H2, buttons, sub-tabs, grids) — left-aligned headers inside wrapper */}
+            <div className="mt-6 pb-12">
+              {activeTab === "glosowania" && (
+                <>
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-2xl font-bold text-gray-800 text-left">All Votes</h2>
+                    <button
+                      onClick={refetchVotes}
+                      disabled={votesLoading}
+                      className={`px-4 py-2 rounded-lg transition-colors ${
+                        votesLoading
+                          ? 'bg-gray-400 cursor-not-allowed'
+                          : 'bg-[#10b981] hover:bg-[#10b981]'
+                      } text-white transform transition-transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]`}
+                    >
+                      {votesLoading ? '⏳ Loading...' : '🔄 Refresh'}
+                    </button>
                   </div>
-                )}
 
-                {campaignsError && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-                    <div className="flex items-center">
-                      <span className="text-red-500 text-xl mr-3">⚠️</span>
-                      <div>
-                        <h3 className="font-bold text-red-800">Error loading campaigns</h3>
-                        <p className="text-red-700 text-sm mt-1">{campaignsError.message}</p>
+                  {votesLoading && (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                      <span className="ml-3 text-gray-600">Fetching on‑chain data...</span>
+                    </div>
+                  )}
+
+                  {votesError && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                      <div className="flex items-center">
+                        <span className="text-red-500 text-xl mr-3">⚠️</span>
+                        <div>
+                          <h3 className="font-bold text-red-800">Error loading proposals</h3>
+                          <p className="text-red-700 text-sm mt-1">{proposalsError?.message}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {!campaignsLoading && !campaignsError && (
-                  <>
-                    {filteredCampaigns && filteredCampaigns.length > 0 ? (
-                      <>
-                        {/* Informacja o filtrze */}
-                        {campaignFilter !== "all" && (
-                          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                            <div className="flex items-center text-blue-800">
-                              <span className="mr-2">
-                                {campaignFilter === "target" ? "🎯" : "🌊"}
-                              </span>
-                              <span className="font-medium">
-                                Showing: {campaignFilter === "target" ? "Targeted Fundraisers" : "Flexible Campaigns"} 
-                                ({filteredCampaigns.length} of {campaigns?.length || 0})
-                              </span>
+                  {!votesLoading && (
+                    <>
+                      {displayProposals && displayProposals.length > 0 ? (
+                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                          {displayProposals.map((proposal: Proposal) => (
+                            <MUIProposalCard
+                              key={proposal.id.toString()}
+                              proposal={proposal}
+                              onVote={onVoteProposal}
+                              isVoting={isVotePending || isVoteConfirming}
+                              votingId={votingId}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-12 bg-white rounded-lg shadow">
+                          <span className="text-4xl mb-4 block">🗳️</span>
+                          <p className="text-gray-500 text-lg">No proposals on the contract</p>
+                          <p className="text-gray-400 mt-2">Create the first proposal to see it here!</p>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+
+              {activeTab === "zbiorki" && (
+                <>
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-2xl font-bold text-gray-800 text-left">All Campaigns & Fundraisers</h2>
+                    <button
+                      onClick={refetchCampaigns}
+                      disabled={campaignsLoading}
+                      className={`px-4 py-2 rounded-lg transition-colors ${
+                        campaignsLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#10b981] hover:bg-[#10b981]'
+                      } text-white transform transition-transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]`}
+                    >
+                      {campaignsLoading ? '⏳ Loading...' : '🔄 Refresh'}
+                    </button>
+                  </div>
+
+                  {/* Sub-tabs (inside same wrapper) */}
+                  <div className="flex border-b border-gray-200 mb-6 bg-white rounded-t-lg px-4">
+                    <button
+                      onClick={() => setCampaignFilter("all")}
+                      className={`py-3 px-6 -mb-px border-b-2 font-medium transition-colors ${
+                        campaignFilter === "all"
+                          ? "border-[#10b981] text-[#10b981] bg-[#10b981]/10"
+                          : "border-transparent text-gray-600 hover:text-[#10b981]"
+                      }`}
+                    >
+                      📊 All ({campaigns ? campaigns.length : 0})
+                    </button>
+                    <button
+                      onClick={() => setCampaignFilter("target")}
+                      className={`py-3 px-6 -mb-px border-b-2 font-medium transition-colors ${
+                        campaignFilter === "target"
+                          ? "border-[#10b981] text-[#10b981] bg-[#10b981]/10"
+                          : "border-transparent text-gray-600 hover:text-[#10b981]"
+                      }`}
+                    >
+                      🎯 Fundraisers ({targetCount})
+                    </button>
+                    <button
+                      onClick={() => setCampaignFilter("flexible")}
+                      className={`py-3 px-6 -mb-px border-b-2 font-medium transition-colors ${
+                        campaignFilter === "flexible"
+                          ? "border-[#10b981] text-[#10b981] bg-[#10b981]/10"
+                          : "border-transparent text-gray-600 hover:text-[#10b981]"
+                      }`}
+                    >
+                      🌊 Campaigns ({flexibleCount})
+                    </button>
+                  </div>
+
+                  {campaignsLoading && (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
+                      <span className="ml-3 text-gray-600">Fetching on‑chain data...</span>
+                    </div>
+                  )}
+
+                  {campaignsError && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                      <div className="flex items-center">
+                        <span className="text-red-500 text-xl mr-3">⚠️</span>
+                        <div>
+                          <h3 className="font-bold text-red-800">Error loading campaigns</h3>
+                          <p className="text-red-700 text-sm mt-1">{campaignsError.message}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {!campaignsLoading && !campaignsError && (
+                    <>
+                      {filteredCampaigns && filteredCampaigns.length > 0 ? (
+                        <>
+                          {campaignFilter !== "all" && (
+                            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                              <div className="flex items-center text-blue-800">
+                                <span className="mr-2">
+                                  {campaignFilter === "target" ? "🎯" : "🌊"}
+                                </span>
+                                <span className="font-medium">
+                                  Showing: {campaignFilter === "target" ? "Targeted Fundraisers" : "Flexible Campaigns"} 
+                                  ({filteredCampaigns.length} of {campaigns?.length || 0})
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                          
+                          <div className="mx-auto w-full" style={{ maxWidth: 'calc(24rem * 3 + 1.5rem * 2)' }}>
+                            <div className="flex flex-wrap justify-center gap-6">
+                             {visibleCampaigns.map((campaign: ModularFundraiser) => {
+                               const mappedCampaign = {
+                                 campaignId: campaign.id.toString(),
+                                 targetAmount: campaign.goalAmount ?? 0n,
+                                 raisedAmount: campaign.raisedAmount ?? 0n,
+                                 creator: campaign.creator,
+                                 token: campaign.token,
+                                 endTime: campaign.endDate ?? 0n,
+                                 isFlexible: isNoGoalFlexible(campaign),
+                               };
+                               const metadata = {
+                                 title: campaign.title && campaign.title.length > 0
+                                   ? campaign.title
+                                   : (isNoGoalFlexible(campaign) ? `Flexible campaign #${campaign.id}` : `Fundraiser #${campaign.id}`),
+                                 description: campaign.description && campaign.description.length > 0
+                                   ? campaign.description.slice(0, 140)
+                                   : `Campaign created by ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
+                                 image: "/images/zbiorka.png"
+                               };
+
+                               return (
+                                 <div key={campaign.id.toString()} className="w-full sm:w-[24rem] flex-none">
+                                   <CampaignCard
+                                     campaign={mappedCampaign}
+                                     metadata={metadata}
+                                   />
+                                 </div>
+                               );
+                             })}
                             </div>
                           </div>
-                        )}
-                        
-                        {/* Grid: show only visibleCampaigns */}
-                        {/* limit width so H2 aligns with first card while cards remain centered */}
-                        <div className="mx-auto w-full" style={{ maxWidth: 'calc(24rem * 3 + 1.5rem * 2)' }}>
-                          <div className="flex flex-wrap justify-center gap-6">
-                           {visibleCampaigns.map((campaign: ModularFundraiser) => {
-                             const mappedCampaign = {
-                               campaignId: campaign.id.toString(),
-                               targetAmount: campaign.goalAmount ?? 0n,
-                               raisedAmount: campaign.raisedAmount ?? 0n,
-                               creator: campaign.creator,
-                               token: campaign.token,
-                               endTime: campaign.endDate ?? 0n,
-                               isFlexible: isNoGoalFlexible(campaign),
-                             };
-                             const metadata = {
-                               title: campaign.title && campaign.title.length > 0
-                                 ? campaign.title
-                                 : (isNoGoalFlexible(campaign) ? `Flexible campaign #${campaign.id}` : `Fundraiser #${campaign.id}`),
-                               description: campaign.description && campaign.description.length > 0
-                                 ? campaign.description.slice(0, 140)
-                                 : `Campaign created by ${campaign.creator.slice(0, 6)}...${campaign.creator.slice(-4)}`,
-                               image: "/images/zbiorka.png"
-                             };
 
-                             return (
-                               <div key={campaign.id.toString()} className="w-full sm:w-[24rem] flex-none">
-                                 <CampaignCard
-                                   campaign={mappedCampaign}
-                                   metadata={metadata}
-                                 />
-                               </div>
-                             );
-                           })}
-                          </div>
+                          {visibleCount < filteredCampaigns.length && (
+                            <div className="mt-6 flex justify-center">
+                              <button
+                                onClick={() => setVisibleCount(Math.min(visibleCount + PAGE_SIZE, filteredCampaigns.length))}
+                                onMouseEnter={() => setShowMoreHover(true)}
+                                onMouseLeave={() => setShowMoreHover(false)}
+                                onFocus={() => setShowMoreHover(true)}
+                                onBlur={() => setShowMoreHover(false)}
+                                className={`px-5 py-2 rounded-full border font-semibold transition-colors transition-transform duration-200 transform focus:outline-none focus:ring-2 focus:ring-[#10b981]/30
+                                  ${showMoreHover
+                                    ? 'bg-[#10b981] text-white border-[#10b981]'
+                                    : 'bg-white text-[#10b981] border-[#10b981] dark:bg-[#0f1724] dark:text-[#10b981]'}
+                                `}
+                              >
+                                Show more campaigns →
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      ) : campaigns && campaigns.length > 0 ? (
+                        <div className="text-center py-12 bg-white rounded-lg shadow">
+                          <span className="text-4xl mb-4 block">
+                            {campaignFilter === "target" ? "🎯" : campaignFilter === "flexible" ? "🌊" : "🔍"}
+                          </span>
+                          <p className="text-gray-500 text-lg">
+                            No type: {campaignFilter === "target" ? "Targeted Fundraisers" : campaignFilter === "flexible" ? "Flexible Campaigns" : ""}
+                          </p>
+                          <p className="text-gray-400 mt-2">
+                            Try selecting a different filter or create a new project of this type.
+                          </p>
+                          <button
+                            onClick={() => setCampaignFilter("all")}
+                            className="mt-3 px-4 py-2 bg-[#10b981] hover:bg-[#10b981] text-white rounded-lg transition-colors transform transition-transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]"
+                          >
+                            🔄 Show all projects
+                          </button>
                         </div>
-
-                        {/* NEW: "Pokaż więcej" – load next 6 until all are shown */}
-                        {visibleCount < filteredCampaigns.length && (
-                          <div className="mt-6 flex justify-center">
-                            <button
-                              onClick={() => setVisibleCount(Math.min(visibleCount + PAGE_SIZE, filteredCampaigns.length))}
-                              onMouseEnter={() => setShowMoreHover(true)}
-                              onMouseLeave={() => setShowMoreHover(false)}
-                              onFocus={() => setShowMoreHover(true)}
-                              onBlur={() => setShowMoreHover(false)}
-                              className={`px-5 py-2 rounded-full border font-semibold transition-colors transition-transform duration-200 transform focus:outline-none focus:ring-2 focus:ring-[#10b981]/30
-                                ${showMoreHover
-                                  ? 'bg-[#10b981] text-white border-[#10b981]'
-                                  : 'bg-white text-[#10b981] border-[#10b981] dark:bg-[#0f1724] dark:text-[#10b981]'}
-                              `}
-                            >
-                              Show more campaigns →
-                            </button>
-                          </div>
-                        )}
-                      </>
-                    ) : campaigns && campaigns.length > 0 ? (
-                      // Są kampanie, ale nie pasują do filtru
-                      <div className="text-center py-12 bg-white rounded-lg shadow">
-                        <span className="text-4xl mb-4 block">
-                          {campaignFilter === "target" ? "🎯" : campaignFilter === "flexible" ? "🌊" : "🔍"}
-                        </span>
-                        <p className="text-gray-500 text-lg">
-                          No type: {campaignFilter === "target" ? "Targeted Fundraisers" : campaignFilter === "flexible" ? "Flexible Campaigns" : ""}
-                        </p>
-                        <p className="text-gray-400 mt-2">
-                          Try selecting a different filter or create a new project of this type.
-                        </p>
-                        <button
-                          onClick={() => setCampaignFilter("all")}
-                          className="mt-3 px-4 py-2 bg-[#10b981] hover:bg-[#10b981] text-white rounded-lg transition-colors transform transition-transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]"
-                        >
-                          🔄 Show all projects
-                        </button>
-                      </div>
-                    ) : (
-                      // Brak kampanii w ogóle
-                      <div className="text-center py-12 bg-white rounded-lg shadow">
-                        <span className="text-4xl mb-4 block">🌱</span>
-                        <p className="text-gray-500 text-lg">No campaigns or fundraisers on the contract</p>
-                        <p className="text-gray-400 mt-2">Create the first project to see it here!</p>
-                      </div>
-                    )}
-                  </>
-                )}
-              </>
-            )}
+                      ) : (
+                        <div className="text-center py-12 bg-white rounded-lg shadow">
+                          <span className="text-4xl mb-4 block">🌱</span>
+                          <p className="text-gray-500 text-lg">No campaigns or fundraisers on the contract</p>
+                          <p className="text-gray-400 mt-2">Create the first project to see it here!</p>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       </main>
