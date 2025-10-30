@@ -941,8 +941,8 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* NEW: Trust + Counter + Extra value (under day picks) */}
-        <div className="mt-12 bg-[#10b981] py-10">
+        {/* NEW: Trust + Counter + Extra value (under day picks) — removed solid green band so cards sit on page background */}
+        <div className="mt-12 py-10">
           <div className="container mx-auto px-4">
             <div className="grid gap-8 md:grid-cols-3 items-center text-center">
               {/* Left: Trustworthy */}
@@ -956,11 +956,11 @@ export default function HomePage() {
 
               {/* Center: Big counter */}
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8">
-                <div className="text-5xl sm:text-6xl font-extrabold bg-gradient-to-r from-sky-500 to-green-600 bg-clip-text text-transparent">
+                <div className="text-5xl sm:text-6xl font-extrabold bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(90deg,#10b981,#065f46)' }}>
                   {totalRaisedUSDC} USDC
                 </div>
-                <p className="text-sky-700 font-semibold mt-2">
-                  Raised on PoliDAO (on‑chain)
+                <p className="text-gray-700 font-semibold mt-2">
+                  Raised on PolyFund (on‑chain)
                 </p>
                 <p className="text-gray-500 text-sm mt-1">
                   Updated in real-time based on contract data
@@ -1331,15 +1331,11 @@ export default function HomePage() {
                               onMouseLeave={() => setShowMoreHover(false)}
                               onFocus={() => setShowMoreHover(true)}
                               onBlur={() => setShowMoreHover(false)}
-                              className="
-                                px-5 py-2 rounded-full border border-[#10b981] font-semibold
-                                transition-colors transition-transform duration-200 transform
-                                focus:outline-none focus:ring-2 focus:ring-[#10b981]/30
-                              "
-                              style={{
-                                backgroundColor: showMoreHover ? '#10b981' : '#ffffff',
-                                color: showMoreHover ? '#ffffff' : '#10b981',
-                              }}
+                              className={`px-5 py-2 rounded-full border font-semibold transition-colors transition-transform duration-200 transform focus:outline-none focus:ring-2 focus:ring-[#10b981]/30
+                                ${showMoreHover
+                                  ? 'bg-[#10b981] text-white border-[#10b981]'
+                                  : 'bg-white text-[#10b981] border-[#10b981] dark:bg-[#0f1724] dark:text-[#10b981]'}
+                              `}
                             >
                               Show more campaigns →
                             </button>
