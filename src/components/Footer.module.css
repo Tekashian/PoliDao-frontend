@@ -20,6 +20,22 @@
   --hover-color: #52c279;
 }
 
+:global(.dark) .socialLink {
+  background: #23272f;
+  color: #e5e5e5;
+  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.12);
+}
+
+:global(.dark) .socialIcon {
+  color: #e5e5e5;
+  filter: drop-shadow(0 0 2px #000);
+}
+
+:global(.dark) .socialLink:hover {
+  background: #333;
+  color: #64dc96;
+}
+
 /* Light mode variables - takie same jak w Header */
 :global(.light) .footer,
 :global(:not(.dark)) .footer {

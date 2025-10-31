@@ -360,7 +360,7 @@ export default function WhitePaperPage() {
                     </h4>
                     <p className="text-gray-600 text-sm">Primary deployment for maximum security and decentralization</p>
                    </div>
-                   <div className="border border-gray-200 rounded-xl p-4">
+                   <div className="border border-gray-200 srounded-xl p-4">
                      <h4 className="font-bold text-gray-800 flex items-center mb-2">
                       <span className="w-3 h-3 bg-purple-500 rounded-full mr-3"></span>
                       Polygon Network
@@ -477,120 +477,36 @@ export default function WhitePaperPage() {
                  <p className="text-gray-600">Strategic milestones and timeline</p>
                </div>
              </div>
- 
+
              <div className="space-y-8">
-              {/* Q1 2024 */}
-              <div className="flex items-start space-x-6">
-                <div className="flex-shrink-0">
-                  <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
-                    <span className="text-white font-bold">✓</span>
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <div className="bg-green-50 border border-green-200 rounded-2xl p-6">
-                    <h3 className="text-xl font-bold text-green-800 mb-2">Q1 2024 - Foundation ✅</h3>
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <ul className="space-y-2 text-green-700">
-                        <li>✅ Smart contract development</li>
-                        <li>✅ Frontend application MVP</li>
-                        <li>✅ Initial security audits</li>
-                        <li>✅ Community building</li>
-                      </ul>
-                      <ul className="space-y-2 text-green-700">
-                        <li>✅ Testnet deployment</li>
-                        <li>✅ Documentation creation</li>
-                        <li>✅ Team formation</li>
-                        <li>✅ Advisory board setup</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              </div>
- 
-              {/* Q2 2024 */}
-              <div className="flex items-start space-x-6">
-                <div className="flex-shrink-0">
-                  <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center">
-                    <span className="text-white font-bold">🔄</span>
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6">
-                    <h3 className="text-xl font-bold text-blue-800 mb-2">Q2 2024 - Launch Phase 🔄</h3>
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <ul className="space-y-2 text-blue-700">
-                        <li>🔄 Mainnet deployment</li>
-                        <li>🔄 Public beta testing</li>
-                        <li>🔄 Token generation event</li>
-                        <li>🔄 Exchange listings</li>
-                      </ul>
-                      <ul className="space-y-2 text-blue-700">
-                        <li>🔄 Community governance activation</li>
-                        <li>🔄 Partnership announcements</li>
-                        <li>🔄 Marketing campaign launch</li>
-                        <li>🔄 Bug bounty program</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              </div>
- 
-              {/* Q3 2024 */}
-              <div className="flex items-start space-x-6">
-                <div className="flex-shrink-0">
-                  <div className="w-12 h-12 bg-purple-300 rounded-full flex items-center justify-center">
-                    <span className="text-white font-bold">📋</span>
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <div className="bg-purple-50 border border-purple-200 rounded-2xl p-6">
-                    <h3 className="text-xl font-bold text-purple-800 mb-2">Q3 2024 - Expansion 📋</h3>
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <ul className="space-y-2 text-purple-700">
-                        <li>📋 Mobile application development</li>
-                        <li>📋 Advanced analytics dashboard</li>
-                        <li>📋 Multi-language support</li>
-                        <li>📋 API for third-party integrations</li>
-                      </ul>
-                      <ul className="space-y-2 text-purple-700">
-                        <li>📋 Layer 2 scaling solutions</li>
-                        <li>📋 Enhanced security features</li>
-                        <li>📋 Community governance tools</li>
-                        <li>📋 Educational content platform</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              </div>
- 
-              {/* Q4 2024 */}
-              <div className="flex items-start space-x-6">
-                <div className="flex-shrink-0">
-                  <div className="w-12 h-12 bg-orange-300 rounded-full flex items-center justify-center">
-                    <span className="text-white font-bold">🚀</span>
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <div className="bg-orange-50 border border-orange-200 rounded-2xl p-6">
-                    <h3 className="text-xl font-bold text-orange-800 mb-2">Q4 2024 - Global Scale 🚀</h3>
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <ul className="space-y-2 text-orange-700">
-                        <li>🚀 Cross-chain compatibility</li>
-                        <li>🚀 Enterprise partnerships</li>
-                        <li>🚀 Advanced governance mechanisms</li>
-                        <li>🚀 Institutional onboarding</li>
-                      </ul>
-                      <ul className="space-y-2 text-orange-700">
-                        <li>🚀 Global compliance framework</li>
-                        <li>🚀 Advanced staking options</li>
-                        <li>🚀 DAO treasury management</li>
-                        <li>🚀 1M+ user milestone</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+               {/* Q4 2025 */}
+               <div className="flex items-start space-x-6">
+                 <div className="flex-shrink-0">
+                   <div className="w-12 h-12 bg-indigo-500 rounded-full flex items-center justify-center">
+                     <span className="text-white font-bold">🚀</span>
+                   </div>
+                 </div>
+                 <div className="flex-1">
+                   <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-6">
+                     <h3 className="text-xl font-bold text-indigo-800 mb-2">Q4 2025 - Global Scale & Expansion 🚀</h3>
+                     <div className="grid md:grid-cols-2 gap-4">
+                       <ul className="space-y-2 text-indigo-700">
+                         <li>🚀 Cross-chain compatibility</li>
+                         <li>🚀 Enterprise partnerships</li>
+                         <li>🚀 Advanced governance mechanisms</li>
+                         <li>🚀 Institutional onboarding</li>
+                       </ul>
+                       <ul className="space-y-2 text-indigo-700">
+                         <li>🚀 Global compliance framework</li>
+                         <li>🚀 Advanced staking options</li>
+                         <li>🚀 DAO treasury management</li>
+                         <li>🚀 1M+ user milestone</li>
+                       </ul>
+                     </div>
+                   </div>
+                 </div>
+               </div>
+             </div>
           </div>
          </section>
  
@@ -603,119 +519,21 @@ export default function WhitePaperPage() {
                </div>
                <div>
                  <h2 className="text-4xl font-bold text-gray-900 mb-2">Team & Advisors</h2>
-                 <p className="text-gray-600">Meet the team building the future of democratic participation</p>
+                 <p className="text-gray-600">All roles: Jakub Lacki</p>
                </div>
              </div>
  
-             <div className="grid md:grid-cols-3 gap-8 mb-12">
-              <div className="text-center">
-                <div className="w-32 h-32 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <span className="text-4xl text-white">👨‍💻</span>
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-2">Alex Johnson</h3>
-                <p className="text-blue-600 font-medium mb-3">Co-Founder & CEO</p>
-                <p className="text-gray-600 text-sm leading-relaxed">
-                  Former VP of Engineering at major DeFi protocol. 10+ years in blockchain technology 
-                  and democratic governance systems.
-                </p>
-                <div className="flex justify-center space-x-3 mt-4">
-                  <span className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                    <span className="text-blue-600 text-sm">in</span>
-                  </span>
-                  <span className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                    <span className="text-gray-600 text-sm">𝕏</span>
-                  </span>
-                </div>
-              </div>
-
-              <div className="text-center">
-                <div className="w-32 h-32 bg-gradient-to-br from-green-500 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <span className="text-4xl text-white">👩‍🔬</span>
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-2">Sarah Chen</h3>
-                <p className="text-green-600 font-medium mb-3">Co-Founder & CTO</p>
-                <p className="text-gray-600 text-sm leading-relaxed">
-                  PhD in Computer Science, former Google researcher. Expert in smart contract security 
-                  and scalable blockchain architecture.
-                </p>
-                <div className="flex justify-center space-x-3 mt-4">
-                  <span className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                    <span className="text-blue-600 text-sm">in</span>
-                  </span>
-                  <span className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                    <span className="text-gray-600 text-sm">𝕏</span>
-                  </span>
-                </div>
-              </div>
-
-              <div className="text-center">
-                <div className="w-32 h-32 bg-gradient-to-br from-purple-500 to-pink-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <span className="text-4xl text-white">👨‍💼</span>
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-2">Michael Rodriguez</h3>
-                <p className="text-purple-600 font-medium mb-3">Head of Operations</p>
-                <p className="text-gray-600 text-sm leading-relaxed">
-                  Former McKinsey consultant with expertise in scaling technology platforms. 
-                  Led operations for multiple successful fintech startups.
-                </p>
-                <div className="flex justify-center space-x-3 mt-4">
-                  <span className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                    <span className="text-blue-600 text-sm">in</span>
-                  </span>
-                  <span className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                    <span className="text-gray-600 text-sm">𝕏</span>
-                  </span>
-                </div>
-              </div>
-             </div>
- 
-             <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl p-8">
-              <h3 className="text-2xl font-bold text-gray-900 mb-6 text-center">🎓 Advisory Board</h3>
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="flex items-center space-x-4">
-                  <div className="w-16 h-16 bg-indigo-200 rounded-full flex items-center justify-center">
-                    <span className="text-2xl">🏛️</span>
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-gray-900">Dr. Emily Watson</h4>
-                    <p className="text-indigo-600 text-sm">Political Science Professor, Harvard</p>
-                    <p className="text-gray-600 text-xs">Democratic governance expert</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-4">
-                  <div className="w-16 h-16 bg-purple-200 rounded-full flex items-center justify-center">
-                    <span className="text-2xl">⚖️</span>
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-gray-900">James Thompson</h4>
-                    <p className="text-purple-600 text-sm">Partner, Blockchain Legal Group</p>
-                    <p className="text-gray-600 text-xs">Regulatory compliance specialist</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-4">
-                  <div className="w-16 h-16 bg-green-200 rounded-full flex items-center justify-center">
-                    <span className="text-2xl">💼</span>
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-gray-900">Lisa Park</h4>
-                    <p className="text-green-600 text-sm">Former CEO, TechCorp</p>
-                    <p className="text-gray-600 text-xs">Business strategy and scaling</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-4">
-                  <div className="w-16 h-16 bg-orange-200 rounded-full flex items-center justify-center">
-                    <span className="text-2xl">🔐</span>
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-gray-900">Robert Kim</h4>
-                    <p className="text-orange-600 text-sm">Security Researcher</p>
-                    <p className="text-gray-600 text-xs">Smart contract auditing expert</p>
-                  </div>
-                </div>
-              </div>
+             <div className="flex flex-col items-center justify-center mb-12">
+               <div className="text-center">
+                 <div className="w-32 h-32 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                   <span className="text-4xl text-white">👤</span>
+                 </div>
+                 <h3 className="text-xl font-bold text-gray-900 mb-2">Jakub Lacki</h3>
+                 <p className="text-blue-600 font-medium mb-3">Founder, Developer, Advisor</p>
+                 <p className="text-gray-600 text-sm leading-relaxed">
+                   Responsible for all aspects of PolyFund: smart contracts, frontend, backend, governance, and strategy.
+                 </p>
+               </div>
              </div>
            </div>
          </section>
@@ -850,9 +668,6 @@ export default function WhitePaperPage() {
             Review the architecture above and download the full specification to integrate or deploy PolyFund modules.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <a href="/polyfund-whitepaper.pdf" download className="inline-flex items-center bg-[#10b981] text-white font-bold py-3 px-6 rounded-2xl shadow hover:opacity-95">
-              📄 Download Full Whitepaper
-            </a>
             <a href="/contact" className="inline-flex items-center border border-[#10b981] text-[#10b981] font-semibold py-3 px-6 rounded-2xl hover:bg-[#10b981]/10">
               🚀 Contact the Team
             </a>
