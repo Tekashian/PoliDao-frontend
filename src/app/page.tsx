@@ -864,7 +864,7 @@ export default function HomePage() {
       {/* Mission overlay card — left on desktop, centered on mobile */}
       <div className="relative">
         {/* Overlay card: absolute so it sits over the hero/banner */}
-        <div className="absolute z-30 -top-28 left-4 md:-top-120 md:left-12 lg:left-20 w-[92%] sm:w-80 md:w-96">
+        <div className="absolute z-30 bottom-10 left-4 md:-top-120 md:left-12 lg:left-20 w-[92%] sm:w-80 md:w-96">
           <div className="bg-white rounded-2xl shadow-xl ring-1 ring-gray-100 p-5 md:p-6">
             <h3 className="text-lg md:text-xl font-extrabold text-gray-900 mb-2">
               Our mission — transparent, on‑chain fundraising
