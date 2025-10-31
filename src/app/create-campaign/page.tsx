@@ -1050,96 +1050,54 @@ export default function CreateCampaignPage() {
                 </h2>
 
                 {/* Podsumowanie */}
-                <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl p-6 mb-6 border-2 border-gray-200">
-                  <h3 className="text-lg font-bold text-gray-900 mb-4">Podsumowanie zbiórki</h3>
+                <div className="summary-section">
+                  <h3>Podsumowanie zbiórki</h3>
                   <div className="space-y-3">
                     <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Tytuł:</span>
-                      <span className="font-bold">{formData.title}</span>
+                      <span className="label">Tytuł:</span>
+                      <span className="value">{formData.title}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Typ:</span>
-                      <span className="font-bold">
-                        {formData.campaignType === 'target' ? '🎯 Zbiórka z celem' : '🌊 Zbiórka elastyczna'}
-                      </span>
+                      <span className="label">Typ:</span>
+                      <span className="value">{formData.campaignType === 'target' ? '🎯 Zbiórka z celem' : '🌊 Zbiórka elastyczna'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Waluta:</span>
-                      <span className="font-bold text-blue-600">💲 USDC (stabilny dolar)</span>
+                      <span className="label">Waluta:</span>
+                      <span className="value blue">💲 USDC (stabilny dolar)</span>
                     </div>
                     {formData.campaignType === 'target' && (
                       <div className="flex justify-between">
-                        <span className="text-gray-600 font-medium">Kwota docelowa:</span>
-                        <span className="font-bold text-green-600 text-xl">
-                          {formData.targetAmount} USDC
-                        </span>
+                        <span className="label">Kwota docelowa:</span>
+                        <span className="value green">{formData.targetAmount} USDC</span>
                       </div>
                     )}
                     <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Czas trwania:</span>
-                      <span className="font-bold">{formData.duration} dni</span>
+                      <span className="label">Czas trwania:</span>
+                      <span className="value">{formData.duration} dni</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Beneficjent:</span>
-                      <span className="font-bold">
-                        {formData.beneficiary === 'myself' ? 'Osoba prywatna' : 'Fundacja / Inicjatywa'}
-                      </span>
+                      <span className="label">Beneficjent:</span>
+                      <span className="value">{formData.beneficiary === 'myself' ? 'Osoba prywatna' : 'Fundacja / Inicjatywa'}</span>
                     </div>
                     {formData.location && (
                       <div className="flex justify-between">
-                        <span className="text-gray-600 font-medium">Lokalizacja:</span>
-                        <span className="font-bold">{formData.location}</span>
+                        <span className="label">Lokalizacja:</span>
+                        <span className="value">{formData.location}</span>
                       </div>
                     )}
                   </div>
                 </div>
 
                 {/* Zgody */}
-                <div className="space-y-4">
-                  <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6">
-                    <h4 className="font-bold text-blue-900 mb-3 text-lg">ℹ️ Ważne informacje</h4>
-                    <ul className="text-sm text-blue-800 space-y-2 font-medium">
-                      <li>• Wszystkie transakcje są rejestrowane na blockchain i są publicznie dostępne</li>
-                      <li>• Opłata platformy wynosi 2.5% od zebranej kwoty</li>
-                      <li>• Po utworzeniu zbiórki nie będziesz mógł edytować jej podstawowych parametrów</li>
-                      <li>• Zbiórka będzie zbierać tylko USDC - stabilną kryptowalutę</li>
-                      <li>• Zbiórka zostanie automatycznie zakończona po upływie określonego czasu</li>
-                    </ul>
-                  </div>
-
-                  <label className={`flex items-start p-5 border-2 rounded-xl cursor-pointer transition-all ${
-                    errors.agreeTerms ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-[#10b981]'
-                  }`}>
-                    <input
-                      type="checkbox"
-                      checked={formData.agreeTerms}
-                      onChange={(e) => handleInputChange('agreeTerms', e.target.checked)}
-                      className="mt-1 mr-4 text-green-600 w-5 h-5"
-                    />
-                    <span className="text-sm font-medium">
-                      Akceptuję <a href="#" className="text-green-600 underline font-bold">Regulamin</a> platformy PoliDAO i zobowiązuję się do przestrzegania jego postanowień *
-                    </span>
-                  </label>
-                  {errors.agreeTerms && (
-                    <p className="text-sm text-red-600 font-medium">{errors.agreeTerms}</p>
-                  )}
-
-                  <label className={`flex items-start p-5 border-2 rounded-xl cursor-pointer transition-all ${
-                    errors.agreeDataProcessing ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-[#10b981]'
-                  }`}>
-                    <input
-                      type="checkbox"
-                      checked={formData.agreeDataProcessing}
-                      onChange={(e) => handleInputChange('agreeDataProcessing', e.target.checked)}
-                      className="mt-1 mr-4 text-green-600 w-5 h-5"
-                    />
-                    <span className="text-sm font-medium">
-                      Wyrażam zgodę na przetwarzanie moich danych osobowych zgodnie z <a href="#" className="text-green-600 underline font-bold">Polityką Prywatności</a> *
-                    </span>
-                  </label>
-                  {errors.agreeDataProcessing && (
-                    <p className="text-sm text-red-600 font-medium">{errors.agreeDataProcessing}</p>
-                  )}
+                <div className="info-section">
+                  <h4>ℹ️ Ważne informacje</h4>
+                  <ul>
+                    <li>• Wszystkie transakcje są rejestrowane na blockchain i są publicznie dostępne</li>
+                    <li>• Opłata platformy wynosi 2.5% od zebranej kwoty</li>
+                    <li>• Po utworzeniu zbiórki nie będziesz mógł edytować jej podstawowych parametrów</li>
+                    <li>• Zbiórka będzie zbierać tylko USDC - stabilną kryptowalutę</li>
+                    <li>• Zbiórka zostanie automatycznie zakończona po upływie określonego czasu</li>
+                  </ul>
                 </div>
 
                 {/* Przycisk publikacji */}

@@ -39,3 +39,56 @@
   color: #fff;
   border: 2px solid #10b981;
 }
+
+.summary-section {
+  background: #222;
+  border: 2px solid #bcdcff;
+  color: #e0eafc;
+  border-radius: 1rem;
+  padding: 2rem;
+  margin-bottom: 1.5rem;
+}
+.summary-section h3 {
+  color: #bcdcff;
+  font-weight: bold;
+  font-size: 1.35rem;
+  margin-bottom: 12px;
+}
+.summary-section .label {
+  color: #bcdcff;
+  font-weight: 500;
+}
+.summary-section .value {
+  color: #e0ffe0;
+  font-weight: bold;
+}
+.summary-section .value.green {
+  color: #10b981;
+}
+.summary-section .value.blue {
+  color: #60a5fa;
+}
+
+.info-section {
+  background: #222;
+  border: 2px solid #bcdcff;
+  color: #e0eafc;
+  border-radius: 1rem;
+  padding: 1.5rem 2rem;
+  margin-bottom: 1.5rem;
+}
+.info-section h4 {
+  color: #bcdcff;
+  font-weight: bold;
+  font-size: 1.15rem;
+  margin-bottom: 10px;
+}
+.info-section ul {
+  color: #e0eafc;
+  font-size: 1rem;
+  margin: 0;
+  padding-left: 18px;
+}
+.info-section li {
+  margin-bottom: 4px;
+}
