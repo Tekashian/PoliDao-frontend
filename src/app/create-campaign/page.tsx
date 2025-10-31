@@ -9,6 +9,7 @@ import Footer from '../../components/Footer';
 import { ROUTER_ADDRESS, DEFAULT_TOKEN_ADDRESS } from '../../blockchain/contracts';
 import { poliDaoRouterAbi } from '../../blockchain/routerAbi';
 import { useImageUpload } from '@/hooks/useImageUpload';
+import './pagestyles.css';
 
 // USDC ma 6 miejsc po przecinku
 const USDC_DECIMALS = 6;
@@ -832,9 +833,19 @@ export default function CreateCampaignPage() {
                         </div>
                       )}
                       
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <h4 className="font-semibold text-blue-900 mb-2">💡 Wskazówki dotyczące zdjęcia:</h4>
-                        <ul className="text-sm text-blue-800 space-y-1">
+                      <div
+                        className="rounded-lg p-4"
+                        style={{
+                          background: "rgba(26, 35, 50, 0.98)", // mocno ciemne tło
+                          border: "1.5px solid #10b981",
+                          color: "#e0ffe0",
+                          boxShadow: "0 2px 12px 0 rgba(16,185,129,0.15)"
+                        }}
+                      >
+                        <h4 style={{ color: "#10b981", fontWeight: "bold", marginBottom: "8px", fontSize: "1.08rem" }}>
+                          💡 Wskazówki dotyczące zdjęcia:
+                        </h4>
+                        <ul style={{ color: "#e0ffe0", fontSize: "15px", margin: 0, paddingLeft: "18px", fontWeight: 500 }}>
                           <li>• Dodaj zdjęcie które pokazuje problem lub sytuację</li>
                           <li>• Unikaj zdjęć z danymi osobowymi (dokumenty, dowody)</li>
                           <li>• Jasne, wysokiej jakości zdjęcia przyciągają więcej darczyńców</li>
@@ -1293,26 +1304,16 @@ export default function CreateCampaignPage() {
           </div>
 
           {/* Wsparcie */}
-          <div className="mt-8 bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-8 text-center border-2 border-green-200">
-            <h3 className="text-xl font-bold text-gray-900 mb-4">Potrzebujesz pomocy z USDC?</h3>
-            <p className="text-gray-600 mb-6 font-medium">
-              Nasz zespół pomoże Ci w każdym kroku tworzenia zbiórki i wyjaśni jak działa USDC.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <a 
-                href="/contact" 
-                className="bg-white text-green-600 font-bold py-3 px-6 rounded-lg hover:shadow-md transition-all duration-300 border-2 border-green-200 transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]"
-              >
-                📧 Skontaktuj się z nami
-              </a>
-              <a 
-                href="/white-paper" 
-                className="bg-[#10b981] text-white font-bold py-3 px-6 rounded-lg hover:bg-[#10b981] transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]"
-              >
-                📖 Przeczytaj dokumentację
-              </a>
-            </div>
-          </div>
+          <div className="support-section">
+  <h3>Potrzebujesz pomocy z USDC?</h3>
+  <p>
+    Nasz zespół pomoże Ci w każdym kroku tworzenia zbiórki i wyjaśni jak działa USDC.
+  </p>
+  <div style={{ display: "flex", flexDirection: "row", gap: "18px", justifyContent: "center" }}>
+    <a href="/contact" className="contact-link">📧 Skontaktuj się z nami</a>
+    <a href="/white-paper" className="doc-link">📖 Przeczytaj dokumentację</a>
+  </div>
+</div>
         </div>
       </div>
 
