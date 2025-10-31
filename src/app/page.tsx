@@ -871,7 +871,7 @@ export default function HomePage() {
             </h3>
             <div className="text-xs md:text-sm text-gray-600 space-y-2">
               <p>
-                PoliDAO coordinates transparent, on‑chain fundraisers: donations are deposited to a secure storage contract and all actions are auditable.
+                PolyFund coordinates transparent, on‑chain fundraisers: donations are deposited to a secure storage contract and all actions are auditable.
               </p>
               <p>
                 The lightweight Core delegates complex logic to specialized modules (governance, security, analytics), improving clarity and upgradeability.

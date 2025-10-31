@@ -8,9 +8,7 @@ import Footer from '../../components/Footer';
 export default function WhitePaperPage() {
   const [activeSection, setActiveSection] = useState('executive-summary');
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [copiedCore, setCopiedCore] = useState(false);
-  const CORE_ADDRESS = '0x9362d1b929c8cC161830292b95Ad5E1187239a38';
-  
+
   // Scroll progress tracker
   useEffect(() => {
     const handleScroll = () => {
@@ -386,28 +384,6 @@ export default function WhitePaperPage() {
                       <p className="text-sm text-gray-600 mb-2">
                         A thin controller (PolyFundCore) that: resolves module addresses, coordinates router/extension calls, and exposes view functions (getFundraiserDetails, getFundraiserCount, getDonationAmount).
                       </p>
-                      {/* Core contract address + copy button */}
-                      <div className="flex items-center gap-3 mt-3">
-                        <div className="truncate">
-                          <div className="text-xs text-gray-500">Core contract (Mainnet):</div>
-                          <div className="font-mono text-sm text-gray-800">{CORE_ADDRESS}</div>
-                        </div>
-                        <button
-                          onClick={async () => {
-                            try {
-                              await navigator.clipboard.writeText(CORE_ADDRESS);
-                              setCopiedCore(true);
-                              setTimeout(() => setCopiedCore(false), 2000);
-                            } catch {}
-                          }}
-                          className="inline-flex items-center px-3 py-1.5 border rounded-lg text-sm bg-white hover:bg-gray-50 shadow-sm"
-                          aria-label="Copy core contract address"
-                        >
-                          {copiedCore ? 'Copied' : 'Copy'}
-                        </button>
-                      </div>
-                     </div>
-                     <div>
                       <h4 className="font-bold text-gray-800 mb-2">Libraries & Modules</h4>
                        <ul className="text-sm text-gray-600 space-y-1">
                         <li>• WithdrawLogic — robust withdrawal flow with fee handling and analytics recording</li>
