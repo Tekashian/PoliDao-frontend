@@ -1,0 +1,90 @@
+/* Dark theme for Campaign page (scoped)
+   Applies only when the app has the `dark` class and only inside `.campaign` */
+
+.dark .campaign {
+  --cp-bg: #0e1116;
+  --cp-bg-soft: #11161d;
+  --cp-card: #0f1720;      /* main panel surface */
+  --cp-card-soft: #151e27; /* inner tiles */
+  --cp-text: #e6f1ff;
+  --cp-muted: #98a6b5;
+  --cp-border: #1f2a36;
+  --cp-progress-bg: #1a2530;
+  color: var(--cp-text);
+}
+
+/* Root background override (keeps light mode intact) */
+.dark .campaign.cp-root {
+  background:
+    radial-gradient(1200px 800px at 10% -10%, #0f151d 0%, var(--cp-bg) 35%) !important;
+}
+
+/* Main content panels: all light panels become dark surfaces */
+.dark .campaign .bg-white,
+.dark .campaign .bg-gray-50 {
+  background: var(--cp-card) !important;
+  color: var(--cp-text) !important;
+  border-color: var(--cp-border) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* Inner tiles/cards/stat boxes/activity boxes */
+.dark .campaign .bg-gray-50.rounded-md,
+.dark .campaign .rounded-md.bg-gray-50,
+.dark .campaign .rounded-md.border.bg-gray-50 {
+  background: var(--cp-card-soft) !important;
+  border-color: var(--cp-border) !important;
+}
+
+/* Info stripes inside donation panel */
+.dark .campaign .bg-gray-50.border-y {
+  background: var(--cp-card-soft) !important;
+  border-color: var(--cp-border) !important;
+}
+
+/* Borders and generic .border utilities */
+.dark .campaign .border,
+.dark .campaign .border-t,
+.dark .campaign .border-b,
+.dark .campaign .border-y,
+.dark .campaign .border-gray-100 {
+  border-color: var(--cp-border) !important;
+}
+
+/* List dividers (Tailwind divide-y) */
+.dark .campaign .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--cp-border) !important;
+}
+
+/* Progress bar background */
+.dark .campaign .bg-gray-100.rounded-full.h-3 {
+  background: var(--cp-progress-bg) !important;
+}
+
+/* Inputs and textarea readability */
+.dark .campaign input,
+.dark .campaign textarea {
+  background-color: #0b131a !important;
+  color: var(--cp-text) !important;
+  border-color: #263241 !important;
+}
+
+/* Typography overrides for common Tailwind text utilities on this page */
+.dark .campaign .text-gray-900,
+.dark .campaign .text-gray-800,
+.dark .campaign .text-gray-700 {
+  color: var(--cp-text) !important;
+}
+.dark .campaign .text-gray-600,
+.dark .campaign .text-gray-500,
+.dark .campaign .text-gray-400 {
+  color: var(--cp-muted) !important;
+}
+
+/* Keep primary green accent readable */
+.dark .campaign .text-\[\#10b981\] { color: #10b981 !important; }
+
+/* Optional: lighten hero overlay blur a bit in dark (keeps image feel) */
+.dark .campaign .relative.w-full.h-\[600px\] .absolute.inset-0.bg-black {
+  background-color: rgba(0,0,0,0.35) !important;
+}

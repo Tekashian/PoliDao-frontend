@@ -49,6 +49,7 @@ import { poliDaoStorageAbi } from '../../../blockchain/storageAbi';
 // usuwamy helper i typ progresu z contracts – progres tylko z Routera via wagmi
 // import { fetchFundraiserProgress, type RouterFundraiserProgress } from '../../../blockchain/contracts';
 import { sepolia } from 'viem/chains'; // <-- dodany import
+import './pagestyles.css'; // NEW: scoped dark theme for this page
 
 // ERC20 ABI inline
 const ERC20_ABI = [
@@ -1107,7 +1108,7 @@ export default function CampaignPage() {
   // Show loading state – only core read
   if (loading || isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      <div className="campaign cp-root min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
         <Header />
         <Container maxWidth="xl" sx={{ pt: 3, pb: 6 }}>
           <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "50vh" }}>
@@ -1127,7 +1128,7 @@ export default function CampaignPage() {
   // Show error state
   if (error || !campaignData) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      <div className="campaign cp-root min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
         <Header />
         <Container maxWidth="xl" sx={{ pt: 3, pb: 6 }}>
           <Alert severity="error" sx={{ mt: 4 }}>
@@ -1236,7 +1237,7 @@ export default function CampaignPage() {
   const displayImage = campaignImage || PLACEHOLDER_IMAGE;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+    <div className="campaign cp-root min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       <Header />
       
       {/* Hero with blur */}
