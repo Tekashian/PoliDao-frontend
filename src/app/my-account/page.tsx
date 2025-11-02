@@ -1188,19 +1188,10 @@ export default function AccountPage() {
     if (!withdrawCtx) return;
     try {
       setWithdrawUi('');
-      // If goal reached, do full withdraw now
-      if (withdrawCtx.goal > 0n && withdrawCtx.raised >= withdrawCtx.goal) {
-        const txHash = await writeContractAsync({
-          address: ROUTER_ADDRESS,
-          abi: poliDaoRouterAbi,
-          functionName: 'withdrawFunds',
-          args: [withdrawCtx.fid],
-        });
-        setPendingWithdraw({ id: withdrawCtx.fid, hash: txHash });
-        setWithdrawUi('Withdrawal initiated. Waiting for confirmation...');
-        return;
-      }
-      // Partial — simulate schedule and withdraw allowed part
+
+      const isFlexible = Boolean(withdrawCtx.isFlexible || withdrawCtx.goal === 0n);
+
+      // Preflight: if tranche not available yet, inform and exit
       const requested = withdrawCtx.raised;
       if (requested <= 0n) {
         setWithdrawUi('No funds to withdraw.');
@@ -1212,14 +1203,16 @@ export default function AccountPage() {
         setWithdrawUi(sim ? `Withdrawal in tranches not available yet. Try after: ${when}` : 'Withdrawal temporarily unavailable (Security).');
         return;
       }
+
+      // IMPORTANT: actual payout → Core.withdrawFunds via Router
       const txHash = await writeContractAsync({
         address: ROUTER_ADDRESS,
         abi: poliDaoRouterAbi,
-        functionName: 'withdrawWithSchedule',
-        args: [withdrawCtx.fid, requested],
+        functionName: 'withdrawFunds',
+        args: [withdrawCtx.fid],
       });
       setPendingWithdraw({ id: withdrawCtx.fid, hash: txHash });
-      setWithdrawUi('Withdrawal initiated. Waiting for confirmation...');
+      setWithdrawUi(isFlexible ? 'Withdrawing available tranche...' : 'Withdrawal initiated. Waiting for confirmation...');
     } catch (err: any) {
       setWithdrawUi(err?.shortMessage || err?.message || 'Failed to process withdrawal.');
     }
@@ -1228,22 +1221,27 @@ export default function AccountPage() {
   const doCustomWithdraw = async () => {
     if (!withdrawCtx) return;
     try {
+      // Note: Core.withdrawFunds ignores a custom requested amount and enforces Security tranche.
       const requested = toBaseUnits(withdrawInput || '0', 6);
       if (requested <= 0n) {
         setWithdrawUi('Amount must be greater than 0.');
         return;
       }
+
+      // Preflight for UX (still call withdrawFunds for payout)
       const sim = await simulateWithdrawSchedule(withdrawCtx.fid, requested);
       if (!sim || sim.allowedNow === 0n) {
         const when = sim?.nextAt ? new Date(Number(sim.nextAt) * 1000).toLocaleString('pl-PL') : '';
         setWithdrawUi(sim ? `Withdrawal in tranches not available yet. Try after: ${when}` : 'Withdrawal temporarily unavailable (Security).');
         return;
       }
+
+      // Actual payout via Router.withdrawFunds (Core handles tranche and fees)
       const txHash = await writeContractAsync({
         address: ROUTER_ADDRESS,
         abi: poliDaoRouterAbi,
-        functionName: 'withdrawWithSchedule',
-        args: [withdrawCtx.fid, requested],
+        functionName: 'withdrawFunds',
+        args: [withdrawCtx.fid],
       });
       setPendingWithdraw({ id: withdrawCtx.fid, hash: txHash });
       setWithdrawUi('Withdrawal initiated. Waiting for confirmation...');
@@ -1451,7 +1449,15 @@ export default function AccountPage() {
                         isFlexible: isFlexibleCampaign,
                       };
 
-                      // Always provide metadata with image to avoid undefined errors
+                      // REPLACED: prefer on-chain/metadata description when present
+                      const plainDesc = String(c.description ?? c.details ?? c.story ?? c.metadata?.description ?? '').trim();
+                      const description =
+                        plainDesc.length > 0
+                          ? plainDesc
+                          : (donationAmount > 0n
+                              ? `Your donations: ${(Number(donationAmount) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC`
+                              : `Campaign created by ${String(c.creator).slice(0, 6)}...${String(c.creator).slice(-4)}`);
+
                       const metadata = {
                         title:
                           (c.title && String(c.title).trim().length > 0)
@@ -1459,10 +1465,8 @@ export default function AccountPage() {
                             : c.isFlexible
                               ? `Flexible campaign #${idStr}`
                               : `Fundraiser #${idStr}`,
-                        description:
-                          donationAmount > 0n
-                            ? `Your donations: ${(Number(donationAmount) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC`
-                            : `Campaign created by ${String(c.creator).slice(0, 6)}...${String(c.creator).slice(-4)}`,
+                        // CHANGED: show real description if provided
+                        description,
                         image: "/images/zbiorka.png",
                       };
 
@@ -1493,9 +1497,9 @@ export default function AccountPage() {
                             {/* Thank-you overlay when goal-based campaign reached its target */}
                             {reached ? (
                               // Full-card overlay (previously only image area)
-                              <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-100">
+                              <div className="pointer-events-none absolute inset-0 z-10 rounded-t-xl overflow-hidden opacity-100">
                                 <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/40 via-fuchsia-400/20 to-transparent" />
-                                <div className="absolute inset-0 rounded-xl ring-1 ring-white/30 shadow-[inset_0_0_28px_rgba(16,185,129,0.45)]" />
+                                <div className="absolute inset-0 rounded-t-xl ring-1 ring-white/30 shadow-[inset_0_0_28px_rgba(16,185,129,0.45)]" />
                                 {/* CHANGED: center the thank-you message */}
                                 <div className="absolute inset-0 flex items-center justify-center">
                                   {/* CHANGED: solid white (no transparency) */}
@@ -1900,10 +1904,36 @@ export default function AccountPage() {
                     </span>
                   ) : (
                     <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
-                      Partial withdrawal — contract will split into tranches
+                      Tranche-based withdrawal — available amount depends on schedule
                     </span>
                   )}
                 </div>
+
+                {/* CHANGED: show tranche diagnostics for flexible/no-goal and for target-not-reached */}
+                {(withdrawCtx.goal === 0n || withdrawCtx.raised < withdrawCtx.goal) && (
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="text-xs text-gray-600">
+                      <div className="font-semibold text-gray-800">Available now</div>
+                      <div className="mt-0.5">
+                        {((Number(withdrawCtx.allowedNow ?? 0n) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 }))} USDC
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      <div className="font-semibold text-gray-800">Remaining</div>
+                      <div className="mt-0.5">
+                        {((Number(withdrawCtx.remaining ?? 0n) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 }))} USDC
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      <div className="font-semibold text-gray-800">Next tranche</div>
+                      <div className="mt-0.5">
+                        {withdrawCtx.nextAt && withdrawCtx.nextAt > 0n
+                          ? new Date(Number(withdrawCtx.nextAt) * 1000).toLocaleString('pl-PL')
+                          : '—'}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="rounded-xl p-4 ring-1 ring-gray-100 bg-white">
@@ -1911,10 +1941,13 @@ export default function AccountPage() {
                   onClick={doFullWithdraw}
                   disabled={isWithdrawMining || (pendingWithdraw && withdrawCtx && pendingWithdraw.id === withdrawCtx.fid)}
                   className={`w-full px-4 py-2 rounded-lg text-white text-sm font-semibold shadow transition
-                    ${withdrawCtx.goal > 0n && withdrawCtx.raised >= withdrawCtx.goal ? 'bg-[#10b981]' : 'bg-[#10b981]'}
-                    ${isWithdrawMining ? 'opacity-70 cursor-wait' : 'hover:shadow-[0_0_22px_rgba(16,185,129,0.35)]'}`}
+                    bg-[#10b981] ${isWithdrawMining ? 'opacity-70 cursor-wait' : 'hover:shadow-[0_0_22px_rgba(16,185,129,0.35)]'}`}
                 >
-                  {isWithdrawMining ? 'Processing...' : 'Withdraw full amount now'}
+                  {(() => {
+                    const reached = withdrawCtx.goal > 0n && withdrawCtx.raised >= withdrawCtx.goal;
+                    if (isWithdrawMining) return 'Processing...';
+                    return reached ? 'Withdraw full amount now' : 'Withdraw available tranche';
+                  })()}
                 </button>
 
                 <div className="mt-4">
@@ -1996,6 +2029,11 @@ function MyCampaignCard({
   // NEW: no-goal campaigns are always withdrawable
   const isNoGoal = mappedCampaign.targetAmount === 0n;
 
+  // REPLACED: prefer campaign description if available
+  const descCandidate = String(
+    campaign.description ?? campaign.details ?? campaign.story ?? campaign.metadata?.description ?? ''
+  ).trim();
+
   const metadata = {
     title:
       (campaign.title && String(campaign.title).trim().length > 0)
@@ -2003,8 +2041,11 @@ function MyCampaignCard({
         : campaign.isFlexible
           ? `Flexible campaign #${idStr}`
           : `Fundraiser #${idStr}`,
+    // CHANGED: show real description if provided, otherwise fallback
     description:
-      `Campaign created by ${String(campaign.creator).slice(0, 6)}...${String(campaign.creator).slice(-4)}`,
+      descCandidate.length > 0
+        ? descCandidate
+        : `Campaign created by ${String(campaign.creator).slice(0, 6)}...${String(campaign.creator).slice(-4)}`,
     image: "/images/zbiorka.png",
   };
 
