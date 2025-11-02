@@ -24,6 +24,8 @@ import { usePublicClient } from 'wagmi';
 // NEW: storage ABI
 import { poliDaoStorageAbi } from '../../blockchain/storageAbi';
 
+import './myaccountstyles.css';
+
 // NEW: minimal Security ABI for diagnostics (no tx)
 const SECURITY_ABI = [
   { name: 'payoutLimitUSDC', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
@@ -1112,7 +1114,7 @@ export default function AccountPage() {
       const idStr = fid.toString();
       const donatedAgg = donatedPerFundraiser.get(idStr) ?? 0n;
       const camp = (campaigns as any[])?.find((x) => x?.id?.toString?.() === idStr);
-      const title = camp?.title && String(camp.title).trim().length > 0 ? camp.title : (camp?.isFlexible ? `Flexible campaign #${idStr}` : `Fundraiser #${idStr}`);
+      const title = camp?.title && String(camp.title).trim().length >  0 ? camp.title : (camp?.isFlexible ? `Flexible campaign #${idStr}` : `Fundraiser #${idStr}`);
       const refundable = canRefundById.get(idStr) ?? false;
       const reason = canRefundReasonById.get(idStr) || '';
       setRefundCtx({ fid, donated: donatedAgg, title, isRefundable: refundable, reason });
@@ -1328,30 +1330,30 @@ export default function AccountPage() {
           <div className="flex space-x-4">
             <button
               onClick={() => setActiveTab('dashboard')}
-              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${ 
+              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${
                 activeTab === 'dashboard'
-                  ? 'bg-[#10b981] text-white shadow-md'
-                  : 'bg-gray-100 text-gray-700 hover:bg-[#10b981]/10 hover:text-[#10b981]'
+                  ? 'tab-active'
+                  : 'tab-inactive'
               } transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]`}
             >
               Dashboard
             </button>
             <button
               onClick={() => setActiveTab('donations')}
-              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${ 
+              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${
                 activeTab === 'donations'
-                  ? 'bg-[#10b981] text-white shadow-md'
-                  : 'bg-gray-100 text-gray-700 hover:bg-[#10b981]/10 hover:text-[#10b981]'
+                  ? 'tab-active'
+                  : 'tab-inactive'
               } transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]`}
             >
               Donations
             </button>
             <button
               onClick={() => setActiveTab('fundraisers')}
-              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${ 
+              className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-all ${
                 activeTab === 'fundraisers'
-                  ? 'bg-[#10b981] text-white shadow-md'
-                  : 'bg-gray-100 text-gray-700 hover:bg-[#10b981]/10 hover:text-[#10b981]'
+                  ? 'tab-active'
+                  : 'tab-inactive'
               } transform hover:scale-105 hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]`}
             >
               Your Fundraisers
@@ -1366,7 +1368,7 @@ export default function AccountPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div
                 onClick={() => setHistoryOpen(true)}
-                className="p-4 bg-gray-100 rounded-lg cursor-pointer hover:bg-[#10b981]/10 transition-colors"
+                className="kpi-card p-4 rounded-lg cursor-pointer transition-colors hover:shadow-md"
                 title="Click to view your donation history"
               >
                 <h3 className="text-lg font-semibold mb-2">Total number of donations</h3>
@@ -1375,7 +1377,7 @@ export default function AccountPage() {
 
               <div
                 onClick={() => setHistoryOpen(true)}
-                className="p-4 bg-gray-100 rounded-lg cursor-pointer hover:bg-[#10b981]/10 transition-colors"
+                className="kpi-card p-4 rounded-lg cursor-pointer transition-colors hover:shadow-md"
                 title="Click to view your donation history"
               >
                 <h3 className="text-lg font-semibold mb-2">Total volume</h3>
@@ -1433,6 +1435,10 @@ export default function AccountPage() {
                       const idStr = (c.id ?? 0n).toString();
                       const donationAmount = donatedPerFundraiser.get(idStr) ?? 0n;
 
+                      // Detect flexible/no-goal
+                      const goalRaw = BigInt(c.goalAmount ?? c.target ?? 0n);
+                      const isFlexibleCampaign = Boolean(c.isFlexible) || goalRaw === 0n;
+
                       // Normalize to CampaignCard's expected shape
                       const mappedCampaign = {
                         campaignId: idStr,
@@ -1441,7 +1447,8 @@ export default function AccountPage() {
                         creator: c.creator as string,
                         token: c.token as string,
                         endTime: (c.endDate ?? c.endTime ?? 0n) as bigint,
-                        isFlexible: Boolean(c.isFlexible),
+                        // ensure cards hide progress for flexible/no-goal
+                        isFlexible: isFlexibleCampaign,
                       };
 
                       // Always provide metadata with image to avoid undefined errors
@@ -1461,7 +1468,12 @@ export default function AccountPage() {
 
                       const isRefundable = canRefundById.get(idStr) ?? false;
                       const isPending = pendingRefund?.id === BigInt(idStr) || isRefundMining;
-                      const reached = isReached(c);
+
+                      // goal reached only applies to goal-based fundraisers
+                      const reached = (() => {
+                        const raised = BigInt(c.raisedAmount ?? c.raised ?? 0n);
+                        return goalRaw > 0n && raised >= goalRaw;
+                      })();
 
                       return (
                         <div key={idStr} className="w-full sm:w-[24rem] flex-none">
@@ -1478,28 +1490,44 @@ export default function AccountPage() {
                               showDetails
                             />
 
-                            {/* NEW: Festive thank-you overlay for reached campaigns */}
+                            {/* Thank-you overlay when goal-based campaign reached its target */}
                             {reached ? (
-                              // ZMIANA: overlay zawsze widoczny (opacity-100), bez group-hover
-                              <div className="pointer-events-none absolute left-0 right-0 top-0 h-60 z-10 rounded-t-xl overflow-hidden opacity-100">
-                                <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/40 via-fuchsia-400/25 to-transparent" />
-                                <div className="absolute inset-0 rounded-t-xl ring-1 ring-white/30 shadow-[inset_0_0_28px_rgba(16,185,129,0.45)]" />
-                                <div className="absolute inset-x-0 bottom-3 flex justify-center">
-                                  <span className="pointer-events-none px-4 py-2 rounded-full bg-white/85 text-emerald-700 text-sm font-semibold ring-1 ring-emerald-300 shadow">
+                              // Full-card overlay (previously only image area)
+                              <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-100">
+                                <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/40 via-fuchsia-400/20 to-transparent" />
+                                <div className="absolute inset-0 rounded-xl ring-1 ring-white/30 shadow-[inset_0_0_28px_rgba(16,185,129,0.45)]" />
+                                {/* CHANGED: center the thank-you message */}
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  {/* CHANGED: solid white (no transparency) */}
+                                  <span className="pointer-events-none px-4 py-2 rounded-full bg-white text-emerald-700 text-sm font-semibold ring-1 ring-emerald-300 shadow">
                                     Thank you for your support! 🎉
                                   </span>
                                 </div>
                               </div>
+                            ) : isFlexibleCampaign ? (
+                              // NEW: Yellow info overlay for flexible/no-goal campaigns (refunds unavailable)
+                              <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                <div className="absolute inset-0 bg-gradient-to-t from-amber-400/35 via-amber-300/10 to-transparent" />
+                                <div className="absolute inset-0 rounded-xl ring-1 ring-amber-400/40 shadow-[inset_0_0_22px_rgba(251,191,36,0.45)]" />
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <span
+                                    className="pointer-events-none px-4 py-2 rounded-full bg-amber-500 text-white text-sm font-semibold ring-1 ring-white/20 shadow"
+                                    title="Refunds are not available for flexible campaigns"
+                                  >
+                                    Refunds unavailable for flexible campaigns
+                                  </span>
+                                </div>
+                              </div>
                             ) : (
-                              // existing red refund overlay for not reached – tylko na hover
-                              <div className="pointer-events-none absolute left-0 right-0 top-0 h-60 z-10 rounded-t-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                              // Red revoke overlay on hover – only for goal-based not-yet-reached
+                              <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                                 <div className="absolute inset-0 bg-gradient-to-t from-[#ef4444]/35 via-[#ef4444]/10 to-transparent" />
-                                <div className="absolute inset-0 rounded-t-xl ring-1 ring-[#ef4444]/40 shadow-[inset_0_0_22px_rgba(239,68,68,0.45)]" />
-                                <div className="absolute inset-x-0 bottom-3 flex justify-center">
+                                <div className="absolute inset-0 rounded-xl ring-1 ring-[#ef4444]/40 shadow-[inset_0_0_22px_rgba(239,68,68,0.45)]" />
+                                <div className="absolute inset-0 flex items-center justify-center">
                                   <button
                                     className={`pointer-events-auto px-4 py-2 rounded-full text-white text-sm font-semibold ring-1 ring-white/20 transition-shadow
-                                      ${isRefundable ? 'bg-[#ef4444] shadow-[0_0_14px_rgba(239,68,68,0.65)] hover:shadow-[0_0_26px_rgba(239,68,68,0.95)]' : 'bg-[#ef4444]/60'}
-                                      ${isPending ? 'opacity-70 cursor-wait' : ''}`}
+                                      bg-[#ef4444] shadow-[0_0_14px_rgba(239,68,68,0.65)] hover:shadow-[0_0_26px_rgba(239,68,68,0.95)]
+                                      ${isPending ? 'cursor-wait' : ''}`}
                                     aria-label="Revoke donation"
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -1543,8 +1571,8 @@ export default function AccountPage() {
               <div className="flex flex-wrap justify-center gap-6">
                 {(() => {
                   // Reguły:
-                  // 1) (cat 0) niewypłacone i mają cel osiągnięty -> najpierw
-                  // 2) (cat 1) bez celu, ale z zebranymi środkami -> po (1)
+                  // 1) (cat  0) niewypłacone i mają cel osiągnięty -> najpierw
+                  //   // 2) (cat 1) bez celu, ale z zebranymi środkami -> po (1)
                   // 3) (cat 2) pozostałe: najbliżej celu (remaining asc)
                   // 4) potem najnowsze -> najstarsze (id desc)
                   // 5) wypłacone (success) -> na końcu
@@ -1627,7 +1655,39 @@ export default function AccountPage() {
       </div>
 
       {/* NEW: Historia darowizn – modal */}
-      <Dialog open={historyOpen} onClose={() => setHistoryOpen(false)} maxWidth="md" fullWidth>
+      <Dialog
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          className: 'dialog-surface',
+          sx: {
+            background: 'var(--surface)',
+            color: 'var(--text)',
+            border: '1px solid var(--border)',
+            borderRadius: '16px',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.45)',
+            '& .MuiDialogTitle-root': {
+              background: 'color-mix(in srgb, var(--surface) 90%, black 10%)',
+              color: 'var(--text)',
+            },
+            '& .MuiDialogContent-root': {
+              background: 'color-mix(in srgb, var(--surface) 96%, white 4%)',
+              color: 'var(--text)',
+            },
+            '& .MuiDialogContent-dividers': {
+              borderTop: '1px solid var(--border)',
+              borderBottom: '1px solid var(--border)',
+            },
+            '& .MuiDialogActions-root': {
+              background: 'color-mix(in srgb, var(--surface) 90%, black 10%)',
+              borderTop: '1px solid var(--border)',
+            },
+            '& a': { color: 'var(--primary)' },
+          },
+        }}
+      >
         <DialogTitle>Donation history</DialogTitle>
         <DialogContent dividers>
           {historyLoading ? (
@@ -1679,7 +1739,38 @@ export default function AccountPage() {
       </Dialog>
 
       {/* NEW: Refund modal – styled to match app */}
-      <Dialog open={refundOpen} onClose={() => setRefundOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={refundOpen}
+        onClose={() => setRefundOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          className: 'dialog-surface',
+          sx: {
+            background: 'var(--surface)',
+            color: 'var(--text)',
+            border: '1px solid var(--border)',
+            borderRadius: '16px',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.45)',
+            '& .MuiDialogTitle-root': {
+              background: 'color-mix(in srgb, var(--surface) 90%, black 10%)',
+              color: 'var(--text)',
+            },
+            '& .MuiDialogContent-root': {
+              background: 'color-mix(in srgb, var(--surface) 96%, white 4%)',
+              color: 'var(--text)',
+            },
+            '& .MuiDialogContent-dividers': {
+              borderTop: '1px solid var(--border)',
+              borderBottom: '1px solid var(--border)',
+            },
+            '& .MuiDialogActions-root': {
+              background: 'color-mix(in srgb, var(--surface) 90%, black 10%)',
+              borderTop: '1px solid var(--border)',
+            },
+          },
+        }}
+      >
         <DialogTitle>
           <div className="flex items-center gap-3">
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#ef4444]/10 text-[#ef4444]">↩</span>
@@ -1695,7 +1786,7 @@ export default function AccountPage() {
                 <p className="text-sm text-gray-500">Fundraiser</p>
                 <p className="text-base font-semibold">{refundCtx.title}</p>
                 <div className="mt-3 flex items-center justify-between">
-                  <span className="text-sm text-gray-500">Your donations</span>
+                  <span className="text-sm text-gray-500">Your total donations</span>
                   {(() => {
                     const donatedNow = (typeof refundCtx.donationStorage === 'bigint'
                       ? refundCtx.donationStorage
@@ -1707,39 +1798,7 @@ export default function AccountPage() {
                     );
                   })()}
                 </div>
-                <div className="mt-3 space-y-2">
-                  {refundCtx.isRefundable ? (
-                    <span className="inline-flex items-center rounded-full bg-[#10b981]/10 px-2.5 py-1 text-xs font-semibold text-[#10b981] ring-1 ring-[#10b981]/20">
-                      Full refund available
-                    </span>
-                  ) : refundCtx.allowedNow != null ? (
-                    refundCtx.allowedNow > 0n ? (
-                      <div className="flex flex-col gap-1">
-                        <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
-                          Available now: {(Number(refundCtx.allowedNow) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC
-                        </span>
-                        {typeof refundCtx.refundCommissionBps === 'bigint' && (
-                          <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">
-                            Estimated net ~{(Number(refundCtx.expectedNet ?? 0n) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC (fee {refundCtx.refundCommissionBps.toString()} bps)
-                          </span>
-                        )}
-                        {refundCtx.remaining != null && refundCtx.remaining > 0n && (
-                          <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-100">
-                            Remaining after this tranche: {(Number(refundCtx.remaining) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
-                        Next tranche at: {refundCtx.nextAt ? new Date(Number(refundCtx.nextAt) * 1000).toLocaleString('pl-PL') : 'soon'}
-                      </span>
-                    )
-                  ) : (
-                    <span className="inline-flex items-center rounded-full bg-[#ef4444]/10 px-2.5 py-1 text-xs font-semibold text-[#ef4444] ring-1 ring-[#ef4444]/20">
-                      {refundCtx.reason || 'Refund currently unavailable'}
-                    </span>
-                  )}
-                </div>
+                {/* Removed any 'available/remaining/next tranche' indicators — full amount is refunded */}
               </div>
 
               <div className="rounded-xl p-4 ring-1 ring-gray-100 bg-white">
@@ -1749,20 +1808,10 @@ export default function AccountPage() {
                     : refundCtx.donated) ?? 0n;
                   const isPending = isRefundMining || (pendingRefund && refundCtx && pendingRefund.id === refundCtx.fid);
                   const noFunds = donatedNow <= 0n;
-                  const blockedBySchedule = !refundCtx.isRefundable && (refundCtx.allowedNow != null && refundCtx.allowedNow === 0n);
-                  const blockedByReason = !refundCtx.isRefundable && !!(refundCtx.reason && refundCtx.reason.trim().length > 0) && (refundCtx.allowedNow == null || refundCtx.allowedNow === 0n);
-                  const disabled = isPending || noFunds || blockedBySchedule || blockedByReason;
+                  const disabled = isPending || noFunds;
 
-                  const label = isRefundMining
-                    ? 'Processing...'
-                    : (() => {
-                        if (refundCtx.allowedNow != null) {
-                          const gross = (Number(refundCtx.allowedNow) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 });
-                          const net = (Number(refundCtx.expectedNet ?? refundCtx.allowedNow) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 });
-                          return `Refund now (available: ${gross} USDC, net: ${net} USDC)`;
-                        }
-                        return 'Refund now';
-                      })();
+                  // CHANGED: static label
+                  const label = 'Refunding all amount ...';
 
                   return (
                     <button
@@ -1782,20 +1831,7 @@ export default function AccountPage() {
                 )}
               </div>
 
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-gray-600">
-                <div className="rounded-md bg-white p-2 ring-1 ring-gray-100">
-                  <div className="font-semibold text-gray-700">Refund fee (bps)</div>
-                  <div>{typeof refundCtx.refundCommissionBps === 'bigint' ? refundCtx.refundCommissionBps.toString() : '—'}</div>
-                </div>
-                <div className="rounded-md bg-white p-2 ring-1 ring-gray-100">
-                  <div className="font-semibold text-gray-700">Estimated net</div>
-                  <div>
-                    {typeof refundCtx.expectedNet === 'bigint'
-                      ? `${(Number(refundCtx.expectedNet) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC`
-                      : '—'}
-                  </div>
-                </div>
-              </div>
+              {/* Removed fee/net/remaining badges — modal focuses on total donation only */}
             </div>
           )}
         </DialogContent>
@@ -1805,7 +1841,38 @@ export default function AccountPage() {
       </Dialog>
 
       {/* NEW: Withdraw modal – styled to match app */}
-      <Dialog open={withdrawOpen} onClose={() => setWithdrawOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={withdrawOpen}
+        onClose={() => setWithdrawOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          className: 'dialog-surface',
+          sx: {
+            background: 'var(--surface)',
+            color: 'var(--text)',
+            border: '1px solid var(--border)',
+            borderRadius: '16px',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.45)',
+            '& .MuiDialogTitle-root': {
+              background: 'color-mix(in srgb, var(--surface) 90%, black 10%)',
+              color: 'var(--text)',
+            },
+            '& .MuiDialogContent-root': {
+              background: 'color-mix(in srgb, var(--surface) 96%, white 4%)',
+              color: 'var(--text)',
+            },
+            '& .MuiDialogContent-dividers': {
+              borderTop: '1px solid var(--border)',
+              borderBottom: '1px solid var(--border)',
+            },
+            '& .MuiDialogActions-root': {
+              background: 'color-mix(in srgb, var(--surface) 90%, black 10%)',
+              borderTop: '1px solid var(--border)',
+            },
+          },
+        }}
+      >
         <DialogTitle>
           <div className="flex items-center gap-3">
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#10b981]/10 text-[#10b981]">⬇</span>

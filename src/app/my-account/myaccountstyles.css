@@ -1,0 +1,61 @@
+/* KPI tiles: slightly elevated surface that works in light/dark */
+.kpi-card {
+  background: color-mix(in srgb, var(--surface) 86%, white 14%);
+  border: 1px solid color-mix(in srgb, var(--border) 65%, white 20%);
+  box-shadow: 0 4px 12px color-mix(in srgb, black 8%, transparent);
+}
+
+/* Tabs */
+.tab-inactive {
+  background: color-mix(in srgb, var(--surface) 88%, white 12%);
+  border: 1px solid color-mix(in srgb, var(--border) 65%, white 20%);
+}
+
+.tab-inactive:hover {
+  background: color-mix(in srgb, var(--surface) 84%, white 16%);
+}
+
+/* Active tab: keep brand color and ensure readable text under global dark override */
+.tab-active {
+  background: #10b981;
+  border: 1px solid #10b981;
+  color: #ffffff !important;
+  box-shadow: 0 0 18px rgba(16,185,129,0.35);
+}
+
+/* Dialog surface for dark mode */
+.dialog-surface {
+  background: color-mix(in srgb, var(--surface) 96%, #000 4%) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.45) !important;
+}
+
+.dialog-surface .MuiDialogTitle-root {
+  background: color-mix(in srgb, var(--surface) 90%, #000 10%) !important;
+  color: var(--text) !important;
+}
+
+.dialog-surface .MuiDialogContent-root {
+  background: color-mix(in srgb, var(--surface) 96%, #fff 4%) !important;
+  color: var(--text) !important;
+}
+
+.dialog-surface .MuiDialogContent-dividers {
+  border-top: 1px solid var(--border) !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+
+.dialog-surface .MuiDialogActions-root {
+  background: color-mix(in srgb, var(--surface) 90%, #000 10%) !important;
+  border-top: 1px solid var(--border) !important;
+}
+
+.dialog-surface a {
+  color: var(--primary) !important;
+  text-decoration: none;
+}
+.dialog-surface a:hover {
+  text-decoration: underline;
+}
