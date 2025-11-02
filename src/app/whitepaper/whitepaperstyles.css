@@ -1,284 +1,145 @@
-.wp-progress-bar {
-  position: fixed;
-  top: 0; left: 0; width: 100%; height: 4px;
-  background: #222;
-  z-index: 50;
-}
-.wp-progress-bar-inner {
-  height: 100%;
-  background: linear-gradient(90deg,#10b981,#065f46);
-  transition: width 0.3s;
+/* Dark theme for Whitepaper (scoped) */
+/* Applies only when the app has the `dark` class and only inside `.whitepaper` */
+
+.dark .whitepaper {
+  --wp-bg: #0e1116;
+  --wp-bg-soft: #11161d;
+  --wp-card: #151b22;
+  --wp-card-soft: #18202a;
+  --wp-text: #e6f1ff;
+  --wp-muted: #a8b4c5;
+  --wp-border: rgba(230, 241, 255, 0.10);
+  --wp-border-strong: rgba(230, 241, 255, 0.16);
+  --wp-accent: #10b981;
+  --wp-accent-deep: #065f46;
+  color: var(--wp-text);
 }
 
-.wp-float-nav {
-  position: fixed;
-  right: 2rem;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 40;
-  background: #222;
-  border-radius: 1.5rem;
-  box-shadow: 0 2px 18px 0 rgba(16,185,129,0.10);
-  border: 1.5px solid #10b981;
-  padding: 0.5rem;
-  backdrop-filter: blur(8px);
-}
-.wp-float-nav-btn {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  padding: 0.75rem 1rem;
-  margin-bottom: 0.5rem;
-  border-radius: 1rem;
-  font-size: 1rem;
-  font-weight: 500;
-  background: transparent;
-  color: #e0ffe0;
-  border: none;
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s;
-}
-.wp-float-nav-btn.active {
-  background: linear-gradient(90deg,#10b981,#065f46);
-  color: #fff;
-  box-shadow: 0 2px 12px 0 rgba(16,185,129,0.15);
-}
-.wp-float-nav-btn:not(.active):hover {
-  background: #10b98122;
-  color: #10b981;
+/* Root background override (keeps light mode intact) */
+.dark .whitepaper.wp-root {
+  background: radial-gradient(1200px 800px at 10% -10%, #0f151d 0%, var(--wp-bg) 35%) !important;
 }
 
-.wp-section {
-  background: #222;
-  color: #e0eafc;
-  border-radius: 2rem;
-  box-shadow: 0 2px 18px 0 rgba(16,185,129,0.10);
-  border: 1.5px solid #10b981;
-  padding: 2rem;
-  margin-bottom: 2rem;
+/* Progress bar */
+.dark .whitepaper .wp-progress {
+  background: #0b0f14 !important;
 }
-.wp-section h2, .wp-section h3 {
-  color: #10b981;
-  font-weight: bold;
-}
-.wp-section .wp-box {
-  background: #222;
-  border: 1.5px solid #10b981;
-  color: #e0ffe0;
-  border-radius: 1rem;
-  padding: 1.2rem;
-  margin-bottom: 1rem;
-}
-.wp-section .wp-box-title {
-  color: #bcdcff;
-  font-size: 1.08rem;
-  font-weight: 500;
-  margin-bottom: 0.5rem;
-}
-.wp-section .wp-box-value {
-  color: #e0ffe0;
-  font-size: 2rem;
-  font-weight: bold;
-}
-.wp-cta-section {
-  background: linear-gradient(90deg, rgba(16,185,129,0.06), rgba(6,95,70,0.03));
-  border-radius: 2rem;
-  padding: 3rem;
-  text-align: center;
-  margin-bottom: 2rem;
-}
-.wp-cta-section h2 {
-  color: #10b981;
-  font-weight: bold;
-  font-size: 2rem;
-  margin-bottom: 1rem;
-}
-.wp-cta-section p {
-  color: #222;
-  font-size: 1.08rem;
-  margin-bottom: 1.5rem;
-}
-.wp-cta-section a {
-  font-weight: bold;
-  padding: 14px 32px;
-  border-radius: 12px;
-  font-size: 1.08rem;
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: #222;
-  color: #10b981;
-  border: 2px solid #10b981;
-  transition: background 0.2s, color 0.2s;
-}
-.wp-cta-section a:hover {
-  background: #10b981;
-  color: #fff;
+.dark .whitepaper .wp-progress-inner {
+  background: linear-gradient(90deg, var(--wp-accent), var(--wp-accent-deep)) !important;
 }
 
-/* DARK THEME - consistent with main page dark mode */
-body,
-.wp-section,
-.wp-cta-section,
-.wp-float-nav,
-.wp-progress-bar {
-  background: #181a20 !important;
-  color: #e6f7ff !important;
+/* Floating nav */
+.dark .whitepaper .wp-float-nav {
+  background: var(--wp-bg-soft) !important;
+  border: 1px solid var(--wp-border-strong) !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+  border-radius: 1.25rem;
 }
-
-.wp-section {
-  border: 1.5px solid #10b981;
-  box-shadow: 0 2px 18px 0 rgba(16,185,129,0.13);
-  background: #181a20 !important;
-  color: #e6f7ff !important;
-}
-
-.wp-section h2,
-.wp-section h3,
-.wp-section h4 {
-  color: #10b981 !important;
-  font-weight: bold;
-}
-
-.wp-section .wp-box,
-.wp-section .rounded-2xl,
-.wp-section .rounded-xl {
-  background: #222a32 !important;
-  border-color: #10b981 !important;
-  color: #e6f7ff !important;
-}
-
-.wp-section .wp-box-title {
-  color: #bcdcff !important;
-}
-
-.wp-section .wp-box-value {
-  color: #10b981 !important;
-}
-
-.wp-section .font-bold {
-  color: #10b981 !important;
-}
-
-.wp-section .font-mono {
-  color: #e6f7ff !important;
-}
-
-.wp-section .border {
-  border-color: #10b981 !important;
-}
-
-.wp-section .bg-white,
-.wp-section .bg-gray-50,
-.wp-section .bg-blue-50,
-.wp-section .bg-green-50,
-.wp-section .bg-purple-50,
-.wp-section .bg-indigo-50,
-.wp-section .bg-pink-50,
-.wp-section .bg-orange-50,
-.wp-section .bg-yellow-50,
-.wp-section .bg-red-50 {
-  background: #222a32 !important;
-  color: #e6f7ff !important;
-  border-color: #10b981 !important;
-}
-
-.wp-section .text-gray-900,
-.wp-section .text-gray-800,
-.wp-section .text-gray-700,
-.wp-section .text-gray-600,
-.wp-section .text-blue-800,
-.wp-section .text-green-800,
-.wp-section .text-purple-800,
-.wp-section .text-indigo-800,
-.wp-section .text-pink-800,
-.wp-section .text-orange-800,
-.wp-section .text-yellow-800,
-.wp-section .text-red-800 {
-  color: #e6f7ff !important;
-}
-
-.wp-cta-section {
-  background: linear-gradient(90deg, #181a20 80%, #222a32 100%) !important;
-  color: #e6f7ff !important;
-  border: 1.5px solid #10b981;
-  box-shadow: 0 2px 18px 0 rgba(16,185,129,0.13);
-}
-
-.wp-cta-section h2 {
-  color: #10b981 !important;
-}
-
-.wp-cta-section p {
-  color: #e6f7ff !important;
-}
-
-.wp-cta-section a {
-  background: #181a20 !important;
-  color: #10b981 !important;
-  border: 2px solid #10b981 !important;
-}
-
-.wp-cta-section a:hover {
-  background: #10b981 !important;
-  color: #fff !important;
-}
-
-.wp-float-nav {
-  background: #181a20 !important;
-  border: 1.5px solid #10b981 !important;
-  box-shadow: 0 2px 18px 0 rgba(16,185,129,0.13);
-}
-
-.wp-float-nav-btn {
-  color: #e6f7ff !important;
+.dark .whitepaper .wp-float-nav button {
+  color: var(--wp-text) !important;
   background: transparent !important;
 }
-
-.wp-float-nav-btn.active {
-  background: linear-gradient(90deg,#10b981,#065f46) !important;
+.dark .whitepaper .wp-float-nav button.active {
+  background: linear-gradient(90deg, var(--wp-accent), var(--wp-accent-deep)) !important;
   color: #fff !important;
-  box-shadow: 0 2px 12px 0 rgba(16,185,129,0.15);
+  box-shadow: 0 6px 18px rgba(16,185,129,0.25);
+}
+.dark .whitepaper .wp-float-nav button:not(.active):hover {
+  background: rgba(16,185,129,0.12) !important;
+  color: var(--wp-accent) !important;
 }
 
-.wp-float-nav-btn:not(.active):hover {
-  background: #10b98122 !important;
-  color: #10b981 !important;
+/* Hero overlay softened for dark */
+.dark .whitepaper .hero-overlay {
+  background: linear-gradient(90deg, rgba(16,185,129,0.08), rgba(6,95,70,0.04)) !important;
+  backdrop-filter: blur(18px);
 }
 
-.wp-progress-bar {
-  background: #181a20 !important;
+/* Cards, panels and light backgrounds within the whitepaper */
+.dark .whitepaper .bg-white,
+.dark .whitepaper .bg-gray-50,
+.dark .whitepaper .bg-blue-50,
+.dark .whitepaper .bg-green-50,
+.dark .whitepaper .bg-purple-50,
+.dark .whitepaper .bg-indigo-50,
+.dark .whitepaper .bg-pink-50,
+.dark .whitepaper .bg-orange-50,
+.dark .whitepaper .bg-yellow-50,
+.dark .whitepaper .bg-red-50 {
+  background: var(--wp-card) !important;
+  color: var(--wp-text) !important;
+  border-color: var(--wp-border) !important;
 }
 
-.wp-progress-bar-inner {
-  background: linear-gradient(90deg,#10b981,#065f46) !important;
+/* Dark boxes */
+.dark .whitepaper .bg-gray-900 {
+  background: var(--wp-card-soft) !important;
+  color: var(--wp-text) !important;
+  border: 1px solid var(--wp-border-strong) !important;
 }
 
-/* For legal section dark box */
-.bg-gray-900 {
-  background: #181a20 !important;
-  color: #e6f7ff !important;
-  border: 1.5px solid #10b981 !important;
+/* Borders in the document */
+.dark .whitepaper .border {
+  border-color: var(--wp-border) !important;
 }
 
-/* For disclaimer section */
-.bg-gradient-to-r.from-blue-50.to-purple-50 {
-  background: linear-gradient(90deg, #181a20 80%, #222a32 100%) !important;
-  color: #e6f7ff !important;
+/* Typography overrides for Tailwind text-* utilities used on the page */
+.dark .whitepaper .text-gray-900,
+.dark .whitepaper .text-gray-800,
+.dark .whitepaper .text-gray-700,
+.dark .whitepaper .text-gray-600,
+.dark .whitepaper .text-blue-800,
+.dark .whitepaper .text-green-800,
+.dark .whitepaper .text-purple-800,
+.dark .whitepaper .text-indigo-800,
+.dark .whitepaper .text-pink-800,
+.dark .whitepaper .text-orange-800,
+.dark .whitepaper .text-yellow-800,
+.dark .whitepaper .text-red-800,
+.dark .whitepaper .text-gray-300 {
+  color: var(--wp-text) !important;
 }
 
-/* Remove unwanted white backgrounds */
-.bg-white {
-  background: #222a32 !important;
-  color: #e6f7ff !important;
+/* Keep accent green readable */
+.dark .whitepaper .text-\[\#10b981\] { color: var(--wp-accent) !important; }
+
+/* Subtle cards and metric boxes */
+.dark .whitepaper .rounded-3xl,
+.dark .whitepaper .rounded-2xl,
+.dark .whitepaper .rounded-xl {
+  background: var(--wp-card) !important;
+  border-color: var(--wp-border) !important;
+  color: var(--wp-text) !important;
 }
 
-/* Consistent with main page: cards, boxes, and accent green */
-.wp-section .rounded-3xl,
-.wp-section .rounded-2xl,
-.wp-section .rounded-xl {
-  background: #222a32 !important;
-  border-color: #10b981 !important;
-  color: #e6f7ff !important;
+/* Secondary action on hero */
+.dark .whitepaper .wp-secondary-btn {
+  background: rgba(255,255,255,0.03) !important;
+  color: var(--wp-text) !important;
+  border-color: var(--wp-border) !important;
+}
+.dark .whitepaper .wp-secondary-btn:hover {
+  background: rgba(255,255,255,0.06) !important;
+}
+
+/* CTA section */
+.dark .whitepaper .max-w-4xl .rounded-3xl[style] {
+  /* override inline light gradient nicely in dark */
+  background: linear-gradient(90deg, var(--wp-bg-soft), var(--wp-card)) !important;
+  border: 1px solid var(--wp-border) !important;
+}
+
+/* Small helpers for icons and chips within features */
+.dark .whitepaper .w-14.bg-\[\#10b981\]\/10,
+.dark .whitepaper .w-16.bg-white\/10 {
+  background: rgba(16,185,129,0.12) !important;
+}
+
+/* Ensure links and strong text contrast */
+.dark .whitepaper a { color: var(--wp-accent); }
+.dark .whitepaper strong { color: var(--wp-text); }
+
+/* Preserve the green progress/CTA look */
+.dark .whitepaper .bg-gradient-to-r.from-\[\#10b981\].to-\[\#065f46\] {
+  filter: none;
 }

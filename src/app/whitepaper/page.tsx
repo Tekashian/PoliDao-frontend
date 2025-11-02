@@ -4,6 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
+import './whitepaperstyles.css'; // scoped dark theme for this page
 
 export default function WhitePaperPage() {
   const [activeSection, setActiveSection] = useState('executive-summary');
@@ -54,19 +55,19 @@ export default function WhitePaperPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+    <div className="whitepaper wp-root min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       <Header />
       
       {/* Progress Bar (green accent) */}
-      <div className="fixed top-0 left-0 w-full h-1 bg-gray-200 z-50">
+      <div className="wp-progress fixed top-0 left-0 w-full h-1 bg-gray-200 z-50">
         <div 
-          className="h-full transition-all duration-300"
+          className="wp-progress-inner h-full transition-all duration-300"
           style={{ width: `${scrollProgress}%`, background: 'linear-gradient(90deg,#10b981,#065f46)' }}
         />
       </div>
 
       {/* Floating Navigation */}
-      <div className="fixed right-8 top-1/2 transform -translate-y-1/2 z-40 hidden lg:block">
+      <div className="wp-float-nav fixed right-8 top-1/2 transform -translate-y-1/2 z-40 hidden lg:block">
         <div className="bg-white/90 backdrop-blur-lg rounded-2xl shadow-xl border border-white/20 p-2">
           {sections.map((section) => (
             <button
@@ -88,7 +89,7 @@ export default function WhitePaperPage() {
 
       {/* Hero Section (PolyFund, green theme) */}
       <div className="relative pt-20 pb-16 overflow-hidden">
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(90deg, rgba(16,185,129,0.12), rgba(6,95,70,0.06))', backdropFilter: 'blur(18px)' }} />
+        <div className="hero-overlay absolute inset-0" style={{ background: 'linear-gradient(90deg, rgba(16,185,129,0.12), rgba(6,95,70,0.06))', backdropFilter: 'blur(18px)' }} />
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
@@ -115,7 +116,7 @@ export default function WhitePaperPage() {
               </a>
               <button 
                 onClick={() => scrollToSection('executive-summary')}
-                className="bg-white/90 hover:bg-white text-gray-900 font-bold py-3 px-6 rounded-2xl transition-all duration-200 border border-gray-200 shadow-sm"
+                className="wp-secondary-btn bg-white/90 hover:bg-white text-gray-900 font-bold py-3 px-6 rounded-2xl transition-all duration-200 border border-gray-200 shadow-sm"
               >
                 <span className="mr-2 text-lg">👇</span>
                 Read online
