@@ -1967,7 +1967,6 @@ function MyCampaignCard({
   campaign: any,
   onWithdraw?: (id: string) => void,
   success?: boolean,
-  // NEW: latest progress from Router.getFundraiserProgress
   progress?: { raised: bigint; goal: bigint }
 }) {
   const router = useRouter();
@@ -1993,6 +1992,9 @@ function MyCampaignCard({
   const isReached =
     mappedCampaign.targetAmount > 0n &&
     mappedCampaign.raisedAmount >= mappedCampaign.targetAmount;
+
+  // NEW: no-goal campaigns are always withdrawable
+  const isNoGoal = mappedCampaign.targetAmount === 0n;
 
   const metadata = {
     title:
@@ -2025,15 +2027,16 @@ function MyCampaignCard({
           </div>
         </div>
       ) : (
-        // Otherwise, show withdraw CTA when goal reached
-        isReached && (
-          <div className="pointer-events-none absolute left-0 right-0 top-0 h-60 z-10 rounded-t-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+        // CHANGED: full-card overlay, button centered on the image area (h-60)
+        (isReached || isNoGoal) && (
+          <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <div className="absolute inset-0 bg-gradient-to-t from-[#10b981]/35 via-[#10b981]/10 to-transparent" />
-            <div className="absolute inset-0 rounded-t-xl ring-1 ring-[#10b981]/40 shadow-[inset_0_0_22px_rgba(16,185,129,0.45)]" />
-            <div className="absolute inset-x-0 bottom-3 flex justify-center">
+            <div className="absolute inset-0 rounded-xl ring-1 ring-[#10b981]/40 shadow-[inset_0_0_22px_rgba(16,185,129,0.45)]" />
+            {/* CHANGED: center button in the middle of the entire card */}
+            <div className="absolute inset-0 flex items-center justify-center">
               <button
                 className="pointer-events-auto px-4 py-2 rounded-full bg-[#10b981] text-white text-sm font-semibold ring-1 ring-white/20 shadow-[0_0_14px_rgba(16,185,129,0.65)] hover:shadow-[0_0_26px_rgba(16,185,129,0.95)] transition-shadow"
-                aria-label="Withdraw funds – campaign reached goal"
+                aria-label="Withdraw funds"
                 onClick={(e) => {
                   e.stopPropagation();
                   if (onWithdraw) onWithdraw(idStr);
