@@ -127,9 +127,11 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
             aria-hidden
             className="pointer-events-none absolute bottom-0 left-0 right-0"
             style={{
-              height: '1.8rem', // subtelny gradient nad obciętym 5. wierszem
-               background: 'linear-gradient(to top, rgba(255,255,255,1), rgba(255,255,255,0))',
-             }}
+              height: '1.8rem',
+              // theme-aware fade: uses card background (var(--surface)) in both light/dark
+              background:
+                'linear-gradient(to top, color-mix(in srgb, var(--surface) 100%, transparent 0%), color-mix(in srgb, var(--surface) 0%, transparent 100%))',
+            }}
           />
         </div>
 
