@@ -167,32 +167,7 @@ const SearchBar = ({
         )}
       </div>
 
-      {/* Desktop: small inline button; Mobile: prominent full-width button below input */}
-      {!isMobile ? (
-        <button type="submit" className={styles.searchButton} aria-label="Execute search" style={{ flexShrink: 0 }}>
-          Search
-        </button>
-      ) : (
-        <button
-          type="submit"
-          aria-label="Execute search"
-          style={{
-            marginTop: 6,
-            width: '100%',
-            background: 'linear-gradient(90deg,#10b981,#065f46)',
-            color: '#fff',
-            padding: '12px 14px',
-            borderRadius: 12,
-            border: 'none',
-            fontWeight: 700,
-            fontSize: 15,
-            boxShadow: '0 8px 20px rgba(16,185,129,0.20)',
-            cursor: 'pointer',
-          }}
-        >
-          Search
-        </button>
-      )}
+      {/* Removed submit button; search is live with debounce and Enter submits */}
     </form>
   );
 };

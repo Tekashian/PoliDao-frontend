@@ -80,11 +80,17 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
       href={`/campaigns/${campaign.campaignId}`}
       // group + GPU transform for smooth scale & lift + accessible focus ring
       // make card a fixed-height vertical flex so all cards have equal height
-      className="group block w-full max-w-full bg-white rounded-xl shadow-md overflow-hidden transform-gpu transition-all duration-300 hover:scale-105 hover:-translate-y-2 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#10b981]/20 flex flex-col h-[520px]"
-      style={{ willChange: 'transform' }}
+      className="group block w-full max-w-full rounded-xl shadow-md overflow-hidden transform-gpu transition-all duration-300 hover:scale-105 hover:-translate-y-2 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#10b981]/20 flex flex-col h-[520px]"
+      style={{
+        willChange: 'transform',
+        // Elevated, theme-aware surface: slightly lighter than var(--surface) in dark mode,
+        // unchanged in light mode (remains white).
+        background: 'color-mix(in srgb, var(--surface) 86%, white 14%)',
+        border: '1px solid color-mix(in srgb, var(--border) 60%, white 20%)',
+      }}
     >
       {/* proportional image: zmniejszono, żeby opis miał miejsce na ~5 wierszy */}
-      <div className="relative w-full h-60"> {/* h-60: dopasowane proporcje obrazek ↔ opis */}
+      <div className="relative w-full h-60">
          {imageLoading ? (
           <div className="w-full h-full bg-gray-200 animate-pulse flex items-center justify-center">
             <span className="text-gray-500 text-sm">Ładowanie...</span>
@@ -103,7 +109,7 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
          )}
        </div>
 
-       <div className="p-4 flex flex-col flex-1 overflow-hidden"> {/* flex-1 pozwala wypchnąć footer na dół */}
+       <div className="p-4 flex flex-col flex-1 overflow-hidden">
          <h2 className="text-blue-700 font-semibold text-lg leading-tight mb-1">
            <span className="text-red-600 mr-1">❗</span>
            {metadata.title}
@@ -128,9 +134,9 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
             className="pointer-events-none absolute bottom-0 left-0 right-0"
             style={{
               height: '1.8rem',
-              // theme-aware fade: uses card background (var(--surface)) in both light/dark
+              // Use the same elevated bg as the card so the fade matches in dark mode.
               background:
-                'linear-gradient(to top, color-mix(in srgb, var(--surface) 100%, transparent 0%), color-mix(in srgb, var(--surface) 0%, transparent 100%))',
+                'linear-gradient(to top, color-mix(in srgb, var(--surface) 86%, white 14%), color-mix(in srgb, var(--surface) 86%, white 14%) 40%, color-mix(in srgb, var(--surface) 86%, white 14%) / 0%)',
             }}
           />
         </div>
