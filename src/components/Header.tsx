@@ -7,6 +7,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import styles from './Header.module.css';
+import { useSearch } from '../state/search/useSearch';
 
 // --- IKONY ---
 const SunIcon = () => (
@@ -79,24 +80,40 @@ const SearchBar = ({
   setFocused: (b: boolean) => void;
   isMobile?: boolean;
 }) => {
-  const [value, setValue] = React.useState('');
+  const { query, setQuery, clear } = useSearch();
+  const [value, setValue] = React.useState(query);
 
-  // simple debounce for live suggestions (placeholder for real API)
+  // Sync local input when global query changes
   React.useEffect(() => {
-    const t = setTimeout(() => {
-      if (value && value.length >= 2) {
-        // eslint-disable-next-line no-console
-        console.log('live search:', value);
-      }
-    }, 300);
+    setValue(query);
+  }, [query]);
+
+  // Debounce writes to global store
+  React.useEffect(() => {
+    const t = setTimeout(() => setQuery(value), 250);
     return () => clearTimeout(t);
-  }, [value]);
+  }, [value, setQuery]);
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // final search action - replace with navigation/fetch when ready
-    // eslint-disable-next-line no-console
-    console.log('submit search:', value);
+    const next = (value || '').trim();
+    setQuery(next);
+    // Smooth-scroll to campaign list when on homepage,
+    // otherwise navigate to the anchor.
+    try {
+      setTimeout(() => {
+        const el = document.getElementById('campaigns-list');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else if (typeof window !== 'undefined') {
+          if (window.location.pathname !== '/') {
+            window.location.href = '/#campaigns';
+          } else {
+            window.location.hash = 'campaigns';
+          }
+        }
+      }, 0);
+    } catch {}
   };
 
   return (
@@ -120,8 +137,9 @@ const SearchBar = ({
           type="search"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="Search by fund ID or title"
-          aria-label="Search by fund ID or title"
+          placeholder="Search by title or #id "
+          aria-label='Search campaigns by title or ID (e.g., "pomoc", 123, or #123)'
+          title='Type title or ID (supports #123)'
           autoComplete="off"
           className={styles.searchInput}
           onFocus={() => setFocused(true)}
@@ -140,7 +158,7 @@ const SearchBar = ({
         {value.length > 0 && !isMobile && (
           <button
             type="button"
-            onClick={() => setValue('')}
+            onClick={() => { setValue(''); clear(); }}
             aria-label="Clear search"
             style={{ background: 'transparent', border: 'none', fontSize: 18, cursor: 'pointer', color: 'var(--muted, #6b7280)' }}
           >

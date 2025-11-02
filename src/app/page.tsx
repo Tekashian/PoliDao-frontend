@@ -57,6 +57,8 @@ import 'swiper/css/navigation'; // + navigation CSS
 // CHANGED: import coverflow effect for 3D-like center emphasis
 import { EffectCoverflow } from 'swiper/modules';
 import 'swiper/css/effect-coverflow';
+// NEW: global search hook
+import { useSearch } from '../state/search/useSearch';
 
 // ===== Replaced MUIProposalCard (Polish -> English labels) =====
 function MUIProposalCard({ proposal, onVote, isVoting, votingId }: {
@@ -688,14 +690,34 @@ export default function HomePage() {
   // NEW: hover state for Show More button to guarantee color change
   const [showMoreHover, setShowMoreHover] = useState(false);
 
+  // NEW: anchor to campaigns list for smooth scrolling
+  const campaignsSectionRef = useRef<HTMLDivElement | null>(null);
+
   // Filtruj kampanie na podstawie wybranego filtru
   const campaigns = fundraisers; // alias dla istniejącej logiki poniżej
+
+  // NEW: read search query from global store and normalize it
+  const { query: searchQuery } = useSearch();
+  const normalizedQuery = (searchQuery || '').trim().toLowerCase();
+
+  // NEW: helper – does campaign match query (by title or ID)
+  const matchesQuery = React.useCallback((c: ModularFundraiser, q: string) => {
+    if (!q) return true;
+    const title = String((c as any)?.title ?? '').toLowerCase();
+    if (title.includes(q)) return true;
+    const idStr = String((c as any)?.id ?? '').toLowerCase();
+    if (idStr.includes(q)) return true;
+    // Also support queries like "#123" or " 123 "
+    const onlyDigits = q.replace(/[^0-9]/g, '');
+    if (onlyDigits && idStr === onlyDigits) return true;
+    return false;
+  }, []);
 
   // NEW: robust detector for "no-goal" (flexible) campaigns — handles ABI variants
   const isNoGoalFlexible = React.useCallback((c: any) => {
     const flag = Boolean(c?.isFlexible);
-    // goal can be goalAmount or target (bigint), treat 0 as "no goal"
-    const goalRaw = (c?.goalAmount ?? c?.target ?? 0n) as bigint;
+    // goal can be goalAmount or target (bigint/number), treat 0 as "no goal"
+    const goalRaw = (c?.goalAmount ?? c?.target ?? 0n) as any;
     const goalIsZero = (() => {
       try { return BigInt(goalRaw) === 0n; } catch { return Number(goalRaw ?? 0) === 0; }
     })();
@@ -714,22 +736,41 @@ export default function HomePage() {
     return true; // "all"
   }) : [];
 
-  // NEW: sort by newest first (descending id)
-  const sortedFilteredCampaigns = React.useMemo(() => {
-    if (!filteredCampaigns || filteredCampaigns.length === 0) return [];
-    return [...filteredCampaigns].sort((a: any, b: any) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
-  }, [filteredCampaigns]);
+  // NEW: apply search after base filter
+  const searchedCampaigns = React.useMemo(
+    () => (!normalizedQuery ? filteredCampaigns : filteredCampaigns.filter(c => matchesQuery(c, normalizedQuery))),
+    [filteredCampaigns, normalizedQuery, matchesQuery]
+  );
 
-  // NEW: reset pagination on filter change
+  // NEW: sort searched results by newest first
+  const sortedFilteredCampaigns = React.useMemo(() => {
+    if (!searchedCampaigns || searchedCampaigns.length === 0) return [];
+    return [...searchedCampaigns].sort((a: any, b: any) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+  }, [searchedCampaigns]);
+
+  // NEW: reset pagination on filter change or search change
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [campaignFilter]);
+  }, [campaignFilter, normalizedQuery]);
 
-  // NEW: data for current page (after sorting)
+  // NEW: data for current page (after sorting + search)
   const visibleCampaigns = React.useMemo(
     () => sortedFilteredCampaigns.slice(0, visibleCount),
     [sortedFilteredCampaigns, visibleCount]
   );
+
+  // NEW: when user types a query, jump to "All Campaigns" and scroll to the list
+  useEffect(() => {
+    if (!normalizedQuery) return;
+    setActiveTab('zbiorki');
+    setCampaignFilter('all');
+    setVisibleCount(PAGE_SIZE);
+    const t = setTimeout(() => {
+      const el = campaignsSectionRef.current || document.getElementById('campaigns-list');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+    return () => clearTimeout(t);
+  }, [normalizedQuery]);
 
   // ✅ ZAKTUALIZOWANE: Logika dla karuzeli kampanii z nowymi danymi z ABI
   const getCarouselCampaigns = () => {
@@ -900,7 +941,7 @@ export default function HomePage() {
         {/* Top carousel removed */}
  
         {/* Zbiórki dnia (3 najciekawsze) */}
-        {dayPicks && dayPicks.length > 0 && (
+        {!normalizedQuery && dayPicks && dayPicks.length > 0 && (
           <div className="container mx-auto px-4 mt-10">
             {/* inner wrapper matches width of 3 cards (24rem each) + gap (gap-6 = 1.5rem) */}
             <div className="mx-auto w-full" style={{ maxWidth: 'calc(24rem * 3 + 1.5rem * 2)' }}>
@@ -945,7 +986,7 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* NEW: Trust + Counter + Extra value (under day picks) — removed solid green band so cards sit on page background */}
+        {/* NEW: Trust + Counter + Extra value */}
         <div className="mt-12 py-10">
           <div className="container mx-auto px-4">
             <div className="grid gap-8 md:grid-cols-3 items-center text-center">
@@ -984,7 +1025,7 @@ export default function HomePage() {
         </div>
 
         {/* NEW: Najnowsze Kampanie (flexible, up to 3) */}
-        {latestFlexibleCampaigns && latestFlexibleCampaigns.length > 0 && (
+        {!normalizedQuery && latestFlexibleCampaigns && latestFlexibleCampaigns.length > 0 && (
           <div className="container mx-auto px-4 mt-10">
             <div className="mx-auto w-full" style={{ maxWidth: 'calc(24rem * 3 + 1.5rem * 2)' }}>
               <div className="flex items-center justify-between mb-4">
@@ -1103,6 +1144,9 @@ export default function HomePage() {
         </div>
 
         {/* TABS — constrained wrapper so H2 and sub-tabs align with centered cards */}
+        {/* NEW: campaigns anchor for scrolling from header search */}
+        <div ref={campaignsSectionRef} id="campaigns-list" />
+
         <div className="container mx-auto px-4 mt-8">
           <div className="mx-auto w-full" style={{ maxWidth: 'calc(24rem * 3 + 1.5rem * 2)' }}>
             <div className="flex border-b border-gray-300">
@@ -1143,7 +1187,6 @@ export default function HomePage() {
               </div>
             )}
 
-            {/* CONTENT (H2, buttons, sub-tabs, grids) — left-aligned headers inside wrapper */}
             <div className="mt-6 pb-12">
               {activeTab === "glosowania" && (
                 <>
@@ -1222,7 +1265,19 @@ export default function HomePage() {
                     </button>
                   </div>
 
-                  {/* Sub-tabs (inside same wrapper) */}
+                  {/* NEW: info bar when searching */}
+                  {normalizedQuery && (
+                    <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                      <div className="flex items-center text-emerald-800">
+                        <span className="mr-2">🔎</span>
+                        <span className="font-medium">
+                          Filtering by: “{searchQuery}” ({sortedFilteredCampaigns.length} result{sortedFilteredCampaigns.length === 1 ? '' : 's'})
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sub-tabs */}
                   <div className="flex border-b border-gray-200 mb-6 bg-white rounded-t-lg px-4">
                     <button
                       onClick={() => setCampaignFilter("all")}
@@ -1380,7 +1435,6 @@ export default function HomePage() {
         </div>
       </main>
 
-      {/* FOOTER - na końcu strony */}
       <Footer />
     </div>
   );

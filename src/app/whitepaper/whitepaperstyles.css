@@ -1,0 +1,284 @@
+.wp-progress-bar {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 4px;
+  background: #222;
+  z-index: 50;
+}
+.wp-progress-bar-inner {
+  height: 100%;
+  background: linear-gradient(90deg,#10b981,#065f46);
+  transition: width 0.3s;
+}
+
+.wp-float-nav {
+  position: fixed;
+  right: 2rem;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 40;
+  background: #222;
+  border-radius: 1.5rem;
+  box-shadow: 0 2px 18px 0 rgba(16,185,129,0.10);
+  border: 1.5px solid #10b981;
+  padding: 0.5rem;
+  backdrop-filter: blur(8px);
+}
+.wp-float-nav-btn {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+  border-radius: 1rem;
+  font-size: 1rem;
+  font-weight: 500;
+  background: transparent;
+  color: #e0ffe0;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.wp-float-nav-btn.active {
+  background: linear-gradient(90deg,#10b981,#065f46);
+  color: #fff;
+  box-shadow: 0 2px 12px 0 rgba(16,185,129,0.15);
+}
+.wp-float-nav-btn:not(.active):hover {
+  background: #10b98122;
+  color: #10b981;
+}
+
+.wp-section {
+  background: #222;
+  color: #e0eafc;
+  border-radius: 2rem;
+  box-shadow: 0 2px 18px 0 rgba(16,185,129,0.10);
+  border: 1.5px solid #10b981;
+  padding: 2rem;
+  margin-bottom: 2rem;
+}
+.wp-section h2, .wp-section h3 {
+  color: #10b981;
+  font-weight: bold;
+}
+.wp-section .wp-box {
+  background: #222;
+  border: 1.5px solid #10b981;
+  color: #e0ffe0;
+  border-radius: 1rem;
+  padding: 1.2rem;
+  margin-bottom: 1rem;
+}
+.wp-section .wp-box-title {
+  color: #bcdcff;
+  font-size: 1.08rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+.wp-section .wp-box-value {
+  color: #e0ffe0;
+  font-size: 2rem;
+  font-weight: bold;
+}
+.wp-cta-section {
+  background: linear-gradient(90deg, rgba(16,185,129,0.06), rgba(6,95,70,0.03));
+  border-radius: 2rem;
+  padding: 3rem;
+  text-align: center;
+  margin-bottom: 2rem;
+}
+.wp-cta-section h2 {
+  color: #10b981;
+  font-weight: bold;
+  font-size: 2rem;
+  margin-bottom: 1rem;
+}
+.wp-cta-section p {
+  color: #222;
+  font-size: 1.08rem;
+  margin-bottom: 1.5rem;
+}
+.wp-cta-section a {
+  font-weight: bold;
+  padding: 14px 32px;
+  border-radius: 12px;
+  font-size: 1.08rem;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #222;
+  color: #10b981;
+  border: 2px solid #10b981;
+  transition: background 0.2s, color 0.2s;
+}
+.wp-cta-section a:hover {
+  background: #10b981;
+  color: #fff;
+}
+
+/* DARK THEME - consistent with main page dark mode */
+body,
+.wp-section,
+.wp-cta-section,
+.wp-float-nav,
+.wp-progress-bar {
+  background: #181a20 !important;
+  color: #e6f7ff !important;
+}
+
+.wp-section {
+  border: 1.5px solid #10b981;
+  box-shadow: 0 2px 18px 0 rgba(16,185,129,0.13);
+  background: #181a20 !important;
+  color: #e6f7ff !important;
+}
+
+.wp-section h2,
+.wp-section h3,
+.wp-section h4 {
+  color: #10b981 !important;
+  font-weight: bold;
+}
+
+.wp-section .wp-box,
+.wp-section .rounded-2xl,
+.wp-section .rounded-xl {
+  background: #222a32 !important;
+  border-color: #10b981 !important;
+  color: #e6f7ff !important;
+}
+
+.wp-section .wp-box-title {
+  color: #bcdcff !important;
+}
+
+.wp-section .wp-box-value {
+  color: #10b981 !important;
+}
+
+.wp-section .font-bold {
+  color: #10b981 !important;
+}
+
+.wp-section .font-mono {
+  color: #e6f7ff !important;
+}
+
+.wp-section .border {
+  border-color: #10b981 !important;
+}
+
+.wp-section .bg-white,
+.wp-section .bg-gray-50,
+.wp-section .bg-blue-50,
+.wp-section .bg-green-50,
+.wp-section .bg-purple-50,
+.wp-section .bg-indigo-50,
+.wp-section .bg-pink-50,
+.wp-section .bg-orange-50,
+.wp-section .bg-yellow-50,
+.wp-section .bg-red-50 {
+  background: #222a32 !important;
+  color: #e6f7ff !important;
+  border-color: #10b981 !important;
+}
+
+.wp-section .text-gray-900,
+.wp-section .text-gray-800,
+.wp-section .text-gray-700,
+.wp-section .text-gray-600,
+.wp-section .text-blue-800,
+.wp-section .text-green-800,
+.wp-section .text-purple-800,
+.wp-section .text-indigo-800,
+.wp-section .text-pink-800,
+.wp-section .text-orange-800,
+.wp-section .text-yellow-800,
+.wp-section .text-red-800 {
+  color: #e6f7ff !important;
+}
+
+.wp-cta-section {
+  background: linear-gradient(90deg, #181a20 80%, #222a32 100%) !important;
+  color: #e6f7ff !important;
+  border: 1.5px solid #10b981;
+  box-shadow: 0 2px 18px 0 rgba(16,185,129,0.13);
+}
+
+.wp-cta-section h2 {
+  color: #10b981 !important;
+}
+
+.wp-cta-section p {
+  color: #e6f7ff !important;
+}
+
+.wp-cta-section a {
+  background: #181a20 !important;
+  color: #10b981 !important;
+  border: 2px solid #10b981 !important;
+}
+
+.wp-cta-section a:hover {
+  background: #10b981 !important;
+  color: #fff !important;
+}
+
+.wp-float-nav {
+  background: #181a20 !important;
+  border: 1.5px solid #10b981 !important;
+  box-shadow: 0 2px 18px 0 rgba(16,185,129,0.13);
+}
+
+.wp-float-nav-btn {
+  color: #e6f7ff !important;
+  background: transparent !important;
+}
+
+.wp-float-nav-btn.active {
+  background: linear-gradient(90deg,#10b981,#065f46) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 12px 0 rgba(16,185,129,0.15);
+}
+
+.wp-float-nav-btn:not(.active):hover {
+  background: #10b98122 !important;
+  color: #10b981 !important;
+}
+
+.wp-progress-bar {
+  background: #181a20 !important;
+}
+
+.wp-progress-bar-inner {
+  background: linear-gradient(90deg,#10b981,#065f46) !important;
+}
+
+/* For legal section dark box */
+.bg-gray-900 {
+  background: #181a20 !important;
+  color: #e6f7ff !important;
+  border: 1.5px solid #10b981 !important;
+}
+
+/* For disclaimer section */
+.bg-gradient-to-r.from-blue-50.to-purple-50 {
+  background: linear-gradient(90deg, #181a20 80%, #222a32 100%) !important;
+  color: #e6f7ff !important;
+}
+
+/* Remove unwanted white backgrounds */
+.bg-white {
+  background: #222a32 !important;
+  color: #e6f7ff !important;
+}
+
+/* Consistent with main page: cards, boxes, and accent green */
+.wp-section .rounded-3xl,
+.wp-section .rounded-2xl,
+.wp-section .rounded-xl {
+  background: #222a32 !important;
+  border-color: #10b981 !important;
+  color: #e6f7ff !important;
+}
