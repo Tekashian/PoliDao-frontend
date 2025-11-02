@@ -1570,13 +1570,12 @@ export default function AccountPage() {
             ) : myCampaigns.length > 0 ? (
               <div className="flex flex-wrap justify-center gap-6">
                 {(() => {
-                  // Reguły:
-                  // 1) (cat  0) niewypłacone i mają cel osiągnięty -> najpierw
-                  //   // 2) (cat 1) bez celu, ale z zebranymi środkami -> po (1)
-                  // 3) (cat 2) pozostałe: najbliżej celu (remaining asc)
-                  // 4) potem najnowsze -> najstarsze (id desc)
-                  // 5) wypłacone (success) -> na końcu
-                  const BIG = 10n ** 40n;
+                  // NEW ORDER:
+                  // 1) Ready to withdraw (reached goal, not withdrawn) -> first
+                  // 2) Others by highest raised (including no-goal campaigns) -> next
+                  // 3) Withdrawn/successful -> last
+                  // Tie-breaker for equal raised: newest first (id desc)
+
                   const getProg = (c: any) => {
                     const idStr = (c.id ?? 0n).toString();
                     const pr = progressById.get(idStr);
@@ -1592,38 +1591,39 @@ export default function AccountPage() {
                     const { raised, goal } = getProg(c);
                     return goal > 0n && raised >= goal;
                   };
-                  const noGoalRaised = (c: any) => {
-                    const { raised, goal } = getProg(c);
-                    return goal <= 0n && raised > 0n;
-                  };
-                  const remainingToGoal = (c: any) => {
-                    const { raised, goal } = getProg(c);
-                    if (goal <= 0n) return BIG;
-                    return raised >= goal ? 0n : (goal - raised);
-                  };
+                  const idOf = (c: any) => BigInt(c.id ?? 0n);
 
                   const sorted = myCampaigns.slice().sort((a: any, b: any) => {
+                    const aId = idOf(a);
+                    const bId = idOf(b);
+
+                    const aProg = getProg(a);
+                    const bProg = getProg(b);
+
                     const aSucc = isSuccess(a);
                     const bSucc = isSuccess(b);
-                    if (aSucc !== bSucc) return aSucc ? 1 : -1; // success last
 
-                    // Kategoria: 0=reachedGoal, 1=noGoalRaised, 2=pozostałe
-                    const aCat = !aSucc && reachedGoal(a) ? 0 : (!aSucc && noGoalRaised(a) ? 1 : 2);
-                    const bCat = !bSucc && reachedGoal(b) ? 0 : (!bSucc && noGoalRaised(b) ? 1 : 2);
-                    if (aCat !== bCat) return aCat - bCat;
+                    const aReached = reachedGoal(a);
+                    const bReached = reachedGoal(b);
 
-                    // Dla "pozostałych" (cat 2) porównaj bliskość celu
-                    if (aCat === 2 && bCat === 2) {
-                      const aRem = remainingToGoal(a);
-                      const bRem = remainingToGoal(b);
-                      if (aRem !== bRem) return aRem < bRem ? -1 : 1;
+                    // Grouping:
+                    // 0 = reached (ready to withdraw, not withdrawn)
+                    // 1 = not reached and not withdrawn (incl. no-goal)
+                    // 2 = withdrawn/success
+                    const aGroup = !aSucc && aReached ? 0 : (aSucc ? 2 : 1);
+                    const bGroup = !bSucc && bReached ? 0 : (bSucc ? 2 : 1);
+
+                    if (aGroup !== bGroup) return aGroup - bGroup;
+
+                    // For group 1: sort by raised desc, then newest first
+                    if (aGroup === 1) {
+                      if (aProg.raised !== bProg.raised) return aProg.raised > bProg.raised ? -1 : 1;
+                      if (aId !== bId) return aId > bId ? -1 : 1;
+                      return 0;
                     }
 
-                    // W obrębie każdej kategorii: najnowsze najpierw
-                    const aid = BigInt(a.id ?? 0n);
-                    const bid = BigInt(b.id ?? 0n);
-                    if (aid !== bid) return aid > bid ? -1 : 1;
-
+                    // For groups 0 and 2: tie-breaker newest first
+                    if (aId !== bId) return aId > bId ? -1 : 1;
                     return 0;
                   });
 
@@ -1973,15 +1973,21 @@ function MyCampaignCard({
   const router = useRouter();
   const idStr = (campaign.id ?? 0n).toString();
 
+  // NEW: compute target/raised and treat goal==0 as flexible to hide progress
+  const targetAmount = BigInt(progress?.goal ?? (campaign.goalAmount ?? campaign.target ?? 0n));
+  const raisedAmount = BigInt(progress?.raised ?? (campaign.raisedAmount ?? campaign.raised ?? 0n));
+  const isFlexibleComputed = Boolean(campaign.isFlexible) || targetAmount === 0n;
+
   // Normalize and override with progress when available
   const mappedCampaign = {
     campaignId: idStr,
-    targetAmount: (progress?.goal ?? (campaign.goalAmount ?? campaign.target ?? 0n)) as bigint,
-    raisedAmount: (progress?.raised ?? (campaign.raisedAmount ?? campaign.raised ?? 0n)) as bigint,
+    targetAmount,
+    raisedAmount,
     creator: campaign.creator as string,
     token: campaign.token as string,
     endTime: (campaign.endDate ?? campaign.endTime ?? 0n) as bigint,
-    isFlexible: Boolean(campaign.isFlexible),
+    // CHANGED: mark no-goal campaigns as flexible to hide progress bar
+    isFlexible: isFlexibleComputed,
   };
 
   const isReached =
