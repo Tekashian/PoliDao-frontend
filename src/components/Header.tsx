@@ -8,6 +8,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import styles from './Header.module.css';
 import { useSearch } from '../state/search/useSearch';
+import { useAccount } from 'wagmi';
 
 // --- IKONY ---
 const SunIcon = () => (
@@ -474,6 +475,12 @@ const Header = () => {
 
   const toggleMobileMenu = () => setIsMobileMenuOpen((m) => !m);
 
+  // + close menu on wallet connection state
+  const { isConnected } = useAccount();
+  useEffect(() => {
+    if (isConnected) setIsMobileMenuOpen(false);
+  }, [isConnected]);
+
   if (!isMounted) {
     // Enhanced placeholder with better styling
     return (
@@ -684,7 +691,11 @@ const Header = () => {
 
             {/* wallet / connect area fixed to panel bottom */}
             <div style={{ marginTop: 'auto', paddingTop: 8, borderTop: '1px solid rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* + clicking connect closes the menu immediately */}
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
                 <w3m-button />
               </div>
             </div>

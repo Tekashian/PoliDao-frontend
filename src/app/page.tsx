@@ -59,6 +59,7 @@ import { EffectCoverflow } from 'swiper/modules';
 import 'swiper/css/effect-coverflow';
 // NEW: global search hook
 import { useSearch } from '../state/search/useSearch';
+import { sepolia } from 'viem/chains';
 
 // ===== Replaced MUIProposalCard (Polish -> English labels) =====
 function MUIProposalCard({ proposal, onVote, isVoting, votingId }: {
@@ -542,6 +543,7 @@ export default function HomePage() {
     address: ROUTER_ADDRESS,
     abi: poliDaoRouterAbi,
     functionName: 'coreContract',
+    chainId: sepolia.id, // + force Sepolia reads
   });
 
   const { data: governanceAddress } = useReadContract({
@@ -549,6 +551,7 @@ export default function HomePage() {
     abi: poliDaoCoreAbi,
     functionName: 'governanceModule',
     query: { enabled: !!coreAddress },
+    chainId: sepolia.id, // + force Sepolia reads
   });
 
   // ADD: voting via Router.routeModule -> GOVERNANCE key
@@ -594,6 +597,7 @@ export default function HomePage() {
     functionName: 'getProposals',
     args: [0n, 200n],
     query: { enabled: !!governanceAddress },
+    chainId: sepolia.id, // + force Sepolia reads
   });
 
   // Keep count as fallback
@@ -602,6 +606,7 @@ export default function HomePage() {
     abi: poliDaoGovernanceAbi,
     functionName: 'getProposalCount',
     query: { enabled: !!governanceAddress },
+    chainId: sepolia.id, // + force Sepolia reads
   });
 
   // IDs from page tuple or fallback to 0..count-1
@@ -622,6 +627,7 @@ export default function HomePage() {
       abi: poliDaoGovernanceAbi,
       functionName: 'getProposal',
       args: [id],
+      chainId: sepolia.id, // + force Sepolia reads
     }));
   }, [governanceAddress, govIds]);
 
@@ -805,8 +811,8 @@ export default function HomePage() {
         const aFlex = isNoGoalFlexible(a);
         const bFlex = isNoGoalFlexible(b);
         if (!aFlex && !bFlex) {
-          const progressA = Number(a.raisedAmount ?? 0) / Math.max(Number(a.goalAmount ?? 0), 1);
-          const progressB = Number(b.raisedAmount ?? 0) / Math.max(Number(b.goalAmount ?? 0), 1);
+          const progressA = Number(a.raisedAmount ?? 0) / Math.max(Number(a.goalAmount ?? 1), 1);
+          const progressB = Number(b.raisedAmount ?? 0) / Math.max(Number(b.goalAmount ?? 1), 1);
           return progressB - progressA;
         } else if (aFlex && bFlex) {
           return Number(b.raisedAmount ?? 0) - Number(a.raisedAmount ?? 0);
@@ -1174,12 +1180,18 @@ export default function HomePage() {
             
             {/* Informacja o połączeniu (kept inside wrapper) */}
             {!isConnected && (
-              <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div
+                role="alert"
+                aria-live="polite"
+                className="mt-6 rounded-lg p-4 border shadow-sm
+                           bg-amber-100 text-amber-900 border-amber-300
+                           dark:bg-amber-900/30 dark:text-amber-50 dark:border-amber-700"
+              >
                 <div className="flex items-center">
-                  <span className="text-yellow-500 text-xl mr-3">⚠️</span>
+                  <span className="text-amber-700 dark:text-amber-300 text-xl mr-3">⚠️</span>
                   <div>
-                    <h3 className="font-bold text-yellow-800">Wallet not connected</h3>
-                    <p className="text-yellow-700 text-sm mt-1">
+                    <h3 className="font-bold text-amber-900 dark:text-amber-100">Wallet not connected</h3>
+                    <p className="text-sm mt-1 text-amber-800 dark:text-amber-200">
                       Connect your wallet to participate in fundraisers and votes.
                     </p>
                   </div>
