@@ -903,6 +903,90 @@ export default function HomePage() {
     return [...flex].sort((a: any, b: any) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)).slice(0, 3);
   }, [campaigns, isNoGoalFlexible]);
 
+  // NEW: rate-limit auto-retry state (exponential backoff with jitter)
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const [retrySeconds, setRetrySeconds] = useState(0);
+  const retryTimerRef = React.useRef<number | null>(null);
+  const retryCountdownRef = React.useRef<number | null>(null);
+
+  const isRateLimited = React.useMemo(() => {
+    const msg = campaignsError?.message || '';
+    return !!campaignsError && (msg.includes('Too Many Requests') || msg.includes('-32005'));
+  }, [campaignsError]);
+
+  // NEW: schedule auto-retry when rate-limited (prevents concurrent timers)
+  useEffect(() => {
+    if (isRateLimited && !retryTimerRef.current) {
+      const base = Math.pow(2, Math.max(0, retryAttempt)) * 1000; // 1s, 2s, 4s, 8s...
+      const jitter = Math.floor(Math.random() * 500);
+      const delay = Math.min(60000, base + jitter); // cap at 60s
+      let secs = Math.ceil(delay / 1000);
+      setRetrySeconds(secs);
+
+      // countdown for UX
+      retryCountdownRef.current = window.setInterval(() => {
+        setRetrySeconds((s) => (s > 0 ? s - 1 : 0));
+      }, 1000);
+
+      // schedule a single retry
+      retryTimerRef.current = window.setTimeout(async () => {
+        if (retryCountdownRef.current) {
+          clearInterval(retryCountdownRef.current);
+          retryCountdownRef.current = null;
+        }
+        retryTimerRef.current = null;
+        try {
+          await refetchCampaigns?.();
+        } finally {
+          setRetryAttempt((a) => a + 1);
+        }
+      }, delay);
+    }
+
+    // clear timers when error disappears or component unmounts
+    if (!isRateLimited) {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      if (retryCountdownRef.current) {
+        clearInterval(retryCountdownRef.current);
+        retryCountdownRef.current = null;
+      }
+      setRetryAttempt(0);
+      setRetrySeconds(0);
+    }
+
+    return () => {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      if (retryCountdownRef.current) {
+        clearInterval(retryCountdownRef.current);
+        retryCountdownRef.current = null;
+      }
+    };
+  }, [isRateLimited, retryAttempt, refetchCampaigns]);
+
+  // NEW: manual override to retry immediately
+  const forceRefetchCampaigns = async () => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    if (retryCountdownRef.current) {
+      clearInterval(retryCountdownRef.current);
+      retryCountdownRef.current = null;
+    }
+    setRetryAttempt(0);
+    setRetrySeconds(0);
+    try {
+      await refetchCampaigns?.();
+    } catch {}
+  };
+
+  // --- MAIN RENDER ---
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header />
@@ -992,7 +1076,7 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* NEW: Trust + Counter + Extra value */}
+        {/* NEW: Trust + Counter + Extra value guarded by data availability */}
         <div className="mt-12 py-10">
           <div className="container mx-auto px-4">
             <div className="grid gap-8 md:grid-cols-3 items-center text-center">
@@ -1005,10 +1089,12 @@ export default function HomePage() {
                 </p>
               </div>
 
-              {/* Center: Big counter */}
+              {/* Center: Big counter (show placeholder when campaigns unavailable) */}
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8">
                 <div className="text-5xl sm:text-6xl font-extrabold bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(90deg,#10b981,#065f46)' }}>
-                  {totalRaisedUSDC} USDC
+                  {/* ...existing code to compute totalRaisedUSDC... */}
+                  {/* If rate-limited and no data yet, show 0 for clarity */}
+                  {fundraisers && fundraisers.length >= 0 ? totalRaisedUSDC : '0'} USDC
                 </div>
                 <p className="text-gray-700 font-semibold mt-2">
                   Raised on PolyFund (on‑chain)
@@ -1018,7 +1104,7 @@ export default function HomePage() {
                 </p>
               </div>
 
-              {/* Right: Something extra (Open-source & on-chain) */}
+              {/* Right: Something extra */}
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
                 <div className="text-4xl mb-3">🔍</div>
                 <h3 className="text-lg font-bold text-gray-800 mb-1">Open‑source and on‑chain</h3>
@@ -1276,6 +1362,33 @@ export default function HomePage() {
                       {campaignsLoading ? '⏳ Loading...' : '🔄 Refresh'}
                     </button>
                   </div>
+
+                  {/* NEW: rate-limit friendly error with auto-retry */}
+                  {campaignsError && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <span className="text-red-500 text-xl mr-3">⚠️</span>
+                          <div>
+                            <h3 className="font-bold text-red-800">Error loading campaigns</h3>
+                            {isRateLimited ? (
+                              <p className="text-red-700 text-sm mt-1">
+                                Public RPC rate limit reached (Infura). Auto‑retry in {retrySeconds}s…
+                              </p>
+                            ) : (
+                              <p className="text-red-700 text-sm mt-1">{campaignsError.message}</p>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={forceRefetchCampaigns}
+                          className="ml-4 px-3 py-2 bg-[#10b981] hover:bg-[#10b981] text-white rounded-md text-sm"
+                        >
+                          Try now
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* NEW: info bar when searching */}
                   {normalizedQuery && (
