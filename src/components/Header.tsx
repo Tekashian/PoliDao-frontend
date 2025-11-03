@@ -186,6 +186,8 @@ const Header = () => {
   const [scrollProgress, setScrollProgress] = useState(0);
   const headerRef = useRef<HTMLElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement | null>(null);
+  // ADD: track wallet modal visibility
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
 
   // Enhanced scroll detection z lepszą responsywnością
   useEffect(() => {
@@ -481,6 +483,45 @@ const Header = () => {
     if (isConnected) setIsMobileMenuOpen(false);
   }, [isConnected]);
 
+  // ADD: observe Web3Modal/WalletConnect modal and update state
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    const isOpen = () => {
+      const el =
+        document.querySelector('w3m-modal[open], wcm-modal[open]') ||
+        document.querySelector('#w3m-modal, #wcm-modal') ||
+        document.querySelector('.w3m-modal, .wcm-modal');
+      if (!el) return false;
+      const cs = window.getComputedStyle(el as Element);
+      return cs.display !== 'none' && cs.visibility !== 'hidden' && parseFloat(cs.opacity || '1') > 0.01;
+    };
+
+    const update = () => setWalletModalOpen(isOpen());
+
+    // Initial and observe DOM mutations (reliable in in-app browsers)
+    update();
+    const mo = new MutationObserver(update);
+    mo.observe(document.body, { childList: true, subtree: true, attributes: true });
+
+    // Best-effort events if emitted
+    const onOpen = () => setWalletModalOpen(true);
+    const onClose = () => setWalletModalOpen(false);
+    window.addEventListener('w3m:open' as any, onOpen);
+    window.addEventListener('w3m:close' as any, onClose);
+
+    return () => {
+      mo.disconnect();
+      window.removeEventListener('w3m:open' as any, onOpen);
+      window.removeEventListener('w3m:close' as any, onClose);
+    };
+  }, []);
+
+  // ADD: close hamburger menu when wallet modal opens
+  useEffect(() => {
+    if (walletModalOpen) setIsMobileMenuOpen(false);
+  }, [walletModalOpen]);
+
   if (!isMounted) {
     // Enhanced placeholder with better styling
     return (
@@ -509,6 +550,9 @@ const Header = () => {
           : 'none',
         // Smooth transition for all effects
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        // ADD: let taps go to wallet modal and keep it above header
+        pointerEvents: walletModalOpen ? 'none' : 'auto',
+        zIndex: walletModalOpen ? 0 : 60,         // lowered when modal open
       }}
     >
       <nav className={styles.nav}>
@@ -599,7 +643,7 @@ const Header = () => {
           style={{
             position: 'fixed',
             inset: 0,
-            zIndex: 1400,
+            zIndex: walletModalOpen ? 10 : 1400, // drop below wallet modal if it appears
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
