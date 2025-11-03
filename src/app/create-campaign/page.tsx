@@ -11,7 +11,7 @@ import { poliDaoRouterAbi } from '../../blockchain/routerAbi';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import './pagestyles.css';
 
-// USDC ma 6 miejsc po przecinku
+// USDC has 6 decimals
 const USDC_DECIMALS = 6;
 
 interface FormData {
@@ -80,7 +80,7 @@ export default function CreateCampaignPage() {
   const [createdId, setCreatedId] = useState<bigint | null>(null);
   const [friendlyError, setFriendlyError] = useState<string | null>(null);
 
-  // NEW: status twórcy zbiórek
+  // Creator status
   const [creatorStatus, setCreatorStatus] = useState<'loading' | 'ok' | 'notAllowed' | 'unknown'>('loading');
 
   const [formData, setFormData] = useState<FormData>({
@@ -125,7 +125,7 @@ export default function CreateCampaignPage() {
 
   const handleInputChange = (field: keyof FormData, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    // Usuń błąd gdy użytkownik zaczyna wpisywać
+    // Clear error once user starts typing
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
@@ -135,25 +135,25 @@ export default function CreateCampaignPage() {
     const newErrors: Record<string, string> = {};
 
     if (step === 1) {
-      if (!formData.title.trim()) newErrors.title = 'Tytuł jest wymagany';
-      if (formData.title.length < 10) newErrors.title = 'Tytuł musi mieć co najmniej 10 znaków';
-      if (formData.title.length > 100) newErrors.title = 'Tytuł nie może przekraczać 100 znaków';
-      if (!formData.description.trim()) newErrors.description = 'Opis jest wymagany';
-      if (formData.description.length < 50) newErrors.description = 'Opis musi mieć co najmniej 50 znaków';
-      // FIX: Zmniejsz limit z 2000 na 1000 znaków (bezpieczny limit dla smart contract)
-      if (formData.description.length > 1000) newErrors.description = 'Opis nie może przekraczać 1000 znaków (limit kontraktu)';
-      if (!formData.beneficiary.trim()) newErrors.beneficiary = 'Wybierz kto jest beneficjentem';
-      if (formData.location.length > 50) newErrors.location = 'Lokalizacja maks 50 znaków'; // też zmniejsz
+      if (!formData.title.trim()) newErrors.title = 'Title is required';
+      if (formData.title.length < 10) newErrors.title = 'Title must be at least 10 characters';
+      if (formData.title.length > 100) newErrors.title = 'Title cannot exceed 100 characters';
+      if (!formData.description.trim()) newErrors.description = 'Description is required';
+      if (formData.description.length < 50) newErrors.description = 'Description must be at least 50 characters';
+      // Decrease limit to 1000 characters (safe contract limit)
+      if (formData.description.length > 1000) newErrors.description = 'Description cannot exceed 1000 characters (contract limit)';
+      if (!formData.beneficiary.trim()) newErrors.beneficiary = 'Select who is the beneficiary';
+      if (formData.location.length > 50) newErrors.location = 'Location max 50 characters';
       
       // Enhanced image validation
       if (imageFile) {
         const maxSize = 5 * 1024 * 1024; // 5MB
         if (imageFile.size > maxSize) {
-          newErrors.image = 'Zdjęcie nie może być większe niż 5MB';
+          newErrors.image = 'Image must be no larger than 5MB';
         }
         const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
         if (!validTypes.includes(imageFile.type)) {
-          newErrors.image = 'Dozwolone formaty: JPG, PNG, WebP';
+          newErrors.image = 'Allowed formats: JPG, PNG, WebP';
         }
       }
     }
@@ -161,20 +161,20 @@ export default function CreateCampaignPage() {
     if (step === 2) {
       if (formData.campaignType === 'target') {
         if (!formData.targetAmount || parseFloat(formData.targetAmount) <= 0) {
-          newErrors.targetAmount = 'Kwota docelowa musi być większa od 0';
+          newErrors.targetAmount = 'Goal amount must be greater than 0';
         }
         if (parseFloat(formData.targetAmount) > 1000000) {
-          newErrors.targetAmount = 'Kwota docelowa nie może przekraczać 1,000,000 USDC';
+          newErrors.targetAmount = 'Goal amount cannot exceed 1,000,000 USDC';
         }
       }
       if (!formData.duration || parseInt(formData.duration) < 1 || parseInt(formData.duration) > 365) {
-        newErrors.duration = 'Czas trwania musi być między 1 a 365 dni';
+        newErrors.duration = 'Duration must be between 1 and 365 days';
       }
     }
 
     if (step === 3) {
-      if (!formData.agreeTerms) newErrors.agreeTerms = 'Musisz zaakceptować regulamin';
-      if (!formData.agreeDataProcessing) newErrors.agreeDataProcessing = 'Musisz wyrazić zgodę na przetwarzanie danych';
+      if (!formData.agreeTerms) newErrors.agreeTerms = 'You must accept the Terms of Service';
+      if (!formData.agreeDataProcessing) newErrors.agreeDataProcessing = 'You must consent to data processing';
     }
 
     setErrors(newErrors);
@@ -193,18 +193,18 @@ export default function CreateCampaignPage() {
 
   const mapError = (raw: string): string => {
     const lower = raw.toLowerCase();
-    if (lower.includes('invalidenddate')) return 'Nieprawidłowa data zakończenia';
-    if (lower.includes('goalamountrequired')) return 'Musisz podać cel kwotowy dla tego typu zbiórki';
-    if (lower.includes('goalamounttoolarge')) return 'Kwota celu jest zbyt wysoka';
-    if (lower.includes('titletoolong')) return 'Tytuł jest za długi';
-    if (lower.includes('descriptiontoolong')) return 'Opis jest za długi';
-    if (lower.includes('invalidtitle')) return 'Tytuł nie spełnia wymagań';
-    if (lower.includes('invalidamount')) return 'Nieprawidłowa kwota';
-    if (lower.includes('tokennotwhitelisted')) return 'Wybrany token nie jest dozwolony';
-    // FIX: Dodaj mapowanie dla error signature
-    if (lower.includes('0xd7cfc590')) return 'Opis zbiórki jest za długi - maksymalnie 1000 znaków';
-    if (lower.includes('invalid creator')) return 'Twoje konto nie ma uprawnień do tworzenia zbiórek (Invalid creator). Skontaktuj się z administracją lub zakończ proces weryfikacji.';
-    return 'Nieudana transakcja – sprawdź dane lub spróbuj ponownie';
+    if (lower.includes('invalidenddate')) return 'Invalid end date';
+    if (lower.includes('goalamountrequired')) return 'You must provide a goal amount for this fundraiser type';
+    if (lower.includes('goalamounttoolarge')) return 'Goal amount is too high';
+    if (lower.includes('titletoolong')) return 'Title is too long';
+    if (lower.includes('descriptiontoolong')) return 'Description is too long';
+    if (lower.includes('invalidtitle')) return 'Title does not meet requirements';
+    if (lower.includes('invalidamount')) return 'Invalid amount';
+    if (lower.includes('tokennotwhitelisted')) return 'Selected token is not whitelisted';
+    // Map known error signature
+    if (lower.includes('0xd7cfc590')) return 'Fundraiser description is too long - maximum 1000 characters';
+    if (lower.includes('invalid creator')) return 'Your account is not authorized to create fundraisers (Invalid creator). Contact support or complete verification.';
+    return 'Transaction failed — check the data or try again';
   };
 
   // FIX: fundraiserType zależy od typu kampanii: 0 = WITH_GOAL, 1 = WITHOUT_GOAL (dla elastycznych)
@@ -223,7 +223,7 @@ export default function CreateCampaignPage() {
 
   const handleSubmit = async () => {
     if (creatorStatus === 'notAllowed') {
-      setFriendlyError('Twoje konto nie jest uprawnione do tworzenia zbiórek.');
+      setFriendlyError('Your account is not authorized to create fundraisers.');
       return;
     }
     if (!validateStep(3) || !isConnected) return;
@@ -239,7 +239,7 @@ export default function CreateCampaignPage() {
       (DEFAULT_TOKEN_ADDRESS as unknown as `0x${string}`);
 
     if (!effectiveToken || effectiveToken.toLowerCase() === ZERO_ADDRESS) {
-      setFriendlyError('Brak poprawnego adresu tokena. Skontaktuj się z administracją.');
+      setFriendlyError('Missing valid token address. Please contact support.');
       return;
     }
 
@@ -278,7 +278,7 @@ export default function CreateCampaignPage() {
             args: [effectiveToken]
           });
           if (whitelisted === false) {
-            setFriendlyError('Wybrany token nie jest dozwolony (nie znajduje się na whitelist).');
+            setFriendlyError('Selected token is not allowed (not on the whitelist).');
             return;
           }
         }
@@ -348,7 +348,7 @@ export default function CreateCampaignPage() {
       });
 
     } catch (error: any) {
-      console.error('❌ Error creating campaign:', error);
+      console.error('❌ Error creating fundraiser:', error);
       setFriendlyError(mapError(error?.message || ''));
     }
   };
@@ -416,7 +416,7 @@ export default function CreateCampaignPage() {
           
           // Upload image if available
           if (imageFile) {
-            console.log('📤 Uploading image for campaign:', campaignId.toString());
+            console.log('📤 Uploading image for fundraiser:', campaignId.toString());
             
             // Create FormData for proper file upload
             const formData = new FormData();
@@ -435,15 +435,15 @@ export default function CreateCampaignPage() {
               } else {
                 const errorText = await uploadResponse.text();
                 console.error('❌ Upload failed:', errorText);
-                setFriendlyError(`Błąd uploadu zdjęcia: ${errorText}`);
+                setFriendlyError(`Image upload failed: ${errorText}`);
               }
             } catch (uploadError) {
               console.error('❌ Upload error:', uploadError);
-              setFriendlyError(`Błąd uploadu zdjęcia: ${uploadError}`);
+              setFriendlyError(`Image upload failed: ${uploadError}`);
             }
           }
 
-          // FIX: Używaj tego samego ID co w URL (campaignId + 1)
+          // Use the same ID as in URL (campaignId + 1)
           const displayId = (campaignId + 1n).toString();
           console.log('💾 Saving to database with displayId:', displayId, 'for redirect URL');
 
@@ -452,7 +452,7 @@ export default function CreateCampaignPage() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              campaignId: displayId, // ← Zapisz z tym samym ID co w URL
+              campaignId: displayId,
               title: formData.title.trim(),
               description: formData.description.trim(),
               imageUrl: imageUrl || undefined,
@@ -474,18 +474,17 @@ export default function CreateCampaignPage() {
     run();
   }, [isSuccess, createdId, publicClient, hash, address, imageFile, formData]);
 
-  // Auto-redirect po uzyskaniu createdId
+  // Auto-redirect after createdId is available
   useEffect(() => {
     if (createdId) {
-      // Routes are 1-based; on-chain ids are 0-based -> add +1 for display/URL
       const displayId = (createdId + 1n).toString();
-      console.log('🔄 Redirecting to campaign:', displayId);
-       const t = setTimeout(() => {
+      console.log('🔄 Redirecting to fundraiser:', displayId);
+      const t = setTimeout(() => {
         window.location.href = `/campaigns/${displayId}`;
-       }, 2500);
-       return () => clearTimeout(t);
-     }
-   }, [createdId]);
+      }, 2500);
+      return () => clearTimeout(t);
+    }
+  }, [createdId]);
 
   // NEW: sprawdzanie czy adres jest uprawniony do tworzenia (probing potencjalnych nazw)
   useEffect(() => {
@@ -600,24 +599,23 @@ export default function CreateCampaignPage() {
     <div className="min-h-screen bg-gray-50">
       <Header />
       
-      {/* Hero sekcja */}
+      {/* Hero section */}
       <div className="bg-[#10b981] text-white py-16">
         <div className="container mx-auto px-4 text-center">
           <h1 className="text-4xl md:text-5xl font-bold mb-4">
-            Utwórz zbiórkę i zbieraj w USDC
+            Create a fundraiser and collect in USDC
           </h1>
           <p className="text-xl text-green-100 max-w-3xl mx-auto">
-            Zakładając zbiórkę na naszej platformie blockchain, otrzymujesz stabilną walutę USDC 
-            z pełną przejrzystością i bezpieczeństwem.
+            By launching a fundraiser on our blockchain platform, you receive stable USDC with full transparency and security.
           </p>
           <div className="mt-6 inline-flex items-center bg-white/20 rounded-full px-6 py-3">
             <span className="text-2xl mr-3">💲</span>
-            <span className="font-semibold">Tylko USDC - stabilna kryptowaluta</span>
+            <span className="font-semibold">USDC only — a stable cryptocurrency</span>
           </div>
         </div>
       </div>
 
-      {/* Główny formularz */}
+      {/* Main form */}
       <div className="container mx-auto px-4 py-12">
         <div className="max-w-4xl mx-auto">
           
@@ -642,31 +640,31 @@ export default function CreateCampaignPage() {
               ))}
             </div>
             <div className="flex justify-between text-sm text-gray-600">
-              <span>Szczegóły zbiórki</span>
-              <span>Ustawienia</span>
-              <span>Podsumowanie</span>
+              <span>Fundraiser details</span>
+              <span>Settings</span>
+              <span>Summary</span>
             </div>
           </div>
 
           <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
             
-            {/* Krok 1: Szczegóły zbiórki */}
+            {/* Step 1: Fundraiser details */}
             {currentStep === 1 && (
               <div className="p-8">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">
-                  📝 Opisz szczegóły zbiórki
+                  📝 Describe your fundraiser
                 </h2>
 
                 <div className="space-y-6">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Tytuł zbiórki *
+                      Fundraiser title *
                     </label>
                     <input
                       type="text"
                       value={formData.title}
                       onChange={(e) => handleInputChange('title', e.target.value)}
-                      placeholder="Podaj krótki i opisowy tytuł swojej zbiórki"
+                      placeholder="Provide a short, descriptive title for your fundraiser"
                       className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-[#10b981] focus:border-[#10b981] transition-all text-lg font-medium ${
                         errors.title ? 'border-red-500 bg-red-50' : 'border-gray-300'
                       }`}
@@ -676,13 +674,13 @@ export default function CreateCampaignPage() {
                       <p className="mt-2 text-sm text-red-600 font-medium">{errors.title}</p>
                     )}
                     <p className="mt-1 text-sm text-gray-500">
-                      {formData.title.length}/100 znaków
+                      {formData.title.length}/100 characters
                     </p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Kto jest beneficjentem zbiórki? *
+                      Who is the beneficiary? *
                     </label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                       <label className="flex items-center p-4 border-2 rounded-xl cursor-pointer hover:bg-gray-50 transition-all">
@@ -694,7 +692,7 @@ export default function CreateCampaignPage() {
                           onChange={(e) => handleInputChange('beneficiary', e.target.value)}
                           className="mr-3 text-green-600 w-5 h-5"
                         />
-                        <span className="font-semibold text-lg">Osoba prywatna</span>
+                        <span className="font-semibold text-lg">Individual</span>
                       </label>
                       <label className="flex items-center p-4 border-2 rounded-xl cursor-pointer hover:bg-gray-50 transition-all">
                         <input
@@ -705,30 +703,29 @@ export default function CreateCampaignPage() {
                           onChange={(e) => handleInputChange('beneficiary', e.target.value)}
                           className="mr-3 text-green-600 w-5 h-5"
                         />
-                        <span className="font-semibold text-lg">Fundacja / Inicjatywa</span>
+                        <span className="font-semibold text-lg">Foundation / Initiative</span>
                       </label>
                     </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Lokalizacja (miasto / kraj) (opcjonalnie)
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.location}
-                      onChange={(e) => handleInputChange('location', e.target.value)}
-                      placeholder="Np. Warszawa, Polska"
-                      className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-[#10b981] focus:border-[#10b981] transition-all text-lg font-medium ${
-                        errors.location ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                      }`}
-                    />
-                    {errors.location && (
-                      <p className="mt-2 text-sm text-red-600 font-medium">{errors.location}</p>
-                    )}
-                    {/* FIX: Dodaj licznik znaków dla lokalizacji */}
-                    <p className="mt-1 text-sm text-gray-500">
-                      {formData.location.length}/50 znaków
-                    </p>
-                  </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Location (city / country) (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.location}
+                        onChange={(e) => handleInputChange('location', e.target.value)}
+                        placeholder="e.g. Warsaw, Poland"
+                        className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-[#10b981] focus:border-[#10b981] transition-all text-lg font-medium ${
+                          errors.location ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                        }`}
+                      />
+                      {errors.location && (
+                        <p className="mt-2 text-sm text-red-600 font-medium">{errors.location}</p>
+                      )}
+                      <p className="mt-1 text-sm text-gray-500">
+                        {formData.location.length}/50 characters
+                      </p>
+                    </div>
                     {errors.beneficiary && (
                       <p className="mt-2 text-sm text-red-600 font-medium">{errors.beneficiary}</p>
                     )}
@@ -736,13 +733,13 @@ export default function CreateCampaignPage() {
 
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Opisz sytuację i przedstaw nam bliżej problem *
+                      Describe the situation and provide context *
                     </label>
                     <textarea
                       value={formData.description}
                       onChange={(e) => handleInputChange('description', e.target.value)}
                       rows={6}
-                      placeholder="Opisz szczegółowo sytuację, na co będą przeznaczone zebrane środki, dlaczego potrzebujesz pomocy..."
+                      placeholder="Explain the situation, how the funds will be used, and why you need help..."
                       className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-[#10b981] focus:border-[#10b981] transition-all resize-none font-medium ${
                         errors.description ? 'border-red-500 bg-red-50' : 'border-gray-300'
                       }`}
@@ -752,13 +749,11 @@ export default function CreateCampaignPage() {
                       <p className="mt-2 text-sm text-red-600 font-medium">{errors.description}</p>
                     )}
                     <p className="mt-1 text-sm text-gray-500">
-                      {/* FIX: Zmień licznik na 1000 znaków */}
-                      {formData.description.length}/1000 znaków (minimum 50)
+                      {formData.description.length}/1000 characters (minimum 50)
                     </p>
-                    {/* FIX: Dodaj ostrzeżenie gdy zbliżasz się do limitu */}
                     {formData.description.length > 900 && (
                       <p className="mt-1 text-sm text-amber-600 font-medium">
-                        ⚠️ Zbliżasz się do limitu znaków! Pozostało: {1000 - formData.description.length} znaków
+                        ⚠️ You are approaching the character limit! Remaining: {1000 - formData.description.length}
                       </p>
                     )}
                   </div>
@@ -766,7 +761,7 @@ export default function CreateCampaignPage() {
                   {/* Enhanced image upload section */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Zdjęcie zbiórki (opcjonalnie)
+                      Fundraiser image (optional)
                     </label>
                     <div className="space-y-4">
                       <div className="flex items-center justify-center w-full">
@@ -776,9 +771,9 @@ export default function CreateCampaignPage() {
                               <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
                             </svg>
                             <p className="mb-2 text-sm text-gray-500 font-medium">
-                              <span className="font-semibold">Kliknij aby dodać</span> lub przeciągnij zdjęcie
+                              <span className="font-semibold">Click to add</span> or drag & drop an image
                             </p>
-                            <p className="text-xs text-gray-500">PNG, JPG, WebP (maks. 5MB)</p>
+                            <p className="text-xs text-gray-500">PNG, JPG, WebP (max 5MB)</p>
                           </div>
                           <input
                             ref={fileInputRef}
@@ -809,7 +804,7 @@ export default function CreateCampaignPage() {
                         <div className="relative">
                           <img 
                             src={imagePreview} 
-                            alt="Podgląd zdjęcia zbiórki" 
+                            alt="Fundraiser image preview" 
                             className="w-full max-w-md mx-auto h-48 object-cover rounded-xl border-2 border-gray-200 shadow-lg"
                           />
                           <button
@@ -836,20 +831,20 @@ export default function CreateCampaignPage() {
                       <div
                         className="rounded-lg p-4"
                         style={{
-                          background: "rgba(26, 35, 50, 0.98)", // mocno ciemne tło
+                          background: "rgba(26, 35, 50, 0.98)",
                           border: "1.5px solid #10b981",
                           color: "#e0ffe0",
                           boxShadow: "0 2px 12px 0 rgba(16,185,129,0.15)"
                         }}
                       >
                         <h4 style={{ color: "#10b981", fontWeight: "bold", marginBottom: "8px", fontSize: "1.08rem" }}>
-                          💡 Wskazówki dotyczące zdjęcia:
+                          💡 Image tips:
                         </h4>
                         <ul style={{ color: "#e0ffe0", fontSize: "15px", margin: 0, paddingLeft: "18px", fontWeight: 500 }}>
-                          <li>• Dodaj zdjęcie które pokazuje problem lub sytuację</li>
-                          <li>• Unikaj zdjęć z danymi osobowymi (dokumenty, dowody)</li>
-                          <li>• Jasne, wysokiej jakości zdjęcia przyciągają więcej darczyńców</li>
-                          <li>• Zdjęcie powinno być związane z celem zbiórki</li>
+                          <li>• Add an image that shows the situation or problem</li>
+                          <li>• Avoid images with personal data (documents, IDs)</li>
+                          <li>• Clear, high-quality images attract more donors</li>
+                          <li>• The image should be related to the fundraiser’s goal</li>
                         </ul>
                       </div>
                     </div>
@@ -858,34 +853,34 @@ export default function CreateCampaignPage() {
               </div>
             )}
 
-            {/* Krok 2: Ustawienia finansowe */}
+            {/* Step 2: Financial settings */}
             {currentStep === 2 && (
               <div className="p-8">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">
-                  💰 Ustawienia finansowe
+                  💰 Financial settings
                 </h2>
 
-                {/* Info o USDC */}
+                {/* USDC info */}
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-8">
                   <div className="flex items-center mb-3">
                     <span className="text-3xl mr-4">💲</span>
                     <div>
-                      <h3 className="text-lg font-bold text-blue-900">USDC - Stabilna kryptowaluta</h3>
-                      <p className="text-blue-700">Twoja zbiórka będzie zbierać fundusze w USDC (1 USDC = ~1 USD)</p>
+                      <h3 className="text-lg font-bold text-blue-900">USDC — Stable cryptocurrency</h3>
+                      <p className="text-blue-700">Your fundraiser will collect funds in USDC (1 USDC ≈ 1 USD)</p>
                     </div>
                   </div>
                   <div className="text-sm text-blue-800 space-y-1">
-                    <p>✅ Stabilna wartość - nie podlega wahaniom jak Bitcoin czy Ethereum</p>
-                    <p>✅ Łatwa wymiana na złotówki przez giełdy kryptowalut</p>
-                    <p>✅ Przejrzyste transakcje na blockchain</p>
+                    <p>✅ Stable value — does not fluctuate like Bitcoin or Ethereum</p>
+                    <p>✅ Easy to exchange to local currency via crypto exchanges</p>
+                    <p>✅ Transparent transactions on the blockchain</p>
                   </div>
                 </div>
 
                 <div className="space-y-6">
-                  {/* NEW: Wybór tokena (domyślnie USDC Sepolia) */}
+                  {/* Token selection */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Token wpłat
+                      Donation token
                     </label>
                     <select
                       value={selectedTokenAddress ?? ''}
@@ -900,15 +895,15 @@ export default function CreateCampaignPage() {
                     </select>
                     {(!tokensList || tokensList.length === 0) && (
                       <p className="mt-2 text-sm text-amber-600">
-                        Nie wykryto tokenów – użyty zostanie domyślny adres sieci.
+                        No tokens detected — the network default will be used.
                       </p>
                     )}
                   </div>
 
-                  {/* Typ zbiórki */}
+                  {/* Fundraiser type */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-4">
-                      Typ zbiórki
+                      Fundraiser type
                     </label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <label className={`p-6 border-2 rounded-xl cursor-pointer transition-all ${
@@ -926,14 +921,13 @@ export default function CreateCampaignPage() {
                         />
                         <div className="flex items-center mb-3">
                           <span className="text-2xl mr-3">🎯</span>
-                          <span className="font-bold text-lg">Zbiórka z celem</span>
+                          <span className="font-bold text-lg">Goal-based fundraiser</span>
                         </div>
                         <p className="text-sm text-gray-600 font-medium">
-                          Określasz konkretną kwotę w USDC. Jeśli cel nie zostanie osiągnięty, 
-                          środki zostaną zwrócone wpłacającym.
+                          You set a specific amount in USDC. If the goal is not reached, funds are returned to donors.
                         </p>
                         <div className="mt-3 text-xs text-green-600 font-bold">
-                          ✓ Wszystko albo nic
+                          ✓ All-or-nothing
                         </div>
                       </label>
 
@@ -952,24 +946,23 @@ export default function CreateCampaignPage() {
                         />
                         <div className="flex items-center mb-3">
                           <span className="text-2xl mr-3">🌊</span>
-                          <span className="font-bold text-lg">Zbiórka elastyczna</span>
+                          <span className="font-bold text-lg">Flexible fundraiser</span>
                         </div>
                         <p className="text-sm text-gray-600 font-medium">
-                          Zbierasz środki bez określonego celu. 
-                          Wszystkie wpłaty w USDC pozostają u ciebie.
+                          Raise funds without a specific goal. All USDC donations remain with you.
                         </p>
                         <div className="mt-3 text-xs text-green-600 font-bold">
-                          ✓ Każda kwota pomaga
+                          ✓ Every amount helps
                         </div>
                       </label>
                     </div>
                   </div>
 
-                  {/* Kwota docelowa - tylko dla zbiórki z celem */}
+                  {/* Goal amount - only for goal-based fundraiser */}
                   {formData.campaignType === 'target' && (
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Podaj kwotę zbiórki w USDC *
+                        Enter fundraiser goal in USDC *
                       </label>
                       <div className="relative">
                         <input
@@ -992,15 +985,15 @@ export default function CreateCampaignPage() {
                         <p className="mt-2 text-sm text-red-600 font-medium">{errors.targetAmount}</p>
                       )}
                       <p className="mt-2 text-sm text-[#10b981] font-medium">
-                        💡 1 USDC ≈ 1 USD ≈ 4 PLN | Zastanów się nad realną kwotą
+                        💡 1 USDC ≈ 1 USD ≈ 4 PLN | Consider a realistic goal
                       </p>
                     </div>
                   )}
 
-                  {/* Czas trwania */}
+                  {/* Duration */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Czas trwania zbiórki (dni) *
+                      Fundraiser duration (days) *
                     </label>
                     <select
                       value={formData.duration}
@@ -1009,98 +1002,130 @@ export default function CreateCampaignPage() {
                         errors.duration ? 'border-red-500 bg-red-50' : 'border-gray-300'
                       }`}
                     >
-                      <option value="7">7 dni</option>
-                      <option value="14">14 dni</option>
-                      <option value="30">30 dni (zalecane)</option>
-                      <option value="60">60 dni</option>
-                      <option value="90">90 dni</option>
-                      <option value="180">180 dni</option>
-                      <option value="365">365 dni</option>
+                      <option value="7">7 days</option>
+                      <option value="14">14 days</option>
+                      <option value="30">30 days (recommended)</option>
+                      <option value="60">60 days</option>
+                      <option value="90">90 days</option>
+                      <option value="180">180 days</option>
+                      <option value="365">365 days</option>
                     </select>
                     {errors.duration && (
                       <p className="mt-2 text-sm text-red-600 font-medium">{errors.duration}</p>
                     )}
                   </div>
 
-                  {/* Dane kontaktowe */}
+                  {/* Contact info */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Dane kontaktowe (opcjonalnie)
+                      Contact information (optional)
                     </label>
                     <input
                       type="text"
                       value={formData.contactInfo}
                       onChange={(e) => handleInputChange('contactInfo', e.target.value)}
-                      placeholder="Email lub numer telefonu do kontaktu"
+                      placeholder="Email or phone number"
                       className="w-full px-5 py-4 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-[#10b981] focus:border-[#10b981] font-medium text-lg"
                     />
                     <p className="mt-1 text-sm text-gray-500">
-                      Darczyńcy będą mogli skontaktować się z Tobą w sprawie zbiórki
+                      Donors may contact you regarding the fundraiser
                     </p>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Krok 3: Podsumowanie i zgody */}
+            {/* Step 3: Summary and consents */}
             {currentStep === 3 && (
               <div className="p-8">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">
-                  📋 Podsumowanie i publikacja
+                  📋 Summary and publish
                 </h2>
 
-                {/* Podsumowanie */}
+                {/* Summary */}
                 <div className="summary-section">
-                  <h3>Podsumowanie zbiórki</h3>
+                  <h3>Fundraiser summary</h3>
                   <div className="space-y-3">
                     <div className="flex justify-between">
-                      <span className="label">Tytuł:</span>
+                      <span className="label">Title:</span>
                       <span className="value">{formData.title}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="label">Typ:</span>
-                      <span className="value">{formData.campaignType === 'target' ? '🎯 Zbiórka z celem' : '🌊 Zbiórka elastyczna'}</span>
+                      <span className="label">Type:</span>
+                      <span className="value">{formData.campaignType === 'target' ? '🎯 Goal-based fundraiser' : '🌊 Flexible fundraiser'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="label">Waluta:</span>
-                      <span className="value blue">💲 USDC (stabilny dolar)</span>
+                      <span className="label">Currency:</span>
+                      <span className="value blue">💲 USDC (stablecoin)</span>
                     </div>
                     {formData.campaignType === 'target' && (
                       <div className="flex justify-between">
-                        <span className="label">Kwota docelowa:</span>
+                        <span className="label">Goal amount:</span>
                         <span className="value green">{formData.targetAmount} USDC</span>
                       </div>
                     )}
                     <div className="flex justify-between">
-                      <span className="label">Czas trwania:</span>
-                      <span className="value">{formData.duration} dni</span>
+                      <span className="label">Duration:</span>
+                      <span className="value">{formData.duration} days</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="label">Beneficjent:</span>
-                      <span className="value">{formData.beneficiary === 'myself' ? 'Osoba prywatna' : 'Fundacja / Inicjatywa'}</span>
+                      <span className="label">Beneficiary:</span>
+                      <span className="value">{formData.beneficiary === 'myself' ? 'Individual' : 'Foundation / Initiative'}</span>
                     </div>
                     {formData.location && (
                       <div className="flex justify-between">
-                        <span className="label">Lokalizacja:</span>
+                        <span className="label">Location:</span>
                         <span className="value">{formData.location}</span>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* Zgody */}
+                {/* Info */}
                 <div className="info-section">
-                  <h4>ℹ️ Ważne informacje</h4>
+                  <h4>ℹ️ Important information</h4>
                   <ul>
-                    <li>• Wszystkie transakcje są rejestrowane na blockchain i są publicznie dostępne</li>
-                    <li>• Opłata platformy wynosi 2.5% od zebranej kwoty</li>
-                    <li>• Po utworzeniu zbiórki nie będziesz mógł edytować jej podstawowych parametrów</li>
-                    <li>• Zbiórka będzie zbierać tylko USDC - stabilną kryptowalutę</li>
-                    <li>• Zbiórka zostanie automatycznie zakończona po upływie określonego czasu</li>
+                    <li>• All transactions are recorded on the blockchain and are publicly visible</li>
+                    <li>• Platform fee is 2.5% of the collected amount</li>
+                    <li>• After creating, you cannot edit basic fundraiser parameters</li>
+                    <li>• The fundraiser accepts USDC only — a stable cryptocurrency</li>
+                    <li>• The fundraiser ends automatically after the specified duration</li>
                   </ul>
                 </div>
 
-                {/* Przycisk publikacji */}
+                {/* Consents */}
+                <div className="mt-6 space-y-3">
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={formData.agreeTerms}
+                      onChange={(e) => handleInputChange('agreeTerms', e.target.checked)}
+                      className="mt-1 w-5 h-5 text-green-600"
+                    />
+                    <span className="text-sm text-gray-800">
+                      I accept the <a href="/terms" target="_blank" className="text-green-600 underline">Terms of Service</a>.
+                    </span>
+                  </label>
+                  {errors.agreeTerms && (
+                    <p className="text-sm text-red-600 font-medium">{errors.agreeTerms}</p>
+                  )}
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={formData.agreeDataProcessing}
+                      onChange={(e) => handleInputChange('agreeDataProcessing', e.target.checked)}
+                      className="mt-1 w-5 h-5 text-green-600"
+                    />
+                    <span className="text-sm text-gray-800">
+                      I consent to the processing of my personal data in accordance with the <a href="/privacy" target="_blank" className="text-green-600 underline">Privacy Policy</a>.
+                    </span>
+                  </label>
+                  {errors.agreeDataProcessing && (
+                    <p className="text-sm text-red-600 font-medium">{errors.agreeDataProcessing}</p>
+                  )}
+                </div>
+
+                {/* Publish button */}
                 <div className="mt-8">
                   <button
                     onClick={handleSubmit}
@@ -1116,41 +1141,40 @@ export default function CreateCampaignPage() {
                     className="w-full bg-[#10b981] hover:bg-[#10b981] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-5 px-8 rounded-xl transition-all duration-300 transform hover:scale-105 disabled:hover:scale-100 text-xl shadow-lg hover:shadow-[0_0_25px_rgba(16,185,129,0.45)]"
                   >
                     {!creationEnabled
-                      ? 'Tworzenie wyłączone'
+                      ? 'Creation disabled'
                       : (isPending || isConfirming)
                         ? (
                           <div className="flex items-center justify-center">
                             <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin mr-3"></div>
-                            {isPending ? '1/2 Wysyłanie...' : '2/2 Potwierdzanie...'}
+                            {isPending ? '1/2 Sending...' : '2/2 Confirming...'}
                           </div>
                         )
                         : (
                           <div className="flex items-center justify-center">
                             <span className="mr-3">🚀</span>
-                            Opublikuj zbiórkę w USDC
+                            Publish fundraiser in USDC
                           </div>
                         )}
                   </button>
-                  {/* Removed token whitelist and paused messaging; rely on Router config + simulation errors */}
                   {creatorStatus === 'notAllowed' && (
                     <p className="mt-2 text-sm text-red-600 font-medium">
-                      Twoje konto nie ma uprawnień do tworzenia zbiórek. Uzupełnij weryfikację lub skontaktuj się z administracją.
+                      Your account is not authorized to create fundraisers. Complete verification or contact support.
                     </p>
                   )}
                   {creatorStatus === 'loading' && (
                     <p className="mt-2 text-sm text-gray-600 font-medium">
-                      Sprawdzanie uprawnień twórcy...
+                      Checking creator permissions...
                     </p>
                   )}
                   {creatorStatus === 'unknown' && (
                     <p className="mt-2 text-xs text-gray-500 font-medium">
-                      Nie udało się potwierdzić uprawnień twórcy. Próba utworzenia może się nie powieść jeśli kontrakt wymaga weryfikacji.
+                      Unable to confirm creator permissions. Creation may fail if the contract requires verification.
                     </p>
                   )}
                   {(friendlyError || error) && (
                     <div className="mt-4 p-4 bg-red-50 border-2 border-red-200 rounded-xl">
                       <p className="text-red-700 text-sm font-medium">
-                        <strong>Błąd:</strong> {friendlyError || error?.message}
+                        <strong>Error:</strong> {friendlyError || error?.message}
                       </p>
                     </div>
                   )}
@@ -1158,7 +1182,7 @@ export default function CreateCampaignPage() {
               </div>
             )}
 
-            {/* Nawigacja */}
+            {/* Navigation */}
             {currentStep < 3 && (
               <div className="px-8 py-4 bg-gray-50 border-t-2 border-gray-200 flex justify-between">
                 <button
@@ -1166,27 +1190,27 @@ export default function CreateCampaignPage() {
                   disabled={currentStep === 1}
                   className="px-6 py-3 text-gray-600 hover:text-gray-800 font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-lg"
                 >
-                  ← Wstecz
+                  ← Back
                 </button>
                 <button
                   onClick={handleNext}
                   className="px-8 py-3 bg-[#10b981] hover:bg-[#10b981] text-white font-bold rounded-lg transition-all duration-300 text-lg transform hover:scale-105 shadow-md hover:shadow-[0_0_20px_rgba(16,185,129,0.45)]"
                 >
-                  Dalej →
+                  Next →
                 </button>
               </div>
             )}
           </div>
 
-          {/* Dodatkowe informacje */}
+          {/* Additional information */}
           <div className="mt-12 grid md:grid-cols-3 gap-6">
             <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-blue-100">
               <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
                 <span className="text-2xl">💲</span>
               </div>
-              <h3 className="font-bold text-gray-900 mb-2 text-lg">USDC - Stabilność</h3>
+              <h3 className="font-bold text-gray-900 mb-2 text-lg">USDC — Stability</h3>
               <p className="text-gray-600 text-sm font-medium">
-                Zbierasz w stabilnej walucie USDC która nie podlega wahaniom jak Bitcoin czy Ethereum.
+                Raise funds in a stable currency (USDC) that does not fluctuate like Bitcoin or Ethereum.
               </p>
             </div>
             
@@ -1194,9 +1218,9 @@ export default function CreateCampaignPage() {
               <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center mb-4">
                 <span className="text-2xl">🔒</span>
               </div>
-              <h3 className="font-bold text-gray-900 mb-2 text-lg">Bezpieczeństwo</h3>
+              <h3 className="font-bold text-gray-900 mb-2 text-lg">Security</h3>
               <p className="text-gray-600 text-sm font-medium">
-                Wszystkie transakcje są zabezpieczone przez blockchain i smart kontrakty.
+                All transactions are secured by the blockchain and smart contracts.
               </p>
             </div>
             
@@ -1204,74 +1228,73 @@ export default function CreateCampaignPage() {
               <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mb-4">
                 <span className="text-2xl">📊</span>
               </div>
-              <h3 className="font-bold text-gray-900 mb-2 text-lg">Przejrzystość</h3>
+              <h3 className="font-bold text-gray-900 mb-2 text-lg">Transparency</h3>
               <p className="text-gray-600 text-sm font-medium">
-                Każda wpłata jest widoczna publicznie. Darczyńcy wiedzą dokładnie, na co idą ich pieniądze.
+                Every donation is publicly visible. Donors know exactly where their money goes.
               </p>
             </div>
           </div>
 
-          {/* FAQ dla USDC */}
+          {/* FAQ for USDC */}
           <div className="mt-12 bg-white rounded-xl p-8 shadow-lg border-2 border-gray-200">
-            <h3 className="text-xl font-bold text-gray-900 mb-6">❓ Często zadawane pytania o USDC</h3>
+            <h3 className="text-xl font-bold text-gray-900 mb-6">❓ Frequently asked questions about USDC</h3>
             <div className="space-y-4">
               <details className="group">
                 <summary className="flex items-center justify-between cursor-pointer p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <span className="font-bold text-gray-900">Co to jest USDC?</span>
+                  <span className="font-bold text-gray-900">What is USDC?</span>
                   <span className="text-gray-500 group-open:rotate-180 transition-transform">▼</span>
                 </summary>
                 <div className="mt-3 p-4 text-gray-600 text-sm leading-relaxed font-medium">
-                  USDC (USD Coin) to stabilna kryptowaluta która ma zawsze wartość około 1 dolara amerykańskiego. 
-                  Jest to bezpieczna alternatywa dla zmiennych kryptowalut jak Bitcoin czy Ethereum.
+                  USDC (USD Coin) is a stable cryptocurrency pegged to ~1 US dollar. 
+                  It’s a safe alternative to volatile cryptocurrencies like Bitcoin or Ethereum.
                 </div>
               </details>
 
               <details className="group">
                 <summary className="flex items-center justify-between cursor-pointer p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <span className="font-bold text-gray-900">Jak wymienić USDC na złotówki?</span>
+                  <span className="font-bold text-gray-900">How can I convert USDC to my local currency?</span>
                   <span className="text-gray-500 group-open:rotate-180 transition-transform">▼</span>
                 </summary>
                 <div className="mt-3 p-4 text-gray-600 text-sm leading-relaxed font-medium">
-                  USDC możesz łatwo wymienić na złotówki przez polskie giełdy kryptowalut takie jak BitBay, Zonda czy Binance. 
-                  Proces jest prosty i bezpieczny.
+                  You can easily convert USDC through reputable cryptocurrency exchanges operating in your region.
                 </div>
               </details>
 
               <details className="group">
                 <summary className="flex items-center justify-between cursor-pointer p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <span className="font-bold text-gray-900">Dlaczego nie ETH lub Bitcoin?</span>
+                  <span className="font-bold text-gray-900">Why not ETH or Bitcoin?</span>
                   <span className="text-gray-500 group-open:rotate-180 transition-transform">▼</span>
                 </summary>
                 <div className="mt-3 p-4 text-gray-600 text-sm leading-relaxed font-medium">
-                  ETH i Bitcoin mogą drastycznie zmienić wartość (nawet o 50% w ciągu dnia). USDC jest stabilny - 
-                  jeśli zbierzesz 1000 USDC, będzie to nadal około 1000 USD/4000 PLN niezależnie od wahań rynku.
+                  ETH and Bitcoin can fluctuate significantly. USDC is stable — if you raise 1000 USDC, 
+                  it remains roughly 1000 USD regardless of market volatility.
                 </div>
               </details>
 
               <details className="group">
                 <summary className="flex items-center justify-between cursor-pointer p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <span className="font-bold text-gray-900">Czy USDC jest bezpieczny?</span>
+                  <span className="font-bold text-gray-900">Is USDC safe?</span>
                   <span className="text-gray-500 group-open:rotate-180 transition-transform">▼</span>
                 </summary>
                 <div className="mt-3 p-4 text-gray-600 text-sm leading-relaxed font-medium">
-                  Tak! USDC jest wydawany przez regulowane firmy i jest zabezpieczony rezerwami dolara amerykańskiego. 
-                  To jedna z najbezpieczniejszych kryptowalut na rynku.
+                  Yes. USDC is issued by regulated companies and backed by USD reserves. 
+                  It’s one of the safest cryptocurrencies on the market.
                 </div>
               </details>
             </div>
           </div>
 
-          {/* Wsparcie */}
+          {/* Support */}
           <div className="support-section">
-  <h3>Potrzebujesz pomocy z USDC?</h3>
-  <p>
-    Nasz zespół pomoże Ci w każdym kroku tworzenia zbiórki i wyjaśni jak działa USDC.
-  </p>
-  <div style={{ display: "flex", flexDirection: "row", gap: "18px", justifyContent: "center" }}>
-    <a href="/contact" className="contact-link">📧 Skontaktuj się z nami</a>
-    <a href="/white-paper" className="doc-link">📖 Przeczytaj dokumentację</a>
-  </div>
-</div>
+            <h3>Need help with USDC?</h3>
+            <p>
+              Our team can assist you at every step and explain how USDC works.
+            </p>
+            <div style={{ display: "flex", flexDirection: "row", gap: "18px", justifyContent: "center" }}>
+              <a href="/contact" className="contact-link">📧 Contact us</a>
+              <a href="/white-paper" className="doc-link">📖 Read the documentation</a>
+            </div>
+          </div>
         </div>
       </div>
 
