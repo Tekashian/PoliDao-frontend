@@ -518,6 +518,100 @@ function FuturisticCarousel({
   );
 }
 
+// NEW: lightweight client-side RPC balancer (round-robin Infura / Alchemy + retry on 429/-32005)
+(() => {
+  if (typeof window === 'undefined') return;
+  if ((window as any).__rpcBalancerPatched) return;
+
+  const INFURA = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || '';
+  const ALCHEMY = process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || '';
+  const endpoints = [INFURA, ALCHEMY].filter(Boolean) as string[];
+
+  if (endpoints.length < 2) {
+    // Nothing to balance; skip patch.
+    (window as any).__rpcBalancerPatched = true;
+    return;
+  }
+
+  const origFetch = window.fetch.bind(window);
+  let cursor = Math.floor(Math.random() * endpoints.length); // randomize start
+
+  const isJsonRpcPost = (init?: RequestInit) => {
+    if (!init) return false;
+    if ((init.method || 'POST').toUpperCase() !== 'POST') return false;
+    const body = init.body;
+    if (typeof body !== 'string') return false;
+    return body.includes('"jsonrpc"');
+  };
+
+  const shouldIntercept = (url: string | undefined, init?: RequestInit) => {
+    if (!url) return false;
+    // Only intercept known providers and JSON-RPC POSTs
+    const isKnown = url.includes('infura.io') || url.includes('alchemy.com');
+    return isKnown && isJsonRpcPost(init);
+  };
+
+  const hasRateLimitSignal = async (resp: Response) => {
+    if (resp.status === 429 || resp.status === 503) return true;
+    try {
+      const clone = resp.clone();
+      const text = await clone.text();
+      // Detect -32005 Too Many Requests in JSON-RPC error payloads (batch or single)
+      if (!text) return false;
+      if (text.includes('"code":-32005') || text.includes('Too Many Requests')) return true;
+    } catch {}
+    return false;
+  };
+
+  const nextIndex = (start?: number) => {
+    if (typeof start === 'number') return (start + 1) % endpoints.length;
+    cursor = (cursor + 1) % endpoints.length;
+    return cursor;
+  };
+
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    try {
+      const url = typeof input === 'string' ? input : (input as Request).url;
+      if (!shouldIntercept(url, init)) {
+        return await origFetch(input as any, init as any);
+      }
+
+      // Build rotation order starting from the next endpoint
+      const order: number[] = [];
+      let idx = nextIndex();
+      for (let i = 0; i < endpoints.length; i++) {
+        order.push(idx);
+        idx = (idx + 1) % endpoints.length;
+      }
+
+      let lastResp: Response | null = null;
+
+      // Try each endpoint until one succeeds (or we exhaust the list)
+      for (const i of order) {
+        const endpoint = endpoints[i];
+        const resp = await origFetch(endpoint, init as any);
+        lastResp = resp;
+
+        const rateLimited = await hasRateLimitSignal(resp);
+        if (!rateLimited) {
+          cursor = i; // advance cursor to the working endpoint
+          return resp;
+        }
+        // else: try next endpoint
+      }
+
+      // All endpoints rate-limited; return last response to keep behavior predictable
+      return lastResp as Response;
+    } catch {
+      // Fail-safe: fall back to original fetch
+      return await origFetch(input as any, init as any);
+    }
+  };
+
+  (window as any).__rpcBalancerPatched = true;
+})();
+
+// --- MAIN RENDER ---
 export default function HomePage() {
   const router = useRouter();
   
