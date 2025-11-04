@@ -518,97 +518,132 @@ function FuturisticCarousel({
   );
 }
 
-// NEW: lightweight client-side RPC balancer (round-robin Infura / Alchemy + retry on 429/-32005)
+// NEW: robust client-side RPC balancer (round-robin + cooldown + concurrency cap + jitter)
 (() => {
   if (typeof window === 'undefined') return;
-  if ((window as any).__rpcBalancerPatched) return;
+  if ((window as any).__rpcBalancerPatchedV2) return;
 
   const INFURA = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || '';
   const ALCHEMY = process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || '';
   const endpoints = [INFURA, ALCHEMY].filter(Boolean) as string[];
 
-  if (endpoints.length < 2) {
-    // Nothing to balance; skip patch.
-    (window as any).__rpcBalancerPatched = true;
+  if (endpoints.length === 0) {
+    (window as any).__rpcBalancerPatchedV2 = true;
     return;
   }
 
   const origFetch = window.fetch.bind(window);
-  let cursor = Math.floor(Math.random() * endpoints.length); // randomize start
+  let cursor = Math.floor(Math.random() * endpoints.length);
+
+  // Concurrency limit to avoid bursts (JSON-RPC only)
+  const MAX_CONCURRENT = 6;
+  let active = 0;
+  const queue: { resolve: () => void }[] = [];
+
+  const acquire = async () => {
+    if (active < MAX_CONCURRENT) {
+      active++;
+      return;
+    }
+    await new Promise<void>((resolve) => queue.push({ resolve }));
+    active++;
+  };
+  const release = () => {
+    active = Math.max(0, active - 1);
+    const next = queue.shift();
+    if (next) next.resolve();
+  };
+
+  // Per-endpoint cooldown after rate-limit
+  const COOLDOWN_MS = 30_000;
+  const cooldownUntil = new Map<number, number>(); // idx -> ts
 
   const isJsonRpcPost = (init?: RequestInit) => {
     if (!init) return false;
-    if ((init.method || 'POST').toUpperCase() !== 'POST') return false;
+    const method = (init.method || 'POST').toUpperCase();
+    if (method !== 'POST') return false;
     const body = init.body;
     if (typeof body !== 'string') return false;
     return body.includes('"jsonrpc"');
   };
 
-  const shouldIntercept = (url: string | undefined, init?: RequestInit) => {
-    if (!url) return false;
-    // Only intercept known providers and JSON-RPC POSTs
-    const isKnown = url.includes('infura.io') || url.includes('alchemy.com');
-    return isKnown && isJsonRpcPost(init);
-  };
+  // Intercept ANY JSON-RPC POST and reroute to our endpoints
+  const shouldIntercept = (_url: string | undefined, init?: RequestInit) => isJsonRpcPost(init);
 
   const hasRateLimitSignal = async (resp: Response) => {
     if (resp.status === 429 || resp.status === 503) return true;
     try {
-      const clone = resp.clone();
-      const text = await clone.text();
-      // Detect -32005 Too Many Requests in JSON-RPC error payloads (batch or single)
-      if (!text) return false;
-      if (text.includes('"code":-32005') || text.includes('Too Many Requests')) return true;
-    } catch {}
-    return false;
+      const text = await resp.clone().text();
+      return !!text && (text.includes('"code":-32005') || text.includes('Too Many Requests'));
+    } catch {
+      return false;
+    }
   };
 
-  const nextIndex = (start?: number) => {
-    if (typeof start === 'number') return (start + 1) % endpoints.length;
-    cursor = (cursor + 1) % endpoints.length;
-    return cursor;
+  const nextHealthyIndex = (startIdx?: number) => {
+    const now = Date.now();
+    let start = typeof startIdx === 'number' ? startIdx : (cursor + 1) % endpoints.length;
+    for (let i = 0; i < endpoints.length; i++) {
+      const idx = (start + i) % endpoints.length;
+      const until = cooldownUntil.get(idx) || 0;
+      if (until <= now) return idx;
+    }
+    // If all on cooldown, pick the soonest-to-expire
+    let bestIdx = 0;
+    let bestUntil = Infinity;
+    cooldownUntil.forEach((u, idx) => {
+      if (u < bestUntil) { bestUntil = u; bestIdx = idx; }
+    });
+    return bestIdx;
   };
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-    try {
-      const url = typeof input === 'string' ? input : (input as Request).url;
-      if (!shouldIntercept(url, init)) {
-        return await origFetch(input as any, init as any);
-      }
+    const url = typeof input === 'string' ? input : (input as Request).url;
+    if (!shouldIntercept(url, init)) {
+      return await origFetch(input as any, init as any);
+    }
 
-      // Build rotation order starting from the next endpoint
+    await acquire();
+    try {
+      // tiny jitter to smooth bursts
+      const jitter = Math.floor(Math.random() * 40); // 0–40ms
+      if (jitter) await new Promise(r => setTimeout(r, jitter));
+
+      // Build a priority list starting from the next healthy endpoint
       const order: number[] = [];
-      let idx = nextIndex();
+      let idx = nextHealthyIndex();
       for (let i = 0; i < endpoints.length; i++) {
         order.push(idx);
-        idx = (idx + 1) % endpoints.length;
+        idx = nextHealthyIndex(idx);
       }
 
       let lastResp: Response | null = null;
 
-      // Try each endpoint until one succeeds (or we exhaust the list)
       for (const i of order) {
         const endpoint = endpoints[i];
         const resp = await origFetch(endpoint, init as any);
         lastResp = resp;
 
-        const rateLimited = await hasRateLimitSignal(resp);
-        if (!rateLimited) {
-          cursor = i; // advance cursor to the working endpoint
+        const limited = await hasRateLimitSignal(resp);
+        if (!limited) {
+          cursor = i; // stick to working endpoint for subsequent calls
           return resp;
         }
-        // else: try next endpoint
+        // put this endpoint on cooldown and try next
+        cooldownUntil.set(i, Date.now() + COOLDOWN_MS);
       }
 
-      // All endpoints rate-limited; return last response to keep behavior predictable
+      // All endpoints rate-limited; return last response (UI handler will show retry)
       return lastResp as Response;
     } catch {
-      // Fail-safe: fall back to original fetch
+      // Fallback to original fetch for non-RPC or unexpected errors
       return await origFetch(input as any, init as any);
+    } finally {
+      release();
     }
   };
 
-  (window as any).__rpcBalancerPatched = true;
+  (window as any).__rpcBalancerPatchedV2 = true;
 })();
 
 // --- MAIN RENDER ---
