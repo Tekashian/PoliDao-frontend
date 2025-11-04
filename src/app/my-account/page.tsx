@@ -77,6 +77,16 @@ export default function AccountPage() {
 
   // FIX: define chainRefresh early (used by many hooks below)
   const [chainRefresh, setChainRefresh] = useState(0);
+  // NEW: touch detection for responsive overlays (iPad/phones)
+  const [isTouch, setIsTouch] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(hover: none), (pointer: coarse)');
+    const onChange = () => setIsTouch(mq.matches);
+    onChange();
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
 
   // Używaj istniejących hooków
   const { 
@@ -1509,11 +1519,15 @@ export default function AccountPage() {
                                 </div>
                               </div>
                             ) : isFlexibleCampaign ? (
-                              // NEW: Yellow info overlay for flexible/no-goal campaigns (refunds unavailable)
-                              <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                <div className="absolute inset-0 bg-gradient-to-t from-amber-400/35 via-amber-300/10 to-transparent" />
-                                <div className="absolute inset-0 rounded-xl ring-1 ring-amber-400/40 shadow-[inset_0_0_22px_rgba(251,191,36,0.45)]" />
-                                <div className="absolute inset-0 flex items-center justify-center">
+                              // UPDATED: Info overlay always visible on touch, hover on desktop
+                              <div
+                                className={`pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden ${
+                                  isTouch ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                                } transition-opacity duration-200`}
+                              >
+                                <div className="absolute inset-0 bg-gradient-to-t from-amber-400/25 via-amber-300/10 to-transparent" />
+                                <div className="absolute inset-0 rounded-xl ring-1 ring-amber-400/30 shadow-[inset_0_0_22px_rgba(251,191,36,0.35)]" />
+                                <div className={`absolute inset-0 flex ${isTouch ? 'items-end pb-4' : 'items-center'} justify-center`}>
                                   <span
                                     className="pointer-events-none px-4 py-2 rounded-full bg-amber-500 text-white text-sm font-semibold ring-1 ring-white/20 shadow"
                                     title="Refunds are not available for flexible campaigns"
@@ -1523,11 +1537,15 @@ export default function AccountPage() {
                                 </div>
                               </div>
                             ) : (
-                              // Red revoke overlay on hover – only for goal-based not-yet-reached
-                              <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                <div className="absolute inset-0 bg-gradient-to-t from-[#ef4444]/35 via-[#ef4444]/10 to-transparent" />
-                                <div className="absolute inset-0 rounded-xl ring-1 ring-[#ef4444]/40 shadow-[inset_0_0_22px_rgba(239,68,68,0.45)]" />
-                                <div className="absolute inset-0 flex items-center justify-center">
+                              // UPDATED: Revoke overlay always visible on touch, hover on desktop
+                              <div
+                                className={`pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden ${
+                                  isTouch ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                                } transition-opacity duration-200`}
+                              >
+                                <div className="absolute inset-0 bg-gradient-to-t from-[#ef4444]/25 via-[#ef4444]/10 to-transparent" />
+                                <div className="absolute inset-0 rounded-xl ring-1 ring-[#ef4444]/30 shadow-[inset_0_0_22px_rgba(239,68,68,0.45)]" />
+                                <div className={`absolute inset-0 flex ${isTouch ? 'items-end pb-4' : 'items-center'} justify-center`}>
                                   <button
                                     className={`pointer-events-auto px-4 py-2 rounded-full text-white text-sm font-semibold ring-1 ring-white/20 transition-shadow
                                       bg-[#ef4444] shadow-[0_0_14px_rgba(239,68,68,0.65)] hover:shadow-[0_0_26px_rgba(239,68,68,0.95)]
@@ -2003,6 +2021,16 @@ function MyCampaignCard({
   progress?: { raised: bigint; goal: bigint }
 }) {
   const router = useRouter();
+  // NEW: touch detection for this card (standalone component scope)
+  const [isTouch, setIsTouch] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(hover: none), (pointer: coarse)');
+    const onChange = () => setIsTouch(mq.matches);
+    onChange();
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
   const idStr = (campaign.id ?? 0n).toString();
 
   // NEW: compute target/raised and treat goal==0 as flexible to hide progress
@@ -2070,11 +2098,14 @@ function MyCampaignCard({
       ) : (
         // CHANGED: full-card overlay, button centered on the image area (h-60)
         (isReached || isNoGoal) && (
-          <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-            <div className="absolute inset-0 bg-gradient-to-t from-[#10b981]/35 via-[#10b981]/10 to-transparent" />
-            <div className="absolute inset-0 rounded-xl ring-1 ring-[#10b981]/40 shadow-[inset_0_0_22px_rgba(16,185,129,0.45)]" />
-            {/* CHANGED: center button in the middle of the entire card */}
-            <div className="absolute inset-0 flex items-center justify-center">
+          <div
+            className={`pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden ${
+              isTouch ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            } transition-opacity duration-200`}
+          >
+            <div className="absolute inset-0 bg-gradient-to-t from-[#10b981]/30 via-[#10b981]/10 to-transparent" />
+            <div className="absolute inset-0 rounded-xl ring-1 ring-[#10b981]/30 shadow-[inset_0_0_22px_rgba(16,185,129,0.45)]" />
+            <div className={`absolute inset-0 flex ${isTouch ? 'items-end pb-4' : 'items-center'} justify-center`}>
               <button
                 className="pointer-events-auto px-4 py-2 rounded-full bg-[#10b981] text-white text-sm font-semibold ring-1 ring-white/20 shadow-[0_0_14px_rgba(16,185,129,0.65)] hover:shadow-[0_0_26px_rgba(16,185,129,0.95)] transition-shadow"
                 aria-label="Withdraw funds"
@@ -2091,7 +2122,7 @@ function MyCampaignCard({
         )
       )}
 
-      <div className="absolute inset-0 rounded-lg transition-opacity duration-200 opacity-0 group-hover:opacity-100 bg-gradient-to-t from-black/30 via-black/10 to-transparent" />
+      {/* ...existing code... */}
     </div>
   );
 }
