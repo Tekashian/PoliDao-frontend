@@ -23,8 +23,6 @@ import { useRouter } from 'next/navigation';
 import { usePublicClient } from 'wagmi';
 // NEW: storage ABI
 import { poliDaoStorageAbi } from '../../blockchain/storageAbi';
-import Head from 'next/head'; // ADD: set favicon via next/head
-import { sepolia } from 'viem/chains';
 
 import './myaccountstyles.css';
 
@@ -46,6 +44,7 @@ const ERC20_ABI = [
   { name: 'allowance', type: 'function', stateMutability: 'view', inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] },
   { name: 'approve', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ name: '', type: 'bool' }] },
   { name: 'symbol', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'string' }] },
+  { name: 'decimals', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint8' }] },
 ] as const;
 
 interface Fundraiser {
@@ -73,8 +72,8 @@ export default function AccountPage() {
     'dashboard' | 'donations' | 'fundraisers'
   >('dashboard');
   const router = useRouter();
-  // NEW: public client pinned to Sepolia for simulations/reads
-  const publicClient = usePublicClient({ chainId: sepolia.id });
+  // NEW: public client for simulateContract
+  const publicClient = usePublicClient();
 
   // FIX: define chainRefresh early (used by many hooks below)
   const [chainRefresh, setChainRefresh] = useState(0);
@@ -90,8 +89,7 @@ export default function AccountPage() {
   const { data: coreAddress } = useReadContract({
     address: ROUTER_ADDRESS,
     abi: poliDaoRouterAbi,
-    functionName: 'coreContract',
-    chainId: sepolia.id,
+    functionName: 'coreContract'
   });
 
   // Security module from Router (single definition)
@@ -99,7 +97,6 @@ export default function AccountPage() {
     address: ROUTER_ADDRESS,
     abi: poliDaoRouterAbi,
     functionName: 'security',
-    chainId: sepolia.id,
   });
 
   // ADD: analytics and storage modules (used later)
@@ -107,16 +104,14 @@ export default function AccountPage() {
     address: coreAddress as `0x${string}` | undefined,
     abi: poliDaoCoreAbi,
     functionName: 'analyticsModule',
-    query: { enabled: !!coreAddress },
-    chainId: sepolia.id,
+    query: { enabled: !!coreAddress }
   });
 
   const { data: storageAddress } = useReadContract({
     address: coreAddress as `0x${string}` | undefined,
     abi: poliDaoCoreAbi,
     functionName: 'storageContract',
-    query: { enabled: !!coreAddress },
-    chainId: sepolia.id,
+    query: { enabled: !!coreAddress }
   });
 
   // ADD: spenderAddress (used in allowances)
@@ -124,8 +119,7 @@ export default function AccountPage() {
     address: coreAddress as `0x${string}` | undefined,
     abi: poliDaoCoreAbi,
     functionName: 'spenderAddress',
-    query: { enabled: !!coreAddress },
-    chainId: sepolia.id,
+    query: { enabled: !!coreAddress }
   });
 
   // Security diagnostics reads (single set)
@@ -134,14 +128,12 @@ export default function AccountPage() {
     abi: SECURITY_ABI,
     functionName: 'payoutLimitUSDC',
     query: { enabled: !!securityAddress },
-    chainId: sepolia.id,
   });
   const { data: securityLevelTuple } = useReadContract({
     address: securityAddress as `0x${string}` | undefined,
     abi: SECURITY_ABI,
     functionName: 'getSecurityLevel',
     query: { enabled: !!securityAddress },
-    chainId: sepolia.id,
   });
   const { data: refundRateLimit } = useReadContract({
     address: securityAddress as `0x${string}` | undefined,
@@ -149,7 +141,6 @@ export default function AccountPage() {
     functionName: 'checkRateLimit',
     args: [(address || '0x0000000000000000000000000000000000000000') as `0x${string}`, 'refund'],
     query: { enabled: !!securityAddress && !!address },
-    chainId: sepolia.id,
   });
   const { data: withdrawRateLimit } = useReadContract({
     address: securityAddress as `0x${string}` | undefined,
@@ -157,7 +148,6 @@ export default function AccountPage() {
     functionName: 'checkRateLimit',
     args: [(address || '0x0000000000000000000000000000000000000000') as `0x${string}`, 'withdrawFunds'],
     query: { enabled: !!securityAddress && !!address },
-    chainId: sepolia.id,
   });
 
   // Security memos (single set)
@@ -243,7 +233,6 @@ export default function AccountPage() {
       abi: poliDaoRouterAbi,
       functionName: 'getFundraiserProgress' as const,
       args: [fid],
-      chainId: sepolia.id,
     }));
   }, [myCampaignIds, chainRefresh]);
 
@@ -367,19 +356,18 @@ export default function AccountPage() {
     abi: poliDaoRouterAbi,
     functionName: 'listUserDonations',
     args: [address ?? '0x0000000000000000000000000000000000000000', 0n, 1000n],
-    query: { enabled: !!address },
-    chainId: sepolia.id,
+    query: { enabled: !!address }
   });
 
   // Fallback A: batch per-campaign donation reads (Router.getDonationAmount)
   const donationAmountContracts = React.useMemo(() => {
     if (!address || !campaigns || campaigns.length === 0) return [];
+    // Limit to first 200 to avoid RPC overload
     return campaigns.slice(0, 200).map((f: any) => ({
       address: ROUTER_ADDRESS,
       abi: poliDaoRouterAbi,
-      functionName: 'getDonationAmount' as const,
-      args: [BigInt(f.id), address as `0x${string}`],
-      chainId: sepolia.id,
+      functionName: 'getDonationAmount',
+      args: [BigInt(f.id), address as `0x${string}`]
     }));
   }, [address, campaigns]);
 
@@ -453,9 +441,8 @@ export default function AccountPage() {
     return tokensOfInterest.map((t) => ({
       address: t as `0x${string}`,
       abi: ERC20_ABI,
-      functionName: 'allowance' as const,
+      functionName: 'allowance',
       args: [address as `0x${string}`, spender],
-      chainId: sepolia.id,
     }));
   }, [address, coreAddress, coreSpender, tokensOfInterest]);
 
@@ -481,15 +468,13 @@ export default function AccountPage() {
   const symbolContracts = React.useMemo(() => tokensWithAllowance.map((x) => ({
     address: x.token,
     abi: ERC20_ABI,
-    functionName: 'symbol' as const,
-    chainId: sepolia.id,
+    functionName: 'symbol',
   })), [tokensWithAllowance]);
 
   const decimalsContracts = React.useMemo(() => tokensWithAllowance.map((x) => ({
     address: x.token,
     abi: ERC20_ABI,
-    functionName: 'decimals' as const,
-    chainId: sepolia.id,
+    functionName: 'decimals',
   })), [tokensWithAllowance]);
 
   const { data: symbolResults } = useReadContracts({
@@ -537,9 +522,8 @@ export default function AccountPage() {
     return mine.map((f: any) => ({
       address: analyticsAddress as `0x${string}`,
       abi: poliDaoAnalyticsAbi,
-      functionName: 'getDonorsCount' as const,
-      args: [BigInt(f.id)],
-      chainId: sepolia.id,
+      functionName: 'getDonorsCount',
+      args: [BigInt(f.id)]
     }));
   }, [analyticsAddress, campaigns, address]);
 
@@ -568,9 +552,8 @@ export default function AccountPage() {
     return donatedFundraiserIds.slice(0, 50).map((fid) => ({
       address: ROUTER_ADDRESS,
       abi: poliDaoRouterAbi,
-      functionName: 'canRefund' as const,
-      args: [fid, address as `0x${string}`],
-      chainId: sepolia.id,
+      functionName: 'canRefund',
+      args: [fid, address as `0x${string}`]
     }));
   }, [donatedFundraiserIds, address]);
 
@@ -1275,7 +1258,6 @@ export default function AccountPage() {
       abi: poliDaoStorageAbi,
       functionName: 'fundraisers' as const,
       args: [fid],
-      chainId: sepolia.id,
     }));
   }, [storageAddress, myCampaignIds, chainRefresh]);
 
@@ -1514,18 +1496,20 @@ export default function AccountPage() {
 
                             {/* Thank-you overlay when goal-based campaign reached its target */}
                             {reached ? (
-                              // Full-card overlay
-                              <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-100">
+                              // Full-card overlay (previously only image area)
+                              <div className="pointer-events-none absolute inset-0 z-10 rounded-t-xl overflow-hidden opacity-100">
                                 <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/40 via-fuchsia-400/20 to-transparent" />
-                                <div className="absolute inset-0 rounded-xl ring-1 ring-white/30 shadow-[inset_0_0_28px_rgba(16,185,129,0.45)]" />
+                                <div className="absolute inset-0 rounded-t-xl ring-1 ring-white/30 shadow-[inset_0_0_28px_rgba(16,185,129,0.45)]" />
+                                {/* CHANGED: center the thank-you message */}
                                 <div className="absolute inset-0 flex items-center justify-center">
+                                  {/* CHANGED: solid white (no transparency) */}
                                   <span className="pointer-events-none px-4 py-2 rounded-full bg-white text-emerald-700 text-sm font-semibold ring-1 ring-emerald-300 shadow">
                                     Thank you for your support! 🎉
                                   </span>
                                 </div>
                               </div>
                             ) : isFlexibleCampaign ? (
-                              // Flexible/no-goal overlay
+                              // NEW: Yellow info overlay for flexible/no-goal campaigns (refunds unavailable)
                               <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                                 <div className="absolute inset-0 bg-gradient-to-t from-amber-400/35 via-amber-300/10 to-transparent" />
                                 <div className="absolute inset-0 rounded-xl ring-1 ring-amber-400/40 shadow-[inset_0_0_22px_rgba(251,191,36,0.45)]" />
@@ -1539,261 +1523,575 @@ export default function AccountPage() {
                                 </div>
                               </div>
                             ) : (
-                              // Not reached overlay
+                              // Red revoke overlay on hover – only for goal-based not-yet-reached
                               <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                                 <div className="absolute inset-0 bg-gradient-to-t from-[#ef4444]/35 via-[#ef4444]/10 to-transparent" />
                                 <div className="absolute inset-0 rounded-xl ring-1 ring-[#ef4444]/40 shadow-[inset_0_0_22px_rgba(239,68,68,0.45)]" />
                                 <div className="absolute inset-0 flex items-center justify-center">
-                                  <span className="pointer-events-none text-white text-sm font-semibold">
-                                    Cel zbiórki nieosiągnięty
-                                  </span>
+                                  <button
+                                    className={`pointer-events-auto px-4 py-2 rounded-full text-white text-sm font-semibold ring-1 ring-white/20 transition-shadow
+                                      bg-[#ef4444] shadow-[0_0_14px_rgba(239,68,68,0.65)] hover:shadow-[0_0_26px_rgba(239,68,68,0.95)]
+                                      ${isPending ? 'cursor-wait' : ''}`}
+                                    aria-label="Revoke donation"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      doQuickRefund(BigInt(idStr));
+                                    }}
+                                    disabled={isPending}
+                                  >
+                                    {isPending ? 'Revoking...' : 'Revoke donation'}
+                                  </button>
                                 </div>
                               </div>
                             )}
 
-                            {/* Always-visible CTAs over overlays */}
-                            {donationAmount > 0n && (
-                              <div className="absolute bottom-3 right-3 z-20 flex gap-2 pointer-events-none">
-                                <button
-                                  type="button"
-                                  className="pointer-events-auto px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    e.preventDefault();
-                                    doQuickRefund(BigInt(idStr));
-                                  }}
-                                  disabled={isPending}
-                                  title="Refund your donation"
-                                >
-                                  {isPending ? 'Processing…' : 'Refund'}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="pointer-events-auto px-3 py-1.5 rounded-md bg-white/90 hover:bg-white text-gray-800 text-xs font-semibold shadow ring-1 ring-gray-200"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    e.preventDefault();
-                                    router.push(`/campaigns/${idStr}`);
-                                  }}
-                                  title="Open details"
-                                >
-                                  Details
-                                </button>
-                              </div>
-                            )}
+                            {/* delikatny ogólny hover dla kart */}
+                            <div className="absolute inset-0 rounded-lg transition-opacity duration-200 opacity-0 group-hover:opacity-100 bg-gradient-to-t from-black/30 via-black/10 to-transparent" />
                           </div>
                         </div>
                       );
                     })}
                   </div>
                 ) : (
-                  <p className="text-center text-gray-500 py-4">Brak darowizn</p>
+                  <p>You haven't made any donations yet.</p>
                 );
               })()
             ) : (
-              <p className="text-center text-gray-500 py-4">Brak darowizn</p>
+              <p>You haven't made any donations yet.</p>
             )}
           </div>
         )}
 
         {activeTab === 'fundraisers' && (
           <div className="p-4 bg-white rounded-lg shadow-md">
-            <h2 className="text-xl font-semibold mb-4">Your Fundraisers</h2>
-            {campaignsLoading ? (
+            <h2 className="text-xl font-semibold mb-4 text-center">Your Fundraisers</h2>
+            {!address ? (
+              <p>Connect your wallet to see your fundraisers.</p>
+            ) : campaignsLoading ? (
               <p>Loading...</p>
             ) : campaignsError ? (
               <p className="text-red-500">Error loading fundraisers</p>
-            ) : campaigns && campaigns.length > 0 ? (
+            ) : myCampaigns.length > 0 ? (
               <div className="flex flex-wrap justify-center gap-6">
-                {myCampaigns.map((c: any) => {
-                  const idStr = (c.id ?? 0n).toString();
-                  const donationAmount = donatedPerFundraiser.get(idStr) ?? 0n;
+                {(() => {
+                  // NEW ORDER:
+                  // 1) Ready to withdraw (reached goal, not withdrawn) -> first
+                  // 2) Others by highest raised (including no-goal campaigns) -> next
+                  // 3) Withdrawn/successful -> last
+                  // Tie-breaker for equal raised: newest first (id desc)
 
-                  // Detect flexible/no-goal
-                  const goalRaw = BigInt(c.goalAmount ?? c.target ?? 0n);
-                  const isFlexibleCampaign = Boolean(c.isFlexible) || goalRaw === 0n;
-
-                  // Normalize to CampaignCard's expected shape
-                  const mappedCampaign = {
-                    campaignId: idStr,
-                    targetAmount: (c.goalAmount ?? c.target ?? 0n) as bigint,
-                    raisedAmount: (c.raisedAmount ?? c.raised ?? 0n) as bigint,
-                    creator: c.creator as string,
-                    token: c.token as string,
-                    endTime: (c.endDate ?? c.endTime ?? 0n) as bigint,
-                    // ensure cards hide progress for flexible/no-goal
-                    isFlexible: isFlexibleCampaign,
+                  const getProg = (c: any) => {
+                    const idStr = (c.id ?? 0n).toString();
+                    const pr = progressById.get(idStr);
+                    const raised = BigInt(pr?.raised ?? c.raisedAmount ?? c.raised ?? 0n);
+                    const goal = BigInt(pr?.goal ?? c.goalAmount ?? c.target ?? 0n);
+                    return { raised, goal };
                   };
-
-                  // REPLACED: prefer on-chain/metadata description when present
-                  const plainDesc = String(c.description ?? c.details ?? c.story ?? c.metadata?.description ?? '').trim();
-                  const description =
-                    plainDesc.length > 0
-                      ? plainDesc
-                      : (donationAmount > 0n
-                          ? `Your donations: ${(Number(donationAmount) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC`
-                          : `Campaign created by ${String(c.creator).slice(0, 6)}...${String(c.creator).slice(-4)}`);
-
-                  const metadata = {
-                    title:
-                      (c.title && String(c.title).trim().length > 0)
-                        ? c.title
-                        : c.isFlexible
-                          ? `Flexible campaign #${idStr}`
-                          : `Fundraiser #${idStr}`,
-                    // CHANGED: show real description if provided
-                    description,
-                    image: "/images/zbiorka.png",
+                  const isSuccess = (c: any) => {
+                    const idStr = (c.id ?? 0n).toString();
+                    return successById.get(idStr) ?? false;
                   };
+                  const reachedGoal = (c: any) => {
+                    const { raised, goal } = getProg(c);
+                    return goal > 0n && raised >= goal;
+                  };
+                  const idOf = (c: any) => BigInt(c.id ?? 0n);
 
-                  const isRefundable = canRefundById.get(idStr) ?? false;
-                  const isPending = pendingRefund?.id === BigInt(idStr) || isRefundMining;
+                  const sorted = myCampaigns.slice().sort((a: any, b: any) => {
+                    const aId = idOf(a);
+                    const bId = idOf(b);
 
-                  // goal reached only applies to goal-based fundraisers
-                  const reached = (() => {
-                    const raised = BigInt(c.raisedAmount ?? c.raised ?? 0n);
-                    return goalRaw > 0n && raised >= goalRaw;
-                  })();
+                    const aProg = getProg(a);
+                    const bProg = getProg(b);
 
-                  return (
-                    <div key={idStr} className="w-full sm:w-[24rem] flex-none">
-                      <div
-                        className="relative group cursor-pointer transition-transform"
-                        onClick={() => router.push(`/campaigns/${idStr}`)}
-                        title="Go to campaign page"
-                      >
-                        <CampaignCard
-                          campaign={mappedCampaign}
-                          metadata={metadata}
-                          donationAmount={donationAmount}
-                          isRefundable={isRefundable}
-                          showDetails
+                    const aSucc = isSuccess(a);
+                    const bSucc = isSuccess(b);
+
+                    const aReached = reachedGoal(a);
+                    const bReached = reachedGoal(b);
+
+                    // Grouping:
+                    // 0 = reached (ready to withdraw, not withdrawn)
+                    // 1 = not reached and not withdrawn (incl. no-goal)
+                    // 2 = withdrawn/success
+                    const aGroup = !aSucc && aReached ? 0 : (aSucc ? 2 : 1);
+                    const bGroup = !bSucc && bReached ? 0 : (bSucc ? 2 : 1);
+
+                    if (aGroup !== bGroup) return aGroup - bGroup;
+
+                    // For group 1: sort by raised desc, then newest first
+                    if (aGroup === 1) {
+                      if (aProg.raised !== bProg.raised) return aProg.raised > bProg.raised ? -1 : 1;
+                      if (aId !== bId) return aId > bId ? -1 : 1;
+                      return 0;
+                    }
+
+                    // For groups 0 and 2: tie-breaker newest first
+                    if (aId !== bId) return aId > bId ? -1 : 1;
+                    return 0;
+                  });
+
+                  return sorted.map((c: any) => {
+                    const idStr = (c.id ?? 0n).toString();
+                    const success = successById.get(idStr) ?? false;
+                    const prog = progressById.get(idStr);
+                    return (
+                      <div key={String(c.id)} className="w-full sm:w-[24rem] flex-none">
+                        <MyCampaignCard
+                          campaign={c}
+                          progress={prog}
+                          onWithdraw={(id) => openWithdrawDialog(BigInt(id))}
+                          success={success}
                         />
-
-                        {/* Align overlays with rounded-xl */}
-                        {reached ? (
-                          <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-100">
-                            <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/40 via-fuchsia-400/20 to-transparent" />
-                            <div className="absolute inset-0 rounded-xl ring-1 ring-white/30 shadow-[inset_0_0_28px_rgba(16,185,129,0.45)]" />
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <span className="px-4 py-2 rounded-full bg-white text-emerald-700 text-sm font-semibold ring-1 ring-emerald-300 shadow">
-                                Thank you for your support! 🎉
-                              </span>
-                            </div>
-                          </div>
-                        ) : isFlexibleCampaign ? (
-                          <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                            <div className="absolute inset-0 bg-gradient-to-t from-amber-400/35 via-amber-300/10 to-transparent" />
-                            <div className="absolute inset-0 rounded-xl ring-1 ring-amber-400/40 shadow-[inset_0_0_22px_rgba(251,191,36,0.45)]" />
-                          </div>
-                        ) : (
-                          <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                            <div className="absolute inset-0 bg-gradient-to-t from-[#ef4444]/35 via-[#ef4444]/10 to-transparent" />
-                            <div className="absolute inset-0 rounded-xl ring-1 ring-[#ef4444]/40 shadow-[inset_0_0_22px_rgba(239,68,68,0.45)]" />
-                          </div>
-                        )}
-
-                        {/* Always-visible Withdraw CTA for creator */}
-                        <div className="absolute bottom-3 right-3 z-20 flex gap-2 pointer-events-none">
-                          <button
-                            type="button"
-                            className="pointer-events-auto px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              openWithdrawDialog(BigInt(idStr));
-                            }}
-                            title="Withdraw available funds"
-                          >
-                            Withdraw
-                          </button>
-                          <button
-                            type="button"
-                            className="pointer-events-auto px-3 py-1.5 rounded-md bg-white/90 hover:bg-white text-gray-800 text-xs font-semibold shadow ring-1 ring-gray-200"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              router.push(`/campaigns/${idStr}`);
-                            }}
-                            title="Open details"
-                          >
-                            Details
-                          </button>
-                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+                })()}
               </div>
             ) : (
-              <p className="text-center text-gray-500 py-4">Nie utworzono jeszcze żadnych zbiórek</p>
+              <p>You haven't created any fundraisers yet.</p>
             )}
           </div>
         )}
+
+        {/* removed votes section */}
+        {/* {activeTab === 'votes' && ( ... )} */}
       </div>
 
-      <Footer />
-
-      {/* --- Donation history dialog --- */}
+      {/* NEW: Historia darowizn – modal */}
       <Dialog
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
         maxWidth="md"
         fullWidth
+        PaperProps={{
+          className: 'dialog-surface',
+          sx: {
+            background: 'var(--surface)',
+            color: 'var(--text)',
+            border: '1px solid var(--border)',
+            borderRadius: '16px',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.45)',
+            '& .MuiDialogTitle-root': {
+              background: 'color-mix(in srgb, var(--surface) 90%, black 10%)',
+              color: 'var(--text)',
+            },
+            '& .MuiDialogContent-root': {
+              background: 'color-mix(in srgb, var(--surface) 96%, white 4%)',
+              color: 'var(--text)',
+            },
+            '& .MuiDialogContent-dividers': {
+              borderTop: '1px solid var(--border)',
+              borderBottom: '1px solid var(--border)',
+            },
+            '& .MuiDialogActions-root': {
+              background: 'color-mix(in srgb, var(--surface) 90%, black 10%)',
+              borderTop: '1px solid var(--border)',
+            },
+            '& a': { color: 'var(--primary)' },
+          },
+        }}
       >
-        <DialogTitle>
-          Your Donation History
-        </DialogTitle>
-        <DialogContent>
+        <DialogTitle>Donation history</DialogTitle>
+        <DialogContent dividers>
           {historyLoading ? (
-            <p>Loading...</p>
-          ) : eventTotals ? (
-            <div>
-              <div className="text-sm text-gray-500 mb-4">
-                Total donations: {eventTotals.count} <br />
-                Total amount: {Number(eventTotals.sumBase) / 1_000_000} USDC
-              </div>
-              <div className="space-y-2">
-                {donationHistory.map((entry) => (
-                  <div
-                    key={entry.txHash}
-                    className="p-4 bg-gray-50 rounded-lg shadow-sm flex flex-col sm:flex-row gap-2"
-                  >
-                    <div className="flex-1">
-                      <div className="text-sm text-gray-500">
-                        Fundraiser ID: {entry.fundraiserId.toString()}
-                      </div>
-                      <div className="text-lg font-semibold">
-                        {
-                          // FIX: do not mix BigInt with number; convert to Number first
-                          (Number(entry.amount ?? 0n) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })
-                        } USDC
-                      </div>
-                    </div>
-                    <div className="whitespace-nowrap">
-                      <a
-                        href={`https://sepolia.etherscan.io/tx/${entry.txHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline"
-                      >
-                        View on Etherscan
-                      </a>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <p>Loading history...</p>
+          ) : donationHistory.length === 0 ? (
+            <p className="text-gray-600">No recorded donations for this account.</p>
           ) : (
-            <p className="text-center text-gray-500 py-4">No donation history found</p>
+            <ul className="divide-y divide-gray-100">
+              {donationHistory.map((d, idx) => {
+                const fid = d.fundraiserId.toString();
+                const camp = (campaigns as any[])?.find(x => x?.id?.toString?.() === fid);
+                const title = camp?.title && String(camp.title).trim().length >  0
+                  ? camp.title
+                  : camp?.isFlexible
+                    ? `Flexible campaign #${fid}`
+                    : `Fundraiser #${fid}`;
+                return (
+                  <li key={`${d.txHash}-${idx}`} className="flex items-center justify-between py-3">
+                    <div>
+                      <a href={`/campaigns/${fid}`} className="text-sm font-medium text-[#10b981] hover:underline">
+                        {title}
+                      </a>
+                      <p className="text-xs text-gray-500">{new Date(d.timestamp).toLocaleString('pl-PL')}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-green-700">
+                        {(Number(d.amount) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC
+                      </p>
+                      {d.txHash && (
+                        <a
+                          href={`https://sepolia.etherscan.io/tx/${d.txHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-600 hover:underline"
+                        >
+                          Etherscan
+                        </a>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setHistoryOpen(false)} color="primary">
-            Close
-          </Button>
+          <Button onClick={() => setHistoryOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
+
+      {/* NEW: Refund modal – styled to match app */}
+      <Dialog
+        open={refundOpen}
+        onClose={() => setRefundOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          className: 'dialog-surface',
+          sx: {
+            background: 'var(--surface)',
+            color: 'var(--text)',
+            border: '1px solid var(--border)',
+            borderRadius: '16px',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.45)',
+            '& .MuiDialogTitle-root': {
+              background: 'color-mix(in srgb, var(--surface) 90%, black 10%)',
+              color: 'var(--text)',
+            },
+            '& .MuiDialogContent-root': {
+              background: 'color-mix(in srgb, var(--surface) 96%, white 4%)',
+              color: 'var(--text)',
+            },
+            '& .MuiDialogContent-dividers': {
+              borderTop: '1px solid var(--border)',
+              borderBottom: '1px solid var(--border)',
+            },
+            '& .MuiDialogActions-root': {
+              background: 'color-mix(in srgb, var(--surface) 90%, black 10%)',
+              borderTop: '1px solid var(--border)',
+            },
+          },
+        }}
+      >
+        <DialogTitle>
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#ef4444]/10 text-[#ef4444]">↩</span>
+            <span>Revoke donation</span>
+          </div>
+        </DialogTitle>
+        <DialogContent dividers>
+          {!refundCtx ? (
+            <p>Loading...</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-xl bg-gray-50 p-4 ring-1 ring-gray-100 shadow-sm">
+                <p className="text-sm text-gray-500">Fundraiser</p>
+                <p className="text-base font-semibold">{refundCtx.title}</p>
+                <div className="mt-3 flex items-center justify-between">
+                  <span className="text-sm text-gray-500">Your total donations</span>
+                  {(() => {
+                    const donatedNow = (typeof refundCtx.donationStorage === 'bigint'
+                      ? refundCtx.donationStorage
+                      : refundCtx.donated) ?? 0n;
+                    return (
+                      <span className="text-sm font-semibold text-gray-900">
+                        {(Number(donatedNow) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC
+                      </span>
+                    );
+                  })()}
+                </div>
+                {/* Removed any 'available/remaining/next tranche' indicators — full amount is refunded */}
+              </div>
+
+              <div className="rounded-xl p-4 ring-1 ring-gray-100 bg-white">
+                {(() => {
+                  const donatedNow = (typeof refundCtx.donationStorage === 'bigint'
+                    ? refundCtx.donationStorage
+                    : refundCtx.donated) ?? 0n;
+                  const isPending = isRefundMining || (pendingRefund && refundCtx && pendingRefund.id === refundCtx.fid);
+                  const noFunds = donatedNow <= 0n;
+                  const disabled = isPending || noFunds;
+
+                  // CHANGED: static label
+                  const label = 'Refunding all amount ...';
+
+                  return (
+                    <button
+                      onClick={doFullRefund}
+                      disabled={disabled}
+                      className={`w-full px-4 py-2 rounded-lg text-white text-sm font-semibold shadow transition
+                        bg-[#ef4444] hover:shadow-[0_0_22px_rgba(239,68,68,0.45)]
+                        ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })()}
+
+                {refundUi && (
+                  <p className="mt-3 text-xs text-gray-600">{refundUi}</p>
+                )}
+              </div>
+
+              {/* Removed fee/net/remaining badges — modal focuses on total donation only */}
+            </div>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRefundOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* NEW: Withdraw modal – styled to match app */}
+      <Dialog
+        open={withdrawOpen}
+        onClose={() => setWithdrawOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          className: 'dialog-surface',
+          sx: {
+            background: 'var(--surface)',
+            color: 'var(--text)',
+            border: '1px solid var(--border)',
+            borderRadius: '16px',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.45)',
+            '& .MuiDialogTitle-root': {
+              background: 'color-mix(in srgb, var(--surface) 90%, black 10%)',
+              color: 'var(--text)',
+            },
+            '& .MuiDialogContent-root': {
+              background: 'color-mix(in srgb, var(--surface) 96%, white 4%)',
+              color: 'var(--text)',
+            },
+            '& .MuiDialogContent-dividers': {
+              borderTop: '1px solid var(--border)',
+              borderBottom: '1px solid var(--border)',
+            },
+            '& .MuiDialogActions-root': {
+              background: 'color-mix(in srgb, var(--surface) 90%, black 10%)',
+              borderTop: '1px solid var(--border)',
+            },
+          },
+        }}
+      >
+        <DialogTitle>
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#10b981]/10 text-[#10b981]">⬇</span>
+            <span>Withdraw funds</span>
+          </div>
+        </DialogTitle>
+        <DialogContent dividers>
+          {!withdrawCtx ? (
+            <p>Loading...</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-xl bg-gray-50 p-4 ring-1 ring-gray-100 shadow-sm">
+                <p className="text-sm text-gray-500">Fundraiser</p>
+                <p className="text-base font-semibold">{withdrawCtx.title}</p>
+                <div className="mt-3 flex items-center justify-between">
+                  <span className="text-sm text-gray-500">Raised</span>
+                  <span className="text-sm font-semibold text-gray-900">
+                    {(Number(withdrawCtx.raised) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} USDC
+                  </span>
+                </div>
+                <div className="mt-3">
+                  {withdrawCtx.goal > 0n && withdrawCtx.raised >= withdrawCtx.goal ? (
+                    <span className="inline-flex items-center rounded-full bg-[#10b981]/10 px-2.5 py-1 text-xs font-semibold text-[#10b981] ring-1 ring-[#10b981]/20">
+                      Goal reached — full withdrawal available
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+                      Tranche-based withdrawal — available amount depends on schedule
+                    </span>
+                  )}
+                </div>
+
+                {/* CHANGED: show tranche diagnostics for flexible/no-goal and for target-not-reached */}
+                {(withdrawCtx.goal === 0n || withdrawCtx.raised < withdrawCtx.goal) && (
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="text-xs text-gray-600">
+                      <div className="font-semibold text-gray-800">Available now</div>
+                      <div className="mt-0.5">
+                        {((Number(withdrawCtx.allowedNow ?? 0n) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 }))} USDC
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      <div className="font-semibold text-gray-800">Remaining</div>
+                      <div className="mt-0.5">
+                        {((Number(withdrawCtx.remaining ?? 0n) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 }))} USDC
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      <div className="font-semibold text-gray-800">Next tranche</div>
+                      <div className="mt-0.5">
+                        {withdrawCtx.nextAt && withdrawCtx.nextAt > 0n
+                          ? new Date(Number(withdrawCtx.nextAt) * 1000).toLocaleString('pl-PL')
+                          : '—'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-xl p-4 ring-1 ring-gray-100 bg-white">
+                <button
+                  onClick={doFullWithdraw}
+                  disabled={isWithdrawMining || (pendingWithdraw && withdrawCtx && pendingWithdraw.id === withdrawCtx.fid)}
+                  className={`w-full px-4 py-2 rounded-lg text-white text-sm font-semibold shadow transition
+                    bg-[#10b981] ${isWithdrawMining ? 'opacity-70 cursor-wait' : 'hover:shadow-[0_0_22px_rgba(16,185,129,0.35)]'}`}
+                >
+                  {(() => {
+                    const reached = withdrawCtx.goal > 0n && withdrawCtx.raised >= withdrawCtx.goal;
+                    if (isWithdrawMining) return 'Processing...';
+                    return reached ? 'Withdraw full amount now' : 'Withdraw available tranche';
+                  })()}
+                </button>
+
+                <div className="mt-4">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Or withdraw a custom amount (USDC)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="e.g. 250.00"
+                      value={withdrawInput}
+                      onChange={(e) => setWithdrawInput(e.target.value)}
+                      className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#10b981]/30"
+                    />
+                    <button
+                      onClick={doCustomWithdraw}
+                      disabled={isWithdrawMining}
+                      className={`px-4 py-2 rounded-lg text-white text-sm font-semibold bg-[#10b981] transition ${isWithdrawMining ? 'opacity-70 cursor-wait' : 'hover:shadow-[0_0_18px_rgba(16,185,129,0.35)]'}`}
+                    >
+                      Withdraw amount
+                    </button>
+                  </div>
+                </div>
+
+                {withdrawUi && (
+                  <p className="mt-3 text-xs text-gray-600">{withdrawUi}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setWithdrawOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Footer />
     </>
+  );
+}
+
+// Extend MyCampaignCard to accept success flag and gray out if finished
+function MyCampaignCard({
+  campaign,
+  onWithdraw,
+  success,
+  progress
+}: {
+  campaign: any,
+  onWithdraw?: (id: string) => void,
+  success?: boolean,
+  progress?: { raised: bigint; goal: bigint }
+}) {
+  const router = useRouter();
+  const idStr = (campaign.id ?? 0n).toString();
+
+  // NEW: compute target/raised and treat goal==0 as flexible to hide progress
+  const targetAmount = BigInt(progress?.goal ?? (campaign.goalAmount ?? campaign.target ?? 0n));
+  const raisedAmount = BigInt(progress?.raised ?? (campaign.raisedAmount ?? campaign.raised ?? 0n));
+  const isFlexibleComputed = Boolean(campaign.isFlexible) || targetAmount === 0n;
+
+  // Normalize and override with progress when available
+  const mappedCampaign = {
+    campaignId: idStr,
+    targetAmount,
+    raisedAmount,
+    creator: campaign.creator as string,
+    token: campaign.token as string,
+    endTime: (campaign.endDate ?? campaign.endTime ?? 0n) as bigint,
+    // CHANGED: mark no-goal campaigns as flexible to hide progress bar
+    isFlexible: isFlexibleComputed,
+  };
+
+  const isReached =
+    mappedCampaign.targetAmount > 0n &&
+    mappedCampaign.raisedAmount >= mappedCampaign.targetAmount;
+
+  // NEW: no-goal campaigns are always withdrawable
+  const isNoGoal = mappedCampaign.targetAmount === 0n;
+
+  // REPLACED: prefer campaign description if available
+  const descCandidate = String(
+    campaign.description ?? campaign.details ?? campaign.story ?? campaign.metadata?.description ?? ''
+  ).trim();
+
+  const metadata = {
+    title:
+      (campaign.title && String(campaign.title).trim().length > 0)
+        ? campaign.title
+        : campaign.isFlexible
+          ? `Flexible campaign #${idStr}`
+          : `Fundraiser #${idStr}`,
+    // CHANGED: show real description if provided, otherwise fallback
+    description:
+      descCandidate.length > 0
+        ? descCandidate
+        : `Campaign created by ${String(campaign.creator).slice(0, 6)}...${String(campaign.creator).slice(-4)}`,
+    image: "/images/zbiorka.png",
+  };
+
+  return (
+    <div
+      className={`relative group cursor-pointer transition-transform ${success ? 'grayscale opacity-80' : ''}`}
+      onClick={() => router.push(`/campaigns/${idStr}`)}
+      title="Przejdź do strony zbiórki"
+    >
+      <CampaignCard campaign={mappedCampaign} metadata={metadata} />
+
+      {/* If finished successfully, show grey badge and no CTA */}
+      {success ? (
+        <div className="pointer-events-none absolute left-0 right-0 top-0 h-60 z-10 rounded-t-xl overflow-hidden opacity-100">
+          <div className="absolute inset-0 bg-gradient-to-t from-gray-500/30 via-gray-300/10 to-transparent" />
+          <div className="absolute left-3 top-3">
+            <span className="inline-flex items-center rounded-full bg-gray-800/80 text-white text-xs font-semibold px-2.5 py-1 ring-1 ring-white/10 shadow">
+              Successful
+            </span>
+          </div>
+        </div>
+      ) : (
+        // CHANGED: full-card overlay, button centered on the image area (h-60)
+        (isReached || isNoGoal) && (
+          <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <div className="absolute inset-0 bg-gradient-to-t from-[#10b981]/35 via-[#10b981]/10 to-transparent" />
+            <div className="absolute inset-0 rounded-xl ring-1 ring-[#10b981]/40 shadow-[inset_0_0_22px_rgba(16,185,129,0.45)]" />
+            {/* CHANGED: center button in the middle of the entire card */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <button
+                className="pointer-events-auto px-4 py-2 rounded-full bg-[#10b981] text-white text-sm font-semibold ring-1 ring-white/20 shadow-[0_0_14px_rgba(16,185,129,0.65)] hover:shadow-[0_0_26px_rgba(16,185,129,0.95)] transition-shadow"
+                aria-label="Withdraw funds"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onWithdraw) onWithdraw(idStr);
+                  else router.push(`/campaigns/${idStr}`);
+                }}
+              >
+                Withdraw funds
+              </button>
+            </div>
+          </div>
+        )
+      )}
+
+      <div className="absolute inset-0 rounded-lg transition-opacity duration-200 opacity-0 group-hover:opacity-100 bg-gradient-to-t from-black/30 via-black/10 to-transparent" />
+    </div>
   );
 }

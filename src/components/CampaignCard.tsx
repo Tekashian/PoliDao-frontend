@@ -22,6 +22,14 @@ interface CampaignCardProps {
     description: string;
     image: string;
   };
+  // NEW: optional overlay and CTA slots
+  overlayNode?: React.ReactNode;
+  overlayClassName?: string; // e.g. "opacity-100 md:opacity-0 md:group-hover:opacity-100"
+  ctaNode?: React.ReactNode;
+  // Optional (already passed from callers; keep for TS)
+  donationAmount?: bigint;
+  isRefundable?: boolean;
+  showDetails?: boolean;
 }
 
 // Zastąp formatUnits z ethers własną funkcją
@@ -31,7 +39,7 @@ function formatUSDC(amount: bigint, decimals: number = 6): string {
   return quotient.toFixed(2);
 }
 
-export default function CampaignCard({ campaign, metadata }: CampaignCardProps) {
+export default function CampaignCard({ campaign, metadata, overlayNode, overlayClassName, ctaNode }: CampaignCardProps) {
   const raised = parseFloat(formatUSDC(campaign.raisedAmount, 6));
   const target = parseFloat(formatUSDC(campaign.targetAmount, 6));
   const progress = target > 0 ? Math.min((raised / target) * 100, 100) : 0;
@@ -78,9 +86,8 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
   return (
     <Link 
       href={`/campaigns/${campaign.campaignId}`}
-      // group + GPU transform for smooth scale & lift + accessible focus ring
-      // make card a fixed-height vertical flex so all cards have equal height
-      className="group block w-full max-w-full rounded-xl shadow-md overflow-hidden transform-gpu transition-all duration-300 hover:scale-105 hover:-translate-y-2 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#10b981]/20 flex flex-col h-[520px]"
+      // make container relative so overlays position/scale with card
+      className="group relative block w-full max-w-full rounded-xl shadow-md overflow-hidden transform-gpu transition-all duration-300 hover:scale-105 hover:-translate-y-2 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#10b981]/20 flex flex-col h-[520px]"
       style={{
         willChange: 'transform',
         // Elevated, theme-aware surface: slightly lighter than var(--surface) in dark mode,
@@ -210,6 +217,22 @@ export default function CampaignCard({ campaign, metadata }: CampaignCardProps) 
           </div>
         </div>
       </div>
+
+      {/* NEW: overlay rendered inside the card so it scales and matches rounded corners */}
+      {overlayNode && (
+        <div className={`pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden ${overlayClassName || ''}`}>
+          <div className="w-full h-full relative">
+            {overlayNode}
+          </div>
+        </div>
+      )}
+
+      {/* NEW: CTA area above overlays; stays readable/clickable */}
+      {ctaNode && (
+        <div className="absolute bottom-3 right-3 z-20 flex gap-2 pointer-events-none">
+          <div className="pointer-events-auto">{ctaNode}</div>
+        </div>
+      )}
     </Link>
   );
 }
