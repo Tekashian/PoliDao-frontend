@@ -1514,20 +1514,18 @@ export default function AccountPage() {
 
                             {/* Thank-you overlay when goal-based campaign reached its target */}
                             {reached ? (
-                              // Full-card overlay (previously only image area)
-                              <div className="pointer-events-none absolute inset-0 z-10 rounded-t-xl overflow-hidden opacity-100">
+                              // Full-card overlay
+                              <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-100">
                                 <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/40 via-fuchsia-400/20 to-transparent" />
-                                <div className="absolute inset-0 rounded-t-xl ring-1 ring-white/30 shadow-[inset_0_0_28px_rgba(16,185,129,0.45)]" />
-                                {/* CHANGED: center the thank-you message */}
+                                <div className="absolute inset-0 rounded-xl ring-1 ring-white/30 shadow-[inset_0_0_28px_rgba(16,185,129,0.45)]" />
                                 <div className="absolute inset-0 flex items-center justify-center">
-                                  {/* CHANGED: solid white (no transparency) */}
                                   <span className="pointer-events-none px-4 py-2 rounded-full bg-white text-emerald-700 text-sm font-semibold ring-1 ring-emerald-300 shadow">
                                     Thank you for your support! 🎉
                                   </span>
                                 </div>
                               </div>
                             ) : isFlexibleCampaign ? (
-                              // NEW: Yellow info overlay for flexible/no-goal campaigns (refunds unavailable)
+                              // Flexible/no-goal overlay
                               <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                                 <div className="absolute inset-0 bg-gradient-to-t from-amber-400/35 via-amber-300/10 to-transparent" />
                                 <div className="absolute inset-0 rounded-xl ring-1 ring-amber-400/40 shadow-[inset_0_0_22px_rgba(251,191,36,0.45)]" />
@@ -1541,7 +1539,7 @@ export default function AccountPage() {
                                 </div>
                               </div>
                             ) : (
-                              // Red revoke overlay on hover – only for goal-based not-yet-reached
+                              // Not reached overlay
                               <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                                 <div className="absolute inset-0 bg-gradient-to-t from-[#ef4444]/35 via-[#ef4444]/10 to-transparent" />
                                 <div className="absolute inset-0 rounded-xl ring-1 ring-[#ef4444]/40 shadow-[inset_0_0_22px_rgba(239,68,68,0.45)]" />
@@ -1550,6 +1548,37 @@ export default function AccountPage() {
                                     Cel zbiórki nieosiągnięty
                                   </span>
                                 </div>
+                              </div>
+                            )}
+
+                            {/* Always-visible CTAs over overlays */}
+                            {donationAmount > 0n && (
+                              <div className="absolute bottom-3 right-3 z-20 flex gap-2 pointer-events-none">
+                                <button
+                                  type="button"
+                                  className="pointer-events-auto px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    doQuickRefund(BigInt(idStr));
+                                  }}
+                                  disabled={isPending}
+                                  title="Refund your donation"
+                                >
+                                  {isPending ? 'Processing…' : 'Refund'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="pointer-events-auto px-3 py-1.5 rounded-md bg-white/90 hover:bg-white text-gray-800 text-xs font-semibold shadow ring-1 ring-gray-200"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    router.push(`/campaigns/${idStr}`);
+                                  }}
+                                  title="Open details"
+                                >
+                                  Details
+                                </button>
                               </div>
                             )}
                           </div>
@@ -1641,46 +1670,56 @@ export default function AccountPage() {
                           showDetails
                         />
 
-                        {/* Thank-you overlay when goal-based campaign reached its target */}
+                        {/* Align overlays with rounded-xl */}
                         {reached ? (
-                          // Full-card overlay (previously only image area)
-                          <div className="pointer-events-none absolute inset-0 z-10 rounded-t-xl overflow-hidden opacity-100">
+                          <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-100">
                             <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/40 via-fuchsia-400/20 to-transparent" />
-                            <div className="absolute inset-0 rounded-t-xl ring-1 ring-white/30 shadow-[inset_0_0_28px_rgba(16,185,129,0.45)]" />
-                            {/* CHANGED: center the thank-you message */}
+                            <div className="absolute inset-0 rounded-xl ring-1 ring-white/30 shadow-[inset_0_0_28px_rgba(16,185,129,0.45)]" />
                             <div className="absolute inset-0 flex items-center justify-center">
-                              {/* CHANGED: solid white (no transparency) */}
-                              <span className="pointer-events-none px-4 py-2 rounded-full bg-white text-emerald-700 text-sm font-semibold ring-1 ring-emerald-300 shadow">
+                              <span className="px-4 py-2 rounded-full bg-white text-emerald-700 text-sm font-semibold ring-1 ring-emerald-300 shadow">
                                 Thank you for your support! 🎉
                               </span>
                             </div>
                           </div>
                         ) : isFlexibleCampaign ? (
-                          // NEW: Yellow info overlay for flexible/no-goal campaigns (refunds unavailable)
                           <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                             <div className="absolute inset-0 bg-gradient-to-t from-amber-400/35 via-amber-300/10 to-transparent" />
                             <div className="absolute inset-0 rounded-xl ring-1 ring-amber-400/40 shadow-[inset_0_0_22px_rgba(251,191,36,0.45)]" />
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <span
-                                className="pointer-events-none px-4 py-2 rounded-full bg-amber-500 text-white text-sm font-semibold ring-1 ring-white/20 shadow"
-                                title="Refunds are not available for flexible campaigns"
-                              >
-                                Refunds unavailable for flexible campaigns
-                              </span>
-                            </div>
                           </div>
                         ) : (
-                          // Red revoke overlay on hover – only for goal-based not-yet-reached
                           <div className="pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                             <div className="absolute inset-0 bg-gradient-to-t from-[#ef4444]/35 via-[#ef4444]/10 to-transparent" />
                             <div className="absolute inset-0 rounded-xl ring-1 ring-[#ef4444]/40 shadow-[inset_0_0_22px_rgba(239,68,68,0.45)]" />
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <span className="pointer-events-none text-white text-sm font-semibold">
-                                Cel zbiórki nieosiągnięty
-                              </span>
-                            </div>
                           </div>
                         )}
+
+                        {/* Always-visible Withdraw CTA for creator */}
+                        <div className="absolute bottom-3 right-3 z-20 flex gap-2 pointer-events-none">
+                          <button
+                            type="button"
+                            className="pointer-events-auto px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              openWithdrawDialog(BigInt(idStr));
+                            }}
+                            title="Withdraw available funds"
+                          >
+                            Withdraw
+                          </button>
+                          <button
+                            type="button"
+                            className="pointer-events-auto px-3 py-1.5 rounded-md bg-white/90 hover:bg-white text-gray-800 text-xs font-semibold shadow ring-1 ring-gray-200"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              router.push(`/campaigns/${idStr}`);
+                            }}
+                            title="Open details"
+                          >
+                            Details
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1725,7 +1764,10 @@ export default function AccountPage() {
                         Fundraiser ID: {entry.fundraiserId.toString()}
                       </div>
                       <div className="text-lg font-semibold">
-                        {(entry.amount || 0n) / 1_000_000} USDC
+                        {
+                          // FIX: do not mix BigInt with number; convert to Number first
+                          (Number(entry.amount ?? 0n) / 1_000_000).toLocaleString('pl-PL', { maximumFractionDigits: 2 })
+                        } USDC
                       </div>
                     </div>
                     <div className="whitespace-nowrap">
