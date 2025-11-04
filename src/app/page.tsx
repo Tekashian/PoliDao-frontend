@@ -525,7 +525,8 @@ function FuturisticCarousel({
 
   const INFURA = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || '';
   const ALCHEMY = process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || '';
-  const endpoints = [INFURA, ALCHEMY].filter(Boolean) as string[];
+  // CHANGED: force Alchemy-only if available; fallback to Infura otherwise
+  const endpoints = ALCHEMY ? [ALCHEMY] : (INFURA ? [INFURA] : []);
 
   if (endpoints.length === 0) {
     (window as any).__rpcBalancerPatchedV2 = true;
@@ -1501,8 +1502,9 @@ export default function HomePage() {
                           <div>
                             <h3 className="font-bold text-red-800">Error loading campaigns</h3>
                             {isRateLimited ? (
+                              // CHANGED: remove "(Infura)" to keep message generic
                               <p className="text-red-700 text-sm mt-1">
-                                Public RPC rate limit reached (Infura). Auto‑retry in {retrySeconds}s…
+                                Public RPC rate limit reached. Auto‑retry in {retrySeconds}s…
                               </p>
                             ) : (
                               <p className="text-red-700 text-sm mt-1">{campaignsError.message}</p>
