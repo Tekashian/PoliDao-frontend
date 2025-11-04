@@ -55,7 +55,7 @@ export default function WhitePaperPage() {
   ];
 
   return (
-    <div className="whitepaper wp-root min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+    <div className="whitepaper wp-root min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 overflow-x-hidden">
       <Header />
       
       {/* Progress Bar (green accent) */}
@@ -388,10 +388,12 @@ export default function WhitePaperPage() {
                         A thin controller (PolyFundCore) that: resolves module addresses, coordinates router/extension calls, and exposes view functions (getFundraiserDetails, getFundraiserCount, getDonationAmount).
                       </p>
                       {/* Core contract address + copy button */}
-                      <div className="flex items-center gap-3 mt-3">
-                        <div className="truncate">
+                      <div className="flex items-center gap-3 mt-3 overflow-hidden">
+                        <div className="flex-1 min-w-0">
                           <div className="text-xs text-gray-500">Core contract (Mainnet):</div>
-                          <div className="font-mono text-sm text-gray-800">{CORE_ADDRESS}</div>
+                          <div className="font-mono text-sm text-gray-800 break-all sm:break-normal sm:truncate sm:whitespace-nowrap">
+                            {CORE_ADDRESS}
+                          </div>
                         </div>
                         <button
                           onClick={async () => {
@@ -401,7 +403,7 @@ export default function WhitePaperPage() {
                               setTimeout(() => setCopiedCore(false), 2000);
                             } catch {}
                           }}
-                          className="inline-flex items-center px-3 py-1.5 border rounded-lg text-sm bg-white hover:bg-gray-50 shadow-sm"
+                          className="inline-flex items-center px-3 py-1.5 border rounded-lg text-sm bg-white hover:bg-gray-50 shadow-sm flex-shrink-0"
                           aria-label="Copy core contract address"
                         >
                           {copiedCore ? 'Copied' : 'Copy'}
