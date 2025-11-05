@@ -88,43 +88,41 @@ async function retryWithBackoff<T>(
   throw lastError;
 }
 
-// Enhanced batch processing with concurrency limit
+// Enhanced batch processing with higher concurrency for faster loading
 async function processBatch<T, R>(
   items: T[],
   processor: (item: T) => Promise<R>,
-  concurrency = 2, // Reduced from default to avoid rate limits
+  concurrency = 6, // Increased from 2 to 6 for faster loading
   context = 'batch'
 ): Promise<R[]> {
   const results: R[] = [];
   const errors: any[] = [];
   
-  for (let i = 0; i < items.length; i += concurrency) {
-    const batch = items.slice(i, i + concurrency);
-    
-    try {
-      const batchResults = await Promise.allSettled(
-        batch.map(item => retryWithBackoff(() => processor(item), 2, 1500, `${context}[${i}]`))
-      );
+  // Process all items in parallel with concurrency limit
+  const semaphore = Array(concurrency).fill(null);
+  let itemIndex = 0;
+  
+  const workers = semaphore.map(async () => {
+    while (itemIndex < items.length) {
+      const currentIndex = itemIndex++;
+      const item = items[currentIndex];
       
-      for (const result of batchResults) {
-        if (result.status === 'fulfilled') {
-          results.push(result.value);
-        } else {
-          console.error(`Batch item failed:`, result.reason);
-          errors.push(result.reason);
-        }
+      try {
+        const result = await retryWithBackoff(
+          () => processor(item), 
+          2, // Reduced retries for faster overall loading
+          800, // Reduced base delay
+          `${context}[${currentIndex}]`
+        );
+        results.push(result);
+      } catch (error) {
+        console.error(`Batch item ${currentIndex} failed:`, error);
+        errors.push(error);
       }
-      
-      // Small delay between batches to avoid overwhelming the RPC
-      if (i + concurrency < items.length) {
-        await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
-      }
-      
-    } catch (error) {
-      console.error(`Batch processing failed at index ${i}:`, error);
-      errors.push(error);
     }
-  }
+  });
+  
+  await Promise.all(workers);
   
   // If too many failures, throw an aggregate error
   if (errors.length > 0 && results.length === 0) {
@@ -250,12 +248,12 @@ export async function listFundraiserIds(
   return { ids, total };
 }
 
-// Enhanced page fetching with batch processing and retry
+// Enhanced page fetching with aggressive parallel processing
 export async function fetchFundraisersPage(provider: ethers.AbstractProvider, page: number, pageSize: number) {
   const { ids, total } = await listFundraiserIds(provider, page, pageSize);
   if (ids.length === 0) return { total, items: [] as Awaited<ReturnType<typeof fetchFundraiser>>[] };
 
-  // Use batch processing to control concurrency and handle failures gracefully
+  // Use aggressive parallel processing for faster loading
   const items = await processBatch(
     ids,
     async (id) => {
@@ -265,7 +263,7 @@ export async function fetchFundraisersPage(provider: ethers.AbstractProvider, pa
       }
       return result;
     },
-    2, // Reduced concurrency to avoid rate limits
+    8, // Increased concurrency for faster loading
     `fetchFundraisersPage[${page}]`
   );
   

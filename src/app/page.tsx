@@ -538,8 +538,8 @@ function FuturisticCarousel({
   const origFetch = window.fetch.bind(window);
   let cursor = Math.floor(Math.random() * endpoints.length);
 
-  // Enhanced concurrency limit - reduce concurrent requests to prevent rate limiting
-  const MAX_CONCURRENT = 3; // Reduced from 6 to 3
+  // Enhanced concurrency limit - optimize for speed while preventing rate limiting
+  const MAX_CONCURRENT = 8; // Increased from 3 to 8 for faster loading
   let active = 0;
   const queue: { resolve: () => void }[] = [];
 
@@ -558,13 +558,13 @@ function FuturisticCarousel({
   };
 
   // Enhanced per-endpoint cooldown after rate-limit
-  const COOLDOWN_MS = 45_000; // Increased from 30s to 45s
+  const COOLDOWN_MS = 30_000; // Reduced from 45s to 30s for faster recovery
   const cooldownUntil = new Map<number, number>(); // idx -> ts
   
   // Track request count per endpoint to better manage load
   const requestCounts = new Map<number, number>();
   const REQUEST_WINDOW = 60_000; // 1 minute window
-  const MAX_REQUESTS_PER_WINDOW = 10; // Max 10 requests per endpoint per minute
+  const MAX_REQUESTS_PER_WINDOW = 15; // Increased from 10 to 15 per endpoint per minute
 
   const isJsonRpcPost = (init?: RequestInit) => {
     if (!init) return false;
@@ -648,8 +648,8 @@ function FuturisticCarousel({
 
     await acquire();
     try {
-      // Enhanced jitter to spread requests over time
-      const jitter = Math.floor(Math.random() * 100 + 50); // 50-150ms
+      // Enhanced jitter for faster loading while maintaining stability
+      const jitter = Math.floor(Math.random() * 50 + 25); // Reduced to 25-75ms for faster loading
       if (jitter) await new Promise(r => setTimeout(r, jitter));
 
       // Build a priority list starting from the next healthy endpoint

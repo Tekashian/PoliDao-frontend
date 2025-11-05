@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
 import { fetchFundraiser, fetchFundraiserCount } from '@/blockchain/contracts';
 
-// Typ wyświetlanej kampanii (spłaszczony z Routera pod UI)
 export type ModularFundraiser = {
   id: bigint;
 
@@ -34,9 +33,9 @@ export type ModularFundraiser = {
   isFlexible: boolean;
 };
 
-// Simple cache to avoid redundant requests
+// Simple cache to avoid redundant requests (optimized for faster loading)
 const fundraiserCache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL = 30000; // 30 seconds
+const CACHE_TTL = 15000; // Reduced to 15 seconds for faster updates
 
 function getCacheKey(provider: any, id: number | bigint): string {
   return `fundraiser_${id}_${provider?.connection?.url || 'default'}`;
@@ -118,13 +117,19 @@ export function useFundraisersModular(page = 0, pageSize = 50) {
 
       const ids = Array.from({ length: Math.max(end - start + 1, 0) }, (_, i) => start + i);
 
-      // Enhanced: Use batch processing with reduced concurrency to handle rate limits
-      const batchSize = 3; // Process 3 items at a time
+      // Enhanced: Use aggressive parallel processing for faster loading
+      const batchSize = 8; // Increased from 3 to 8 for faster loading
       const rows: Awaited<ReturnType<typeof fetchFundraiser>>[] = [];
       
+      // Process all batches in parallel instead of sequentially
+      const batches = [];
       for (let i = 0; i < ids.length; i += batchSize) {
         const batch = ids.slice(i, i + batchSize);
-        
+        batches.push(batch);
+      }
+
+      // Execute all batches in parallel
+      const allBatchPromises = batches.map(async (batch, batchIndex) => {
         try {
           const batchResults = await Promise.allSettled(
             batch.map(id => 
@@ -136,23 +141,28 @@ export function useFundraisersModular(page = 0, pageSize = 50) {
             )
           );
 
+          const successfulResults = [];
           for (const result of batchResults) {
             if (result.status === 'fulfilled') {
-              rows.push(result.value);
+              successfulResults.push(result.value);
             } else {
-              console.error(`Batch item failed:`, result.reason?.message);
+              console.error(`Batch ${batchIndex} item failed:`, result.reason?.message);
             }
           }
-
-          // Small delay between batches to avoid overwhelming RPC endpoints
-          if (i + batchSize < ids.length) {
-            await new Promise(resolve => setTimeout(resolve, 150 + Math.random() * 100));
-          }
           
+          return successfulResults;
         } catch (batchError) {
-          console.error(`Batch processing failed for IDs ${batch}:`, batchError);
-          // Continue with next batch rather than failing completely
+          console.error(`Batch ${batchIndex} processing failed:`, batchError);
+          return [];
         }
+      });
+
+      // Wait for all batches to complete
+      const batchResults = await Promise.all(allBatchPromises);
+      
+      // Flatten results
+      for (const batchResult of batchResults) {
+        rows.push(...batchResult);
       }
 
       // If we couldn't fetch any fundraisers but total > 0, it's likely a temporary issue
