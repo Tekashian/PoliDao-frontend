@@ -47,11 +47,11 @@ export async function getCoreAddress(
   return addr as `0x${string}`;
 }
 
-// Enhanced retry function with exponential backoff
+// Enhanced retry function optimized for free RPC endpoints
 async function retryWithBackoff<T>(
   fn: () => Promise<T>,
-  maxRetries = 3,
-  baseDelay = 1000,
+  maxRetries = 2, // Optimal retry count for free endpoints
+  baseDelay = 1000, // Conservative base delay
   context = 'operation'
 ): Promise<T> {
   let lastError: any;
@@ -88,11 +88,11 @@ async function retryWithBackoff<T>(
   throw lastError;
 }
 
-// Enhanced batch processing with higher concurrency for faster loading
+// Optimal batch processing for free RPC endpoints
 async function processBatch<T, R>(
   items: T[],
   processor: (item: T) => Promise<R>,
-  concurrency = 6, // Increased from 2 to 6 for faster loading
+  concurrency = 6, // Optimal concurrency for free endpoints
   context = 'batch'
 ): Promise<R[]> {
   const results: R[] = [];
@@ -110,8 +110,8 @@ async function processBatch<T, R>(
       try {
         const result = await retryWithBackoff(
           () => processor(item), 
-          2, // Reduced retries for faster overall loading
-          800, // Reduced base delay
+          2, // Conservative retry count for free endpoints
+          600, // Optimal delay for free RPC stability
           `${context}[${currentIndex}]`
         );
         results.push(result);
@@ -253,7 +253,7 @@ export async function fetchFundraisersPage(provider: ethers.AbstractProvider, pa
   const { ids, total } = await listFundraiserIds(provider, page, pageSize);
   if (ids.length === 0) return { total, items: [] as Awaited<ReturnType<typeof fetchFundraiser>>[] };
 
-  // Use aggressive parallel processing for faster loading
+  // Optimal parallel processing respecting free endpoint limits
   const items = await processBatch(
     ids,
     async (id) => {
@@ -263,7 +263,7 @@ export async function fetchFundraisersPage(provider: ethers.AbstractProvider, pa
       }
       return result;
     },
-    8, // Increased concurrency for faster loading
+    6, // Optimal concurrency for free endpoints
     `fetchFundraisersPage[${page}]`
   );
   

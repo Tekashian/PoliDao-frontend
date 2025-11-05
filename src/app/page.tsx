@@ -538,8 +538,8 @@ function FuturisticCarousel({
   const origFetch = window.fetch.bind(window);
   let cursor = Math.floor(Math.random() * endpoints.length);
 
-  // Enhanced concurrency limit - optimize for speed while preventing rate limiting
-  const MAX_CONCURRENT = 8; // Increased from 3 to 8 for faster loading
+  // Optimal concurrency for free RPC endpoints - balanced speed vs stability
+  const MAX_CONCURRENT = 6; // Sweet spot: fast but won't trigger rate limits
   let active = 0;
   const queue: { resolve: () => void }[] = [];
 
@@ -557,14 +557,14 @@ function FuturisticCarousel({
     if (next) next.resolve();
   };
 
-  // Enhanced per-endpoint cooldown after rate-limit
-  const COOLDOWN_MS = 30_000; // Reduced from 45s to 30s for faster recovery
+  // Optimal settings for free RPC endpoints
+  const COOLDOWN_MS = 25_000; // 25s - optimal recovery time for free endpoints
   const cooldownUntil = new Map<number, number>(); // idx -> ts
   
-  // Track request count per endpoint to better manage load
+  // Conservative request limits to avoid bans
   const requestCounts = new Map<number, number>();
   const REQUEST_WINDOW = 60_000; // 1 minute window
-  const MAX_REQUESTS_PER_WINDOW = 15; // Increased from 10 to 15 per endpoint per minute
+  const MAX_REQUESTS_PER_WINDOW = 12; // Conservative limit for free endpoints
 
   const isJsonRpcPost = (init?: RequestInit) => {
     if (!init) return false;
@@ -648,8 +648,8 @@ function FuturisticCarousel({
 
     await acquire();
     try {
-      // Enhanced jitter for faster loading while maintaining stability
-      const jitter = Math.floor(Math.random() * 50 + 25); // Reduced to 25-75ms for faster loading
+      // Smart jitter - prevents thundering herd on free endpoints
+      const jitter = Math.floor(Math.random() * 30 + 20); // 20-50ms optimal spread
       if (jitter) await new Promise(r => setTimeout(r, jitter));
 
       // Build a priority list starting from the next healthy endpoint
@@ -672,9 +672,9 @@ function FuturisticCarousel({
           // Update request count for this endpoint
           updateRequestCount(endpointIdx);
           
-          // Add some delay between retries to same endpoint
+          // Smart retry delay - increases based on previous failures
           if (attempt > 0 && attempt % endpoints.length === 0) {
-            const retryDelay = Math.floor(Math.random() * 1000 + 500); // 500-1500ms
+            const retryDelay = Math.floor(Math.random() * 800 + 700); // 700-1500ms for free endpoints
             await new Promise(r => setTimeout(r, retryDelay));
           }
           

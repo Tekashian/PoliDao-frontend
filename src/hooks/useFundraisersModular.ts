@@ -33,9 +33,42 @@ export type ModularFundraiser = {
   isFlexible: boolean;
 };
 
-// Simple cache to avoid redundant requests (optimized for faster loading)
+// Optimal cache for free endpoints - balance speed vs freshness
 const fundraiserCache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL = 15000; // Reduced to 15 seconds for faster updates
+const CACHE_TTL = 45000; // 45s - optimal balance for free endpoints
+
+// Smart preloading - respects rate limits
+let isPreloading = false;
+let preloadTimeout: NodeJS.Timeout | null = null;
+
+async function preloadFundraisers(provider: ethers.AbstractProvider) {
+  if (isPreloading) return;
+  
+  // Delay preloading to avoid competing with main requests
+  if (preloadTimeout) clearTimeout(preloadTimeout);
+  preloadTimeout = setTimeout(async () => {
+    isPreloading = true;
+    
+    try {
+      // Conservative preloading - only 10 items with delays
+      const totalBig = await fetchFundraiserCount(provider);
+      const total = Math.min(Number(totalBig), 10);
+      
+      // Sequential preloading with delays to respect rate limits
+      for (let i = 1; i <= total; i++) {
+        try {
+          await fetchFundraiserCached(provider, i);
+          // Small delay between preload requests
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } catch {
+          // Skip failed preloads
+        }
+      }
+    } catch {}
+    
+    isPreloading = false;
+  }, 2000); // Start preloading 2s after main loading
+}
 
 function getCacheKey(provider: any, id: number | bigint): string {
   return `fundraiser_${id}_${provider?.connection?.url || 'default'}`;
@@ -93,6 +126,10 @@ export function useFundraisersModular(page = 0, pageSize = 50) {
   const load = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    
+    // Start preloading in background for next visits
+    preloadFundraisers(provider as ethers.AbstractProvider);
+    
     try {
       const totalBig = await fetchFundraiserCount(provider as ethers.AbstractProvider);
       const total = Number(totalBig);
@@ -117,8 +154,8 @@ export function useFundraisersModular(page = 0, pageSize = 50) {
 
       const ids = Array.from({ length: Math.max(end - start + 1, 0) }, (_, i) => start + i);
 
-      // Enhanced: Use aggressive parallel processing for faster loading
-      const batchSize = 8; // Increased from 3 to 8 for faster loading
+      // Optimal batch size for free RPC endpoints
+      const batchSize = 6; // Perfect balance: fast but respectful
       const rows: Awaited<ReturnType<typeof fetchFundraiser>>[] = [];
       
       // Process all batches in parallel instead of sequentially
