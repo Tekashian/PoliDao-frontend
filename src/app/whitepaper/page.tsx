@@ -55,7 +55,7 @@ export default function WhitePaperPage() {
   ];
 
   return (
-    <div className="whitepaper wp-root min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 overflow-x-hidden">
+    <div className="whitepaper wp-root min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       <Header />
       
       {/* Progress Bar (green accent) */}
