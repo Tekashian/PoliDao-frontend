@@ -521,23 +521,25 @@ function FuturisticCarousel({
 // NEW: robust client-side RPC balancer (round-robin + cooldown + concurrency cap + jitter)
 (() => {
   if (typeof window === 'undefined') return;
-  if ((window as any).__rpcBalancerPatchedV2) return;
+  if ((window as any).__rpcBalancerPatchedV3) return;
 
   const INFURA = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || '';
   const ALCHEMY = process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || '';
-  // CHANGED: force Alchemy-only if available; fallback to Infura otherwise
-  const endpoints = ALCHEMY ? [ALCHEMY] : (INFURA ? [INFURA] : []);
+  // CHANGED: use BOTH endpoints for better load distribution
+  const endpoints: string[] = [];
+  if (ALCHEMY) endpoints.push(ALCHEMY);
+  if (INFURA) endpoints.push(INFURA);
 
   if (endpoints.length === 0) {
-    (window as any).__rpcBalancerPatchedV2 = true;
+    (window as any).__rpcBalancerPatchedV3 = true;
     return;
   }
 
   const origFetch = window.fetch.bind(window);
   let cursor = Math.floor(Math.random() * endpoints.length);
 
-  // Concurrency limit to avoid bursts (JSON-RPC only)
-  const MAX_CONCURRENT = 6;
+  // Enhanced concurrency limit - reduce concurrent requests to prevent rate limiting
+  const MAX_CONCURRENT = 3; // Reduced from 6 to 3
   let active = 0;
   const queue: { resolve: () => void }[] = [];
 
@@ -555,9 +557,14 @@ function FuturisticCarousel({
     if (next) next.resolve();
   };
 
-  // Per-endpoint cooldown after rate-limit
-  const COOLDOWN_MS = 30_000;
+  // Enhanced per-endpoint cooldown after rate-limit
+  const COOLDOWN_MS = 45_000; // Increased from 30s to 45s
   const cooldownUntil = new Map<number, number>(); // idx -> ts
+  
+  // Track request count per endpoint to better manage load
+  const requestCounts = new Map<number, number>();
+  const REQUEST_WINDOW = 60_000; // 1 minute window
+  const MAX_REQUESTS_PER_WINDOW = 10; // Max 10 requests per endpoint per minute
 
   const isJsonRpcPost = (init?: RequestInit) => {
     if (!init) return false;
@@ -575,20 +582,55 @@ function FuturisticCarousel({
     if (resp.status === 429 || resp.status === 503) return true;
     try {
       const text = await resp.clone().text();
-      return !!text && (text.includes('"code":-32005') || text.includes('Too Many Requests'));
+      return !!text && (
+        text.includes('"code":-32005') || 
+        text.includes('Too Many Requests') ||
+        text.includes('Rate limit exceeded') ||
+        text.includes('Request rate limited')
+      );
     } catch {
       return false;
     }
   };
 
+  const updateRequestCount = (idx: number) => {
+    const now = Date.now();
+    const key = `${idx}-${Math.floor(now / REQUEST_WINDOW)}`;
+    const current = requestCounts.get(idx) || 0;
+    requestCounts.set(idx, current + 1);
+    
+    // Clean old entries
+    for (const [k, _] of requestCounts.entries()) {
+      const timestamp = parseInt(k.toString().split('-')[1]);
+      if (now - (timestamp * REQUEST_WINDOW) > REQUEST_WINDOW) {
+        requestCounts.delete(k as any);
+      }
+    }
+  };
+
+  const isEndpointOverloaded = (idx: number) => {
+    const count = requestCounts.get(idx) || 0;
+    return count >= MAX_REQUESTS_PER_WINDOW;
+  };
+
   const nextHealthyIndex = (startIdx?: number) => {
     const now = Date.now();
     let start = typeof startIdx === 'number' ? startIdx : (cursor + 1) % endpoints.length;
+    
+    // First pass: find endpoints that are not on cooldown and not overloaded
+    for (let i = 0; i < endpoints.length; i++) {
+      const idx = (start + i) % endpoints.length;
+      const until = cooldownUntil.get(idx) || 0;
+      if (until <= now && !isEndpointOverloaded(idx)) return idx;
+    }
+    
+    // Second pass: find endpoints that are not on cooldown (ignore overload)
     for (let i = 0; i < endpoints.length; i++) {
       const idx = (start + i) % endpoints.length;
       const until = cooldownUntil.get(idx) || 0;
       if (until <= now) return idx;
     }
+    
     // If all on cooldown, pick the soonest-to-expire
     let bestIdx = 0;
     let bestUntil = Infinity;
@@ -606,8 +648,8 @@ function FuturisticCarousel({
 
     await acquire();
     try {
-      // tiny jitter to smooth bursts
-      const jitter = Math.floor(Math.random() * 40); // 0–40ms
+      // Enhanced jitter to spread requests over time
+      const jitter = Math.floor(Math.random() * 100 + 50); // 50-150ms
       if (jitter) await new Promise(r => setTimeout(r, jitter));
 
       // Build a priority list starting from the next healthy endpoint
@@ -619,32 +661,62 @@ function FuturisticCarousel({
       }
 
       let lastResp: Response | null = null;
+      let attempts = 0;
+      const maxAttempts = Math.min(endpoints.length * 2, 4); // Try each endpoint up to 2 times
 
-      for (const i of order) {
-        const endpoint = endpoints[i];
-        const resp = await origFetch(endpoint, init as any);
-        lastResp = resp;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const endpointIdx = order[attempt % endpoints.length];
+        const endpoint = endpoints[endpointIdx];
+        
+        try {
+          // Update request count for this endpoint
+          updateRequestCount(endpointIdx);
+          
+          // Add some delay between retries to same endpoint
+          if (attempt > 0 && attempt % endpoints.length === 0) {
+            const retryDelay = Math.floor(Math.random() * 1000 + 500); // 500-1500ms
+            await new Promise(r => setTimeout(r, retryDelay));
+          }
+          
+          const resp = await origFetch(endpoint, init as any);
+          lastResp = resp;
+          attempts++;
 
-        const limited = await hasRateLimitSignal(resp);
-        if (!limited) {
-          cursor = i; // stick to working endpoint for subsequent calls
-          return resp;
+          const limited = await hasRateLimitSignal(resp);
+          if (!limited) {
+            cursor = endpointIdx; // Update cursor for next request
+            return resp;
+          }
+          
+          // Put this endpoint on cooldown and try next
+          console.warn(`RPC endpoint ${endpointIdx} rate limited, trying next...`);
+          cooldownUntil.set(endpointIdx, Date.now() + COOLDOWN_MS);
+          
+        } catch (error) {
+          console.warn(`RPC endpoint ${endpointIdx} failed:`, error);
+          // Try next endpoint
+          continue;
         }
-        // put this endpoint on cooldown and try next
-        cooldownUntil.set(i, Date.now() + COOLDOWN_MS);
       }
 
-      // All endpoints rate-limited; return last response (UI handler will show retry)
-      return lastResp as Response;
-    } catch {
-      // Fallback to original fetch for non-RPC or unexpected errors
+      // All endpoints failed or rate-limited
+      console.error('All RPC endpoints exhausted, returning last response');
+      return lastResp || new Response(JSON.stringify({
+        jsonrpc: "2.0",
+        error: { code: -32005, message: "All RPC endpoints rate limited" },
+        id: null
+      }), { status: 429 });
+      
+    } catch (error) {
+      console.error('RPC balancer error:', error);
+      // Fallback to original fetch for unexpected errors
       return await origFetch(input as any, init as any);
     } finally {
       release();
     }
   };
 
-  (window as any).__rpcBalancerPatchedV2 = true;
+  (window as any).__rpcBalancerPatchedV3 = true;
 })();
 
 // --- MAIN RENDER ---
@@ -1041,15 +1113,23 @@ export default function HomePage() {
 
   const isRateLimited = React.useMemo(() => {
     const msg = campaignsError?.message || '';
-    return !!campaignsError && (msg.includes('Too Many Requests') || msg.includes('-32005'));
+    return !!campaignsError && (
+      msg.includes('Too Many Requests') || 
+      msg.includes('-32005') ||
+      msg.includes('Rate limit exceeded') ||
+      msg.includes('Request rate limited') ||
+      msg.includes('missing response for request') ||
+      campaignsError.message?.includes('BAD_DATA')
+    );
   }, [campaignsError]);
 
-  // NEW: schedule auto-retry when rate-limited (prevents concurrent timers)
+  // Enhanced: schedule auto-retry when rate-limited (prevents concurrent timers)
   useEffect(() => {
     if (isRateLimited && !retryTimerRef.current) {
-      const base = Math.pow(2, Math.max(0, retryAttempt)) * 1000; // 1s, 2s, 4s, 8s...
-      const jitter = Math.floor(Math.random() * 500);
-      const delay = Math.min(60000, base + jitter); // cap at 60s
+      // More aggressive retry schedule for better UX
+      const base = Math.min(Math.pow(1.5, Math.max(0, retryAttempt)) * 2000, 30000); // 2s, 3s, 4.5s, ... max 30s
+      const jitter = Math.floor(Math.random() * 1000);
+      const delay = base + jitter;
       let secs = Math.ceil(delay / 1000);
       setRetrySeconds(secs);
 
@@ -1058,7 +1138,7 @@ export default function HomePage() {
         setRetrySeconds((s) => (s > 0 ? s - 1 : 0));
       }, 1000);
 
-      // schedule a single retry
+      // schedule a single retry with enhanced error handling
       retryTimerRef.current = window.setTimeout(async () => {
         if (retryCountdownRef.current) {
           clearInterval(retryCountdownRef.current);
@@ -1066,9 +1146,14 @@ export default function HomePage() {
         }
         retryTimerRef.current = null;
         try {
+          console.log(`Retrying campaigns fetch (attempt ${retryAttempt + 1})...`);
           await refetchCampaigns?.();
-        } finally {
-          setRetryAttempt((a) => a + 1);
+          // If successful, reset retry count
+          setRetryAttempt(0);
+        } catch (error) {
+          console.warn('Retry failed:', error);
+          // Increment retry attempt for next backoff
+          setRetryAttempt((prev) => Math.min(prev + 1, 6)); // Max 6 attempts
         }
       }, delay);
     }
@@ -1493,29 +1578,46 @@ export default function HomePage() {
                     </button>
                   </div>
 
-                  {/* NEW: rate-limit friendly error with auto-retry */}
+                  {/* Enhanced: rate-limit friendly error with auto-retry and better messaging */}
                   {campaignsError && (
                     <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center">
                           <span className="text-red-500 text-xl mr-3">⚠️</span>
                           <div>
-                            <h3 className="font-bold text-red-800">Error loading campaigns</h3>
+                            <h3 className="font-bold text-red-800">
+                              {isRateLimited ? 'Rate Limit Reached' : 'Error Loading Campaigns'}
+                            </h3>
                             {isRateLimited ? (
-                              // CHANGED: remove "(Infura)" to keep message generic
-                              <p className="text-red-700 text-sm mt-1">
-                                Public RPC rate limit reached. Auto‑retry in {retrySeconds}s…
-                              </p>
+                              <div className="text-red-700 text-sm mt-1">
+                                <p>Our RPC endpoints are currently rate-limited.</p>
+                                <p>Auto-retry in <span className="font-mono">{retrySeconds}s</span> or click "Try Now" to retry immediately.</p>
+                                <p className="text-xs mt-1 text-red-600">
+                                  This is temporary and campaigns will load shortly.
+                                </p>
+                              </div>
                             ) : (
-                              <p className="text-red-700 text-sm mt-1">{campaignsError.message}</p>
+                              <div className="text-red-700 text-sm mt-1">
+                                <p>{campaignsError.message}</p>
+                                {campaignsError.message?.includes('BAD_DATA') && (
+                                  <p className="text-xs mt-1 text-red-600">
+                                    This appears to be a temporary RPC issue. Please try again.
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
                         </div>
                         <button
                           onClick={forceRefetchCampaigns}
-                          className="ml-4 px-3 py-2 bg-[#10b981] hover:bg-[#10b981] text-white rounded-md text-sm"
+                          disabled={isRateLimited && retrySeconds > 0}
+                          className={`ml-4 px-3 py-2 text-white rounded-md text-sm transition-colors ${
+                            isRateLimited && retrySeconds > 0
+                              ? 'bg-gray-400 cursor-not-allowed'
+                              : 'bg-[#10b981] hover:bg-[#0d9668]'
+                          }`}
                         >
-                          Try now
+                          {isRateLimited && retrySeconds > 0 ? `Wait ${retrySeconds}s` : 'Try Now'}
                         </button>
                       </div>
                     </div>
@@ -1576,12 +1678,34 @@ export default function HomePage() {
 
                   {campaignsError && (
                     <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-                      <div className="flex items-center">
-                        <span className="text-red-500 text-xl mr-3">⚠️</span>
-                        <div>
-                          <h3 className="font-bold text-red-800">Error loading campaigns</h3>
-                          <p className="text-red-700 text-sm mt-1">{campaignsError.message}</p>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <span className="text-red-500 text-xl mr-3">⚠️</span>
+                          <div>
+                            <h3 className="font-bold text-red-800">
+                              {isRateLimited ? 'Rate Limit Reached' : 'Error Loading Campaigns'}
+                            </h3>
+                            {isRateLimited ? (
+                              <div className="text-red-700 text-sm mt-1">
+                                <p>RPC endpoints are temporarily rate-limited.</p>
+                                <p>Auto-retry in <span className="font-mono">{retrySeconds}s</span></p>
+                              </div>
+                            ) : (
+                              <p className="text-red-700 text-sm mt-1">{campaignsError.message}</p>
+                            )}
+                          </div>
                         </div>
+                        <button
+                          onClick={forceRefetchCampaigns}
+                          disabled={isRateLimited && retrySeconds > 0}
+                          className={`ml-4 px-3 py-2 text-white rounded-md text-sm transition-colors ${
+                            isRateLimited && retrySeconds > 0
+                              ? 'bg-gray-400 cursor-not-allowed'
+                              : 'bg-[#10b981] hover:bg-[#0d9668]'
+                          }`}
+                        >
+                          {isRateLimited && retrySeconds > 0 ? `Wait ${retrySeconds}s` : 'Retry'}
+                        </button>
                       </div>
                     </div>
                   )}

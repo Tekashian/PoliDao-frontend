@@ -47,7 +47,92 @@ export async function getCoreAddress(
   return addr as `0x${string}`;
 }
 
-// Typy pomocnicze
+// Enhanced retry function with exponential backoff
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  baseDelay = 1000,
+  context = 'operation'
+): Promise<T> {
+  let lastError: any;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      
+      // Check if this is a rate limit error
+      const isRateLimit = error?.message?.includes('Too Many Requests') ||
+                         error?.message?.includes('-32005') ||
+                         error?.code === -32005 ||
+                         error?.status === 429;
+      
+      if (attempt === maxRetries) {
+        console.error(`${context} failed after ${maxRetries + 1} attempts:`, error);
+        throw error;
+      }
+      
+      // Calculate delay with jitter
+      const jitter = Math.random() * 0.5; // ±25% jitter
+      const delay = baseDelay * Math.pow(2, attempt) * (1 + jitter);
+      
+      // For rate limits, wait longer
+      const actualDelay = isRateLimit ? Math.max(delay, 2000 + Math.random() * 1000) : delay;
+      
+      console.warn(`${context} attempt ${attempt + 1} failed, retrying in ${actualDelay}ms:`, error?.message);
+      await new Promise(resolve => setTimeout(resolve, actualDelay));
+    }
+  }
+  
+  throw lastError;
+}
+
+// Enhanced batch processing with concurrency limit
+async function processBatch<T, R>(
+  items: T[],
+  processor: (item: T) => Promise<R>,
+  concurrency = 2, // Reduced from default to avoid rate limits
+  context = 'batch'
+): Promise<R[]> {
+  const results: R[] = [];
+  const errors: any[] = [];
+  
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    
+    try {
+      const batchResults = await Promise.allSettled(
+        batch.map(item => retryWithBackoff(() => processor(item), 2, 1500, `${context}[${i}]`))
+      );
+      
+      for (const result of batchResults) {
+        if (result.status === 'fulfilled') {
+          results.push(result.value);
+        } else {
+          console.error(`Batch item failed:`, result.reason);
+          errors.push(result.reason);
+        }
+      }
+      
+      // Small delay between batches to avoid overwhelming the RPC
+      if (i + concurrency < items.length) {
+        await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
+      }
+      
+    } catch (error) {
+      console.error(`Batch processing failed at index ${i}:`, error);
+      errors.push(error);
+    }
+  }
+  
+  // If too many failures, throw an aggregate error
+  if (errors.length > 0 && results.length === 0) {
+    throw new Error(`All batch operations failed. Sample error: ${errors[0]?.message}`);
+  }
+  
+  return results;
+}
 export type FundraiserDetails = {
   title: string;
   description: string;
@@ -104,35 +189,39 @@ export async function fetchFundraiserProgress(
   };
 }
 
-// Liczba kampanii – READ FROM CORE (resolved via Router)
+// Enhanced count fetching with retry
 export async function fetchFundraiserCount(provider: ethers.AbstractProvider) {
-  const coreAddr = await getCoreAddress(provider);
-  const core = new ethers.Contract(coreAddr, coreAbi, provider);
-  const count: bigint = await core.getFundraiserCount();
-  return count;
+  return retryWithBackoff(async () => {
+    const coreAddr = await getCoreAddress(provider);
+    const core = new ethers.Contract(coreAddr, coreAbi, provider);
+    const count: bigint = await core.getFundraiserCount();
+    return count;
+  }, 3, 1000, 'fetchFundraiserCount');
 }
 
-// Pojedyncza kampania (details + basicInfo) – READ FROM CORE (resolved via Router)
+// Enhanced single fundraiser fetching with retry
 export async function fetchFundraiser(provider: ethers.AbstractProvider, id: bigint | number) {
-  const coreAddr = await getCoreAddress(provider);
-  const core = new ethers.Contract(coreAddr, coreAbi, provider);
-  const [details, basic] = await Promise.all([
-    core.getFundraiserDetails(id),
-    core.getFundraiserBasicInfo(id),
-  ]);
-  // Map details as before
-  const mappedDetails = details as FundraiserDetails;
-  const progress: FundraiserProgress = {
-    raised: (basic?.[2] ?? basic?.raised ?? mappedDetails.raisedAmount ?? 0n) as bigint,
-    goal: (basic?.[3] ?? basic?.goal ?? mappedDetails.goalAmount ?? 0n) as bigint,
-    percentage: 0n,
-    donorsCount: 0n,
-    timeLeft: 0n,
-    refundDeadline: 0n,
-    isSuspended: Boolean((details as any)?.isSuspended ?? false),
-    suspensionTime: 0n,
-  };
-  return { id: BigInt(id), details: mappedDetails, progress };
+  return retryWithBackoff(async () => {
+    const coreAddr = await getCoreAddress(provider);
+    const core = new ethers.Contract(coreAddr, coreAbi, provider);
+    const [details, basic] = await Promise.all([
+      core.getFundraiserDetails(id),
+      core.getFundraiserBasicInfo(id),
+    ]);
+    // Map details as before
+    const mappedDetails = details as FundraiserDetails;
+    const progress: FundraiserProgress = {
+      raised: (basic?.[2] ?? basic?.raised ?? mappedDetails.raisedAmount ?? 0n) as bigint,
+      goal: (basic?.[3] ?? basic?.goal ?? mappedDetails.goalAmount ?? 0n) as bigint,
+      percentage: 0n,
+      donorsCount: 0n,
+      timeLeft: 0n,
+      refundDeadline: 0n,
+      isSuspended: Boolean((details as any)?.isSuspended ?? false),
+      suspensionTime: 0n,
+    };
+    return { id: BigInt(id), details: mappedDetails, progress };
+  }, 2, 1200, `fetchFundraiser[${id}]`);
 }
 
 // Safe wrapper – zwraca null, jeśli ID nie istnieje/revertuje
@@ -161,13 +250,25 @@ export async function listFundraiserIds(
   return { ids, total };
 }
 
-// Strona kampanii (odporna na luki)
+// Enhanced page fetching with batch processing and retry
 export async function fetchFundraisersPage(provider: ethers.AbstractProvider, page: number, pageSize: number) {
   const { ids, total } = await listFundraiserIds(provider, page, pageSize);
   if (ids.length === 0) return { total, items: [] as Awaited<ReturnType<typeof fetchFundraiser>>[] };
 
-  const rows = await Promise.all(ids.map((id) => fetchFundraiserSafe(provider, id)));
-  const items = rows.filter((x): x is NonNullable<typeof x> => x !== null);
+  // Use batch processing to control concurrency and handle failures gracefully
+  const items = await processBatch(
+    ids,
+    async (id) => {
+      const result = await fetchFundraiserSafe(provider, id);
+      if (!result) {
+        throw new Error(`Fundraiser ${id} not found or failed to fetch`);
+      }
+      return result;
+    },
+    2, // Reduced concurrency to avoid rate limits
+    `fetchFundraisersPage[${page}]`
+  );
+  
   return { total, items };
 }
 

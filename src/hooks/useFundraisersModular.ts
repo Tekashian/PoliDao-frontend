@@ -34,7 +34,40 @@ export type ModularFundraiser = {
   isFlexible: boolean;
 };
 
-// Domyślny provider (browser/JSON-RPC)
+// Simple cache to avoid redundant requests
+const fundraiserCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 30000; // 30 seconds
+
+function getCacheKey(provider: any, id: number | bigint): string {
+  return `fundraiser_${id}_${provider?.connection?.url || 'default'}`;
+}
+
+function isCacheValid(timestamp: number): boolean {
+  return Date.now() - timestamp < CACHE_TTL;
+}
+
+// Enhanced fetch with caching
+async function fetchFundraiserCached(provider: ethers.AbstractProvider, id: number | bigint) {
+  const cacheKey = getCacheKey(provider, id);
+  const cached = fundraiserCache.get(cacheKey);
+  
+  if (cached && isCacheValid(cached.timestamp)) {
+    return cached.data;
+  }
+  
+  try {
+    const data = await fetchFundraiser(provider, id);
+    fundraiserCache.set(cacheKey, { data, timestamp: Date.now() });
+    return data;
+  } catch (error) {
+    // If we have stale cache data, use it as fallback
+    if (cached) {
+      console.warn(`Using stale cache for fundraiser ${id} due to error:`, error);
+      return cached.data;
+    }
+    throw error;
+  }
+}
 function useProvider() {
   return useMemo(() => {
     if (typeof window !== 'undefined' && (window as any).ethereum) {
@@ -72,7 +105,7 @@ export function useFundraisersModular(page = 0, pageSize = 50) {
         return;
       }
 
-      // NEW: allow fetching all items on first page up to a safe cap to avoid silent truncation
+      // Enhanced: use batch processing for better rate limit handling
       const MAX_FETCH_ALL = Number(process.env.NEXT_PUBLIC_MAX_FETCH_ALL ?? 1000);
       let start = page * pageSize + 1;
       let end = Math.min(start + pageSize - 1, total);
@@ -85,7 +118,47 @@ export function useFundraisersModular(page = 0, pageSize = 50) {
 
       const ids = Array.from({ length: Math.max(end - start + 1, 0) }, (_, i) => start + i);
 
-      const rows = await Promise.all(ids.map((id) => fetchFundraiser(provider as ethers.AbstractProvider, id)));
+      // Enhanced: Use batch processing with reduced concurrency to handle rate limits
+      const batchSize = 3; // Process 3 items at a time
+      const rows: Awaited<ReturnType<typeof fetchFundraiser>>[] = [];
+      
+      for (let i = 0; i < ids.length; i += batchSize) {
+        const batch = ids.slice(i, i + batchSize);
+        
+        try {
+          const batchResults = await Promise.allSettled(
+            batch.map(id => 
+              fetchFundraiserCached(provider as ethers.AbstractProvider, id)
+                .catch(error => {
+                  console.warn(`Failed to fetch fundraiser ${id}:`, error?.message);
+                  throw error;
+                })
+            )
+          );
+
+          for (const result of batchResults) {
+            if (result.status === 'fulfilled') {
+              rows.push(result.value);
+            } else {
+              console.error(`Batch item failed:`, result.reason?.message);
+            }
+          }
+
+          // Small delay between batches to avoid overwhelming RPC endpoints
+          if (i + batchSize < ids.length) {
+            await new Promise(resolve => setTimeout(resolve, 150 + Math.random() * 100));
+          }
+          
+        } catch (batchError) {
+          console.error(`Batch processing failed for IDs ${batch}:`, batchError);
+          // Continue with next batch rather than failing completely
+        }
+      }
+
+      // If we couldn't fetch any fundraisers but total > 0, it's likely a temporary issue
+      if (rows.length === 0 && total > 0) {
+        throw new Error(`Unable to fetch any fundraisers (total: ${total}). This may be due to rate limiting.`);
+      }
 
       const mapped: ModularFundraiser[] = rows.map((row) => {
         const d = row.details as any;
@@ -121,6 +194,7 @@ export function useFundraisersModular(page = 0, pageSize = 50) {
 
       setFundraisers(mapped);
     } catch (e: any) {
+      console.error('useFundraisersModular load error:', e);
       setError(e instanceof Error ? e : new Error(e?.message ?? 'Failed to load fundraisers'));
     } finally {
       setIsLoading(false);
