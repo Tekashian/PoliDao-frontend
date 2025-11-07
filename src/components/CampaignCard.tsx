@@ -22,7 +22,6 @@ interface CampaignCardProps {
     description: string;
     image: string;
   };
-  // NEW: optional overlay and CTA slots
   overlayNode?: React.ReactNode;
   overlayClassName?: string; // e.g. "opacity-100 md:opacity-0 md:group-hover:opacity-100"
   ctaNode?: React.ReactNode;

@@ -182,17 +182,14 @@ const Header = () => {
   const [isLogoHovered, setIsLogoHovered] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  // NEW: Add scroll progress for dynamic blur effect
   const [scrollProgress, setScrollProgress] = useState(0);
   const headerRef = useRef<HTMLElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement | null>(null);
-  // ADD: track wallet modal visibility
   const [walletModalOpen, setWalletModalOpen] = useState(false);
 
   // Enhanced scroll detection z lepszą responsywnością
   useEffect(() => {
     setIsMounted(true);
-    // NEW: robust theme application on mount
     const themePalettes = {
       light: {
         '--bg': '#f8fafc',
@@ -393,7 +390,6 @@ const Header = () => {
         // update inline palette dark text -> white
         : { '--bg': '#f8fafc', '--surface': '#ffffff', '--muted': '#6b7280', '--text': '#0f172a', '--primary': '#10b981', '--border': 'rgba(229,231,235,0.7)', meta: '#ffffff', mode: 'light' };
 
-      // Fix: ensure dark branch uses white text
       if (themeToApply === 'dark') {
         pal['--text'] = '#ffffff';
       }
@@ -483,7 +479,6 @@ const Header = () => {
     if (isConnected) setIsMobileMenuOpen(false);
   }, [isConnected]);
 
-  // ADD: observe Web3Modal/WalletConnect modal and update state
   useEffect(() => {
     if (typeof document === 'undefined') return;
 
@@ -517,7 +512,6 @@ const Header = () => {
     };
   }, []);
 
-  // ADD: close hamburger menu when wallet modal opens
   useEffect(() => {
     if (walletModalOpen) setIsMobileMenuOpen(false);
   }, [walletModalOpen]);
@@ -550,7 +544,6 @@ const Header = () => {
           : 'none',
         // Smooth transition for all effects
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        // ADD: let taps go to wallet modal and keep it above header
         pointerEvents: walletModalOpen ? 'none' : 'auto',
         zIndex: walletModalOpen ? 0 : 60,         // lowered when modal open
       }}

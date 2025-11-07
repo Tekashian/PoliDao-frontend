@@ -8,10 +8,8 @@ import coreAbi from './coreAbi';
 export const ROUTER_ADDRESS = '0xB8DDB0D2Bce9200C87e53Ed06F4Ed2a15dde3423' as `0x${string}`;
 export const ROUTER_ABI = routerAbi;
 
-// NEW: fixed Core address (from new deployment)
 export const CORE_ADDRESS = '0x9362d1b929c8cC161830292b95Ad5E1187239a38' as `0x${string}`;
 
-// NEW: fixed Analytics module address from new deployment
 export const ANALYTICS_ADDRESS = '0x687e6294cf28D1b0D12AF25D8B23f298A5F1705B' as `0x${string}`;
 
 // Backward-compatible config for wagmi hooks/components
@@ -33,12 +31,10 @@ export function getRouterContract(providerOrSigner: ethers.Signer | ethers.Abstr
   return new ethers.Contract(ROUTER_ADDRESS, routerAbi, providerOrSigner);
 }
 
-// NEW: Fabryka kontraktu Core (legacy, may be stale if CORE_ADDRESS changes)
 export function getCoreContract(providerOrSigner: ethers.Signer | ethers.AbstractProvider) {
   return new ethers.Contract(CORE_ADDRESS, coreAbi, providerOrSigner);
 }
 
-// NEW: resolve Core via Router dynamically (single source of truth)
 export async function getCoreAddress(
   providerOrSigner: ethers.Signer | ethers.AbstractProvider
 ): Promise<`0x${string}`> {

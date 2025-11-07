@@ -7,7 +7,6 @@ import { polidaoContractConfig, ROUTER_ADDRESS } from "../blockchain/contracts";
 import { useGetAllProposals, type Proposal } from '../hooks/usePoliDao';
 import { poliDaoRouterAbi } from "../blockchain/routerAbi";
 import { Interface, keccak256, toUtf8Bytes } from "ethers";
-// ADD: receipt tracking
 import { useWaitForTransactionReceipt } from "wagmi";
 
 export default function VoteCardPage({ proposalsOverride }: { proposalsOverride?: Proposal[] }) {
@@ -31,7 +30,6 @@ export default function VoteCardPage({ proposalsOverride }: { proposalsOverride?
     refetchProposals 
   } = useGetAllProposals();
 
-  // NEW: źródło danych – preferuj override z rodzica (governance), fallback do hooka
   const sourceProposals = proposalsOverride && proposalsOverride.length > 0 ? proposalsOverride : proposals || [];
   const loading = proposalsOverride ? false : proposalsLoading;
   // ZMIANA: uniknij kolizji z lokalnym state "error"
@@ -52,7 +50,6 @@ export default function VoteCardPage({ proposalsOverride }: { proposalsOverride?
     args: selectedProposal !== null && address ? [BigInt(selectedProposal), address] : undefined,
   });
 
-  // NEW: user vote choice + loading
   const [userVoteChoice, setUserVoteChoice] = useState<boolean | null>(null);
   const [userVoteLoading, setUserVoteLoading] = useState(false);
 
@@ -150,21 +147,17 @@ export default function VoteCardPage({ proposalsOverride }: { proposalsOverride?
   const isCurrentProposalActive = selectedProposalData ? 
     (Number(selectedProposalData.endTime) - Math.floor(Date.now() / 1000)) > 0 : false;
 
-  // NEW: derive voted flag from either hook or discovered choice
   const userHasVoted = Boolean(hasUserVoted) || (userVoteChoice !== null);
 
-  // NEW: auto-open results if user already voted
   useEffect(() => {
     if (userHasVoted && !showResults) setShowResults(true);
   }, [userHasVoted, showResults]);
 
-  // NEW: compute module key for Governance routing via Router
   const GOVERNANCE_KEY = React.useMemo(
     () => keccak256(toUtf8Bytes("GOVERNANCE")) as `0x${string}`,
     []
   );
 
-  // NEW: store vote tx hash and track confirmation
   const [voteTxHash, setVoteTxHash] = useState<`0x${string}` | null>(null);
   const { isLoading: isVoteConfirming, isSuccess: isVoteConfirmed } = useWaitForTransactionReceipt({
     hash: voteTxHash ?? undefined,
@@ -227,7 +220,6 @@ export default function VoteCardPage({ proposalsOverride }: { proposalsOverride?
     }
   };
 
-  // NEW: immediately refetch after tx, and again after 7s (gives chain time to confirm)
   useEffect(() => {
     if (!voteTxHash) return;
 
@@ -247,7 +239,6 @@ export default function VoteCardPage({ proposalsOverride }: { proposalsOverride?
     return () => clearTimeout(t);
   }, [voteTxHash, refetchProposalDetails, refetchProposals]);
 
-  // NEW: also refresh once the tx is confirmed (if confirmation happens earlier/later than 7s)
   useEffect(() => {
     if (!isVoteConfirmed) return;
     Promise.allSettled([

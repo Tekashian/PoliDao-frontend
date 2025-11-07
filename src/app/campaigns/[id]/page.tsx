@@ -41,15 +41,11 @@ import { poliDaoRouterAbi } from '../../../blockchain/routerAbi';
 import { ROUTER_ADDRESS } from '../../../blockchain/contracts';
 import { poliDaoAnalyticsAbi } from '../../../blockchain/analyticsAbi';
 import { poliDaoCoreAbi } from '../../../blockchain/coreAbi';
-// NEW: fixed analytics address
 import { ANALYTICS_ADDRESS } from '../../../blockchain/contracts';
-// NEW: Storage ABI for resolving Updates and fallback events
 import { poliDaoStorageAbi } from '../../../blockchain/storageAbi';
 
-// usuwamy helper i typ progresu z contracts – progres tylko z Routera via wagmi
-// import { fetchFundraiserProgress, type RouterFundraiserProgress } from '../../../blockchain/contracts';
-import { sepolia } from 'viem/chains'; // <-- dodany import
-import './pagestyles.css'; // NEW: scoped dark theme for this page
+import { sepolia } from 'viem/chains';
+import './pagestyles.css';
 
 // ERC20 ABI inline
 const ERC20_ABI = [
@@ -96,8 +92,6 @@ const ERC20_ABI = [
   },
 ] as const;
 
-// Contract configuration
-// const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_POLIDAO_CONTRACT_ADDRESS as `0x${string}`; // usuwamy
 const PLACEHOLDER_IMAGE = '/images/zbiorka.png';
 
 interface FundraiserData {
@@ -130,10 +124,8 @@ interface Update {
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
 
-// NEW: key for Media module to probe initialImages via Core.staticCallModule
 const MEDIA_KEY = keccak256(toUtf8Bytes('MEDIA')) as `0x${string}`;
 
-// NEW: key for Updates routing via Router
 const UPDATES_KEY = keccak256(toUtf8Bytes('UPDATES')) as `0x${string}`;
 
 export default function CampaignPage() {
@@ -167,7 +159,6 @@ export default function CampaignPage() {
   const [campaignImage, setCampaignImage] = useState<string | null>(null);
   const [imageLoading, setImageLoading] = useState(true);
   
-  // NEW: Gallery state
   const [gallery, setGallery] = useState<any[]>([]);
   const [galleryLoading, setGalleryLoading] = useState(false);
   const [addImageOpen, setAddImageOpen] = useState(false);
@@ -935,7 +926,6 @@ export default function CampaignPage() {
     fetchGallery();
   }, [campaignId]);
 
-  // NEW: Image preview effect for gallery upload
   useEffect(() => {
     if (!newImageFile) {
       setNewImagePreview('');
@@ -946,7 +936,6 @@ export default function CampaignPage() {
     return () => URL.revokeObjectURL(url);
   }, [newImageFile]);
 
-  // NEW: Handle adding image to gallery
   const handleAddImageToGallery = async () => {
     if (!newImageFile || !campaignData || !address) {
       setSnackbar({ open: true, message: 'Wybierz zdjęcie do dodania', severity: 'error' });

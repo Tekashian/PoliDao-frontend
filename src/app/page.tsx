@@ -38,26 +38,21 @@ import CampaignCard from "../components/CampaignCard";
 import { useAccount } from 'wagmi';
 import { useGetAllProposals, type Proposal } from '../hooks/usePoliDao';
 import { useFundraisersModular, type ModularFundraiser } from '../hooks/useFundraisersModular';
-// NEW: governance reads
 import { useReadContract, useReadContracts } from 'wagmi';
 import { ROUTER_ADDRESS } from '../blockchain/contracts';
 import { poliDaoRouterAbi } from '../blockchain/routerAbi';
 import { poliDaoCoreAbi } from '../blockchain/coreAbi';
 import poliDaoGovernanceAbi from '../blockchain/governanceAbi';
-// ADD: voting writes + receipt, and Interface utils
 import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { Interface, keccak256, toUtf8Bytes } from 'ethers';
 
-// NEW: Swiper imports (minimal)
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Pagination, Autoplay, Navigation } from 'swiper/modules';
 import 'swiper/css';
 import 'swiper/css/pagination';
 import 'swiper/css/navigation'; // + navigation CSS
-// CHANGED: import coverflow effect for 3D-like center emphasis
 import { EffectCoverflow } from 'swiper/modules';
 import 'swiper/css/effect-coverflow';
-// NEW: global search hook
 import { useSearch } from '../state/search/useSearch';
 import { sepolia } from 'viem/chains';
 
@@ -321,17 +316,14 @@ function FuturisticCarousel({
     return Array.from({ length: reps }).flatMap(() => items).slice(0, 9);
   }, [items, simpleNavOnly]);
 
-  // NEW: tryb statyczny bez przewijania
   const staticMode = typeof staticCount === 'number' && staticCount > 0;
   const displayed = staticMode ? slides.slice(0, Math.min(staticCount!, slides.length)) : slides;
 
-  // NEW: custom navigation refs (external buttons)
   const prevRef = React.useRef<HTMLButtonElement | null>(null);
   const nextRef = React.useRef<HTMLButtonElement | null>(null);
 
   if (!displayed || displayed.length === 0) return null;
 
-  // NEW: statyczny render bez Swipera, bez strzałek i bez drag
   if (staticMode) {
     return (
       <Paper elevation={0} sx={{ mb: 6, background: 'transparent', border: 'none', boxShadow: 'none', borderRadius: 0 }}>
@@ -389,7 +381,6 @@ function FuturisticCarousel({
           px: 0,
           pb: 3,
           overflow: 'visible',
-          // NEW: pokaż dokładnie 3 karty na desktopie (24rem * 3 + przerwy)
           ...(simpleNavOnly && myAccountCardLayout
             ? { maxWidth: { md: `calc(24rem * 3 + ${GAP}px * 2)` }, mx: 'auto' }
             : {}),
@@ -497,7 +488,6 @@ function FuturisticCarousel({
           allowTouchMove={!simpleNavOnly ? true : false}
           simulateTouch={!simpleNavOnly ? true : false}
           grabCursor={!simpleNavOnly ? true : false}
-          // NEW: hide nav when not enough items to scroll
           watchOverflow
         >
           {slides.map((item, index) => (
@@ -518,14 +508,12 @@ function FuturisticCarousel({
   );
 }
 
-// NEW: robust client-side RPC balancer (round-robin + cooldown + concurrency cap + jitter)
 (() => {
   if (typeof window === 'undefined') return;
   if ((window as any).__rpcBalancerPatchedV3) return;
 
   const INFURA = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || '';
   const ALCHEMY = process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || '';
-  // CHANGED: use BOTH endpoints for better load distribution
   const endpoints: string[] = [];
   if (ALCHEMY) endpoints.push(ALCHEMY);
   if (INFURA) endpoints.push(INFURA);
@@ -756,7 +744,6 @@ export default function HomePage() {
     chainId: sepolia.id, // + force Sepolia reads
   });
 
-  // ADD: voting via Router.routeModule -> GOVERNANCE key
   const GOVERNANCE_KEY = React.useMemo(
     () => keccak256(toUtf8Bytes('GOVERNANCE')) as `0x${string}`,
     []
@@ -774,7 +761,6 @@ export default function HomePage() {
     try {
       if (!isConnected || !address) return; // guard: requires connected wallet
       setVotingId(id);
-      // CHANGED: encode voteFor(uint256,bool,address) so voter != Core
       const gIface = new Interface(['function voteFor(uint256,bool,address)']);
       const calldata = gIface.encodeFunctionData('voteFor', [
         id,
@@ -838,7 +824,6 @@ export default function HomePage() {
     query: { enabled: govCalls.length > 0 },
   });
 
-  // FIX: move effect after refs exist + guard calls
   React.useEffect(() => {
     if (!isVoteSuccess) return;
     Promise.allSettled([
@@ -875,7 +860,6 @@ export default function HomePage() {
   );
   const displayProposalCount = displayProposals.length || Number(govCountRaw ?? 0n) || proposalCount;
 
-  // New: combined loading/error respecting governance fallback
   // Filter out ABI mismatch errors coming from the legacy hook (getAllProposalIds)
   const hookErrorIsAbiMismatch = Boolean(proposalsError?.message?.includes('getAllProposalIds'));
   const votesLoading = proposalsLoading && displayProposals.length === 0;
@@ -892,23 +876,18 @@ export default function HomePage() {
 
   const [activeTab, setActiveTab] = useState<"zbiorki" | "glosowania">("zbiorki");
   const [campaignFilter, setCampaignFilter] = useState<"all" | "target" | "flexible">("all");
-  // NEW: pagination (6 at a time)
   const PAGE_SIZE = 6;
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-  // NEW: hover state for Show More button to guarantee color change
   const [showMoreHover, setShowMoreHover] = useState(false);
 
-  // NEW: anchor to campaigns list for smooth scrolling
   const campaignsSectionRef = useRef<HTMLDivElement | null>(null);
 
   // Filtruj kampanie na podstawie wybranego filtru
   const campaigns = fundraisers; // alias dla istniejącej logiki poniżej
 
-  // NEW: read search query from global store and normalize it
   const { query: searchQuery } = useSearch();
   const normalizedQuery = (searchQuery || '').trim().toLowerCase();
 
-  // NEW: helper – does campaign match query (by title or ID)
   const matchesQuery = React.useCallback((c: ModularFundraiser, q: string) => {
     if (!q) return true;
     const title = String((c as any)?.title ?? '').toLowerCase();
@@ -921,7 +900,6 @@ export default function HomePage() {
     return false;
   }, []);
 
-  // NEW: robust detector for "no-goal" (flexible) campaigns — handles ABI variants
   const isNoGoalFlexible = React.useCallback((c: any) => {
     const flag = Boolean(c?.isFlexible);
     // goal can be goalAmount or target (bigint/number), treat 0 as "no goal"
@@ -934,7 +912,6 @@ export default function HomePage() {
     return flag || goalIsZero || fType === 1;
   }, []);
 
-  // UPDATED: counts using robust detector
   const flexibleCount = campaigns ? campaigns.filter((c: any) => isNoGoalFlexible(c)).length : 0;
   const targetCount = campaigns ? campaigns.filter((c: any) => !isNoGoalFlexible(c)).length : 0;
 
@@ -944,30 +921,25 @@ export default function HomePage() {
     return true; // "all"
   }) : [];
 
-  // NEW: apply search after base filter
   const searchedCampaigns = React.useMemo(
     () => (!normalizedQuery ? filteredCampaigns : filteredCampaigns.filter(c => matchesQuery(c, normalizedQuery))),
     [filteredCampaigns, normalizedQuery, matchesQuery]
   );
 
-  // NEW: sort searched results by newest first
   const sortedFilteredCampaigns = React.useMemo(() => {
     if (!searchedCampaigns || searchedCampaigns.length === 0) return [];
     return [...searchedCampaigns].sort((a: any, b: any) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
   }, [searchedCampaigns]);
 
-  // NEW: reset pagination on filter change or search change
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
   }, [campaignFilter, normalizedQuery]);
 
-  // NEW: data for current page (after sorting + search)
   const visibleCampaigns = React.useMemo(
     () => sortedFilteredCampaigns.slice(0, visibleCount),
     [sortedFilteredCampaigns, visibleCount]
   );
 
-  // NEW: when user types a query, jump to "All Campaigns" and scroll to the list
   useEffect(() => {
     if (!normalizedQuery) return;
     setActiveTab('zbiorki');
@@ -1029,7 +1001,6 @@ export default function HomePage() {
 
   const carouselCampaigns = getCarouselCampaigns();
 
-  // NEW: pick top-3 “Zbiórki dnia”
   // Prefer target campaigns (with a goal) that are closest to their goal (highest progress but not reached).
   // If none are "active and not reached", fall back to the newest target campaigns.
   const dayPicks = React.useMemo(() => {
@@ -1068,7 +1039,6 @@ export default function HomePage() {
     return newestTargets.slice(0, 3);
   }, [campaigns, isNoGoalFlexible]);
 
-  // NEW: total raised (USDC-style formatting: 6 decimals truncated to whole USDC for large counter)
   const totalRaisedRaw = React.useMemo(() => {
     if (!campaigns || campaigns.length === 0) return 0n;
     return campaigns.reduce((acc: bigint, c: ModularFundraiser) => acc + BigInt(c.raisedAmount ?? 0n), 0n);
@@ -1079,7 +1049,6 @@ export default function HomePage() {
   };
   const totalRaisedUSDC = formatUSDCInteger(totalRaisedRaw);
 
-  // NEW: latest flexible campaigns (no goal) – pick top by raised USDC, fallback to newest
   const latestFlexibleCampaigns = React.useMemo(() => {
     if (!campaigns || campaigns.length === 0) return [];
     const flex = [...campaigns].filter((c: any) => isNoGoalFlexible(c));
@@ -1105,7 +1074,6 @@ export default function HomePage() {
     return [...flex].sort((a: any, b: any) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)).slice(0, 3);
   }, [campaigns, isNoGoalFlexible]);
 
-  // NEW: rate-limit auto-retry state (exponential backoff with jitter)
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [retrySeconds, setRetrySeconds] = useState(0);
   const retryTimerRef = React.useRef<number | null>(null);
@@ -1123,7 +1091,6 @@ export default function HomePage() {
     );
   }, [campaignsError]);
 
-  // Enhanced: schedule auto-retry when rate-limited (prevents concurrent timers)
   useEffect(() => {
     if (isRateLimited && !retryTimerRef.current) {
       // More aggressive retry schedule for better UX
@@ -1184,7 +1151,6 @@ export default function HomePage() {
     };
   }, [isRateLimited, retryAttempt, refetchCampaigns]);
 
-  // NEW: manual override to retry immediately
   const forceRefetchCampaigns = async () => {
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current);

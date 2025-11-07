@@ -7,26 +7,19 @@ import { ROUTER_ADDRESS } from '../../blockchain/contracts';
 import { poliDaoRouterAbi } from '../../blockchain/routerAbi';
 import { poliDaoCoreAbi } from '../../blockchain/coreAbi';
 import { poliDaoAnalyticsAbi } from '../../blockchain/analyticsAbi';
-// import poliDaoGovernanceAbi from '../../blockchain/governanceAbi'; // removed
-// import { POLIDAO_ABI } from '../../blockchain/poliDaoAbi'; // removed
-// import { polidaoContractConfig } from '../../blockchain/contracts'; // removed
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
-// import { useGetAllProposals } from '../../hooks/usePoliDao'; // removed
 import { useFundraisersModular } from '../../hooks/useFundraisersModular';
 import CampaignCard from '../../components/CampaignCard';
 import { Interface, JsonRpcProvider, keccak256, toUtf8Bytes } from 'ethers';
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
 import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { useRouter } from 'next/navigation';
-// NEW: simulate contracts preflight
 import { usePublicClient } from 'wagmi';
-// NEW: storage ABI
 import { poliDaoStorageAbi } from '../../blockchain/storageAbi';
 
 import './myaccountstyles.css';
 
-// NEW: minimal Security ABI for diagnostics (no tx)
 const SECURITY_ABI = [
   { name: 'payoutLimitUSDC', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
   { name: 'getSecurityLevel', type: 'function', stateMutability: 'view', inputs: [], outputs: [
@@ -72,12 +65,9 @@ export default function AccountPage() {
     'dashboard' | 'donations' | 'fundraisers'
   >('dashboard');
   const router = useRouter();
-  // NEW: public client for simulateContract
   const publicClient = usePublicClient();
 
-  // FIX: define chainRefresh early (used by many hooks below)
   const [chainRefresh, setChainRefresh] = useState(0);
-  // NEW: touch detection for responsive overlays (iPad/phones)
   const [isTouch, setIsTouch] = useState(false);
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -109,7 +99,6 @@ export default function AccountPage() {
     functionName: 'security',
   });
 
-  // ADD: analytics and storage modules (used later)
   const { data: analyticsAddress } = useReadContract({
     address: coreAddress as `0x${string}` | undefined,
     abi: poliDaoCoreAbi,
@@ -124,7 +113,6 @@ export default function AccountPage() {
     query: { enabled: !!coreAddress }
   });
 
-  // ADD: spenderAddress (used in allowances)
   const { data: coreSpender } = useReadContract({
     address: coreAddress as `0x${string}` | undefined,
     abi: poliDaoCoreAbi,
@@ -196,7 +184,6 @@ export default function AccountPage() {
     };
   }, [withdrawRateLimit]);
 
-  // NEW: user's own campaigns (sorted: closest to target -> furthest)
   const myCampaigns = React.useMemo(() => {
     if (!campaigns || !address) return [];
     const mine = (campaigns as any[]).filter(
@@ -229,13 +216,11 @@ export default function AccountPage() {
       });
   }, [campaigns, address]);
 
-  // NEW: ids of user's campaigns (used by Storage/Router reads)
   const myCampaignIds = React.useMemo(
     () => myCampaigns.map((c: any) => BigInt(c.id ?? c.campaignId ?? 0n)),
     [myCampaigns]
   );
 
-  // NEW: Router progress fallback (used when Storage progress is unavailable)
   const progressCalls = React.useMemo(() => {
     if (myCampaignIds.length === 0) return [];
     return myCampaignIds.map((fid) => ({
@@ -252,115 +237,6 @@ export default function AccountPage() {
   });
 
   // --- Governance proposals (prefer governanceModule if present) ---
-  // const { data: governanceAddress } = useReadContract({
-  //   address: coreAddress as `0x${string}` | undefined,
-  //   abi: poliDaoCoreAbi,
-  //   functionName: 'governanceModule',
-  //   query: { enabled: !!coreAddress }
-  // });
-
-  // const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
-  // const isNonZeroAddress = (addr?: string) =>
-  //   typeof addr === 'string' &&
-  //   /^0x[a-fA-F0-9]{40}$/.test(addr) &&
-  //   addr.toLowerCase() !== ZERO_ADDR;
-
-  // REPLACED: getAllProposalIds -> getProposals (paged)
-  // const { data: govPage } = useReadContract({
-  //   address: (governanceAddress as `0x${string}`) ?? undefined,
-  //   abi: poliDaoGovernanceAbi,
-  //   functionName: 'getProposals',
-  //   args: [0n, 200n],
-  //   query: { enabled: isNonZeroAddress(governanceAddress as string) },
-  // });
-
-  // const { data: govCountRaw } = useReadContract({
-  //   address: (governanceAddress as `0x${string}`) ?? undefined,
-  //   abi: poliDaoGovernanceAbi,
-  //   functionName: 'getProposalCount',
-  //   query: { enabled: isNonZeroAddress(governanceAddress as string) },
-  // });
-
-  // Fallback: resolve real IDs via proposalIds(index) if needed
-  // const proposalIndexCalls = React.useMemo(() => {
-  //   const count = Number(govCountRaw ?? 0n);
-  //   if (!isNonZeroAddress(governanceAddress as string) || count === 0) return [];
-  //   const limit = Math.min(count, 200);
-  //   return Array.from({ length: limit }, (_, i) => ({
-  //     address: governanceAddress as `0x${string}`,
-  //     abi: poliDaoGovernanceAbi,
-  //     functionName: 'proposalIds' as const,
-  //     args: [BigInt(i)],
-  //   }));
-  // }, [governanceAddress, govCountRaw]);
-
-  // const { data: indexIdResults } = useReadContracts({
-  //   contracts: proposalIndexCalls,
-  //   query: { enabled: proposalIndexCalls.length > 0 },
-  // });
-
-  // const govIds = React.useMemo(() => {
-  //   const tuple = govPage as any;
-  //   const pagedIds: bigint[] = Array.isArray(tuple?.ids)
-  //     ? (tuple.ids as bigint[])
-  //     : (Array.isArray(tuple?.[0]) ? (tuple[0] as bigint[]) : []);
-  //   if (pagedIds && pagedIds.length > 0) return pagedIds.slice(0, 200);
-
-  //   if (indexIdResults && indexIdResults.length > 0) {
-  //     const realIds = indexIdResults
-  //       .map((r) => (r as any)?.result as bigint | undefined)
-  //       .filter((x): x is bigint => typeof x === 'bigint');
-  //     if (realIds.length > 0) return realIds.slice(0, 200);
-  //   }
-
-  //   const n = Number(govCountRaw ?? 0n);
-  //   return Array.from({ length: Math.min(n, 100) }, (_, i) => BigInt(i));
-  // }, [govPage, indexIdResults, govCountRaw]);
-
-  // const govCalls = React.useMemo(() => {
-  //   if (!isNonZeroAddress(governanceAddress as string) || govIds.length === 0) return [];
-  //   return govIds.map((id) => ({
-  //     address: governanceAddress as `0x${string}`,
-  //     abi: poliDaoGovernanceAbi,
-  //     functionName: 'getProposal' as const,
-  //     args: [id],
-  //   }));
-  // }, [governanceAddress, govIds]);
-
-  // const { data: govResults } = useReadContracts({
-  //   contracts: govCalls,
-  //   query: { enabled: govCalls.length > 0 },
-  // });
-
-  // const governanceProposals = React.useMemo(() => {
-  //   if (!govResults || govResults.length === 0) return [];
-  //   const out: { id: bigint; question: string; yesVotes: bigint; noVotes: bigint; endTime: bigint; creator: string }[] = [];
-  //   govResults.forEach((r) => {
-  //     const v = (r as any)?.result;
-  //     if (!v) return;
-  //     const exists = Boolean(v.exists ?? v[6] ?? true);
-  //     if (!exists) return;
-  //     out.push({
-  //       id: BigInt(v.id ?? v[0] ?? 0n),
-  //       question: String(v.question ?? v[1] ?? ''),
-  //       yesVotes: BigInt(v.yesVotes ?? v[2] ?? 0n),
-  //       noVotes: BigInt(v.noVotes ?? v[3] ?? 0n),
-  //       endTime: BigInt(v.endTime ?? v[4] ?? 0n),
-  //       creator: String(v.creator ?? v[5] ?? ZERO_ADDR),
-  //     });
-  //   });
-  //   return out;
-  // }, [govResults]);
-
-  // const displayProposals = React.useMemo(
-  //   () => (governanceProposals.length > 0 ? governanceProposals : (proposals || [])),
-  //   [governanceProposals, proposals]
-  // );
-
-  // NEW: mark from which source current list originates (module vs legacy)
-  // const proposalsFromModule = React.useMemo(() => governanceProposals.length > 0, [governanceProposals]);
-
-  // Router: list user's donations globally (ids[], amounts[])
   const { data: userDonationsTuple } = useReadContract({
     address: ROUTER_ADDRESS,
     abi: poliDaoRouterAbi,
@@ -586,7 +462,6 @@ export default function AccountPage() {
     return map;
   }, [refundChecks, donatedFundraiserIds]);
 
-  // NEW: keep refund reason for UX
   const canRefundReasonById = React.useMemo(() => {
     const map = new Map<string, string>();
     if (!refundChecks || donatedFundraiserIds.length === 0) return map;
@@ -705,7 +580,6 @@ export default function AccountPage() {
   const [totalDonationsCount, setTotalDonationsCount] = useState<number>(0);
   const [totalDonationsSum, setTotalDonationsSum] = useState<string>('0');
   const [availableRefundsCount, setAvailableRefundsCount] = useState<number>(0);
-  // NEW: mark when KPI got overridden by Transfer scan
   const [kpiOverride, setKpiOverride] = useState(false);
 
   // REMOVE: Router-based KPI and per-campaign fallback; rely only on Core DonationMade events
@@ -721,7 +595,6 @@ export default function AccountPage() {
     }
   }, [eventTotals, kpiOverride]);
 
-  // NEW: compute KPI strictly from ERC20 Transfer logs with to == Storage and from == user
   useEffect(() => {
     let disposed = false;
     (async () => {
@@ -794,17 +667,14 @@ export default function AccountPage() {
     title: string;
     isRefundable: boolean;
     reason: string;
-    // NEW: schedule info (preflight)
     allowedNow?: bigint;
     nextAt?: bigint;
     remaining?: bigint;
-    // NEW: diagnostics from Storage/Core
     token?: `0x${string}`;
     donationStorage?: bigint;
     withdrawalsStarted?: boolean;
     raised?: bigint;
     goal?: bigint;
-    // NEW: commission (bps) and expected net
     refundCommissionBps?: bigint;
     expectedNet?: bigint;
   } | null>(null);
@@ -812,7 +682,6 @@ export default function AccountPage() {
   // const [refundInput, setRefundInput] = useState<string>('');
   const [refundUi, setRefundUi] = useState<string>('');
 
-  // NEW: withdraw modal state and actions
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawCtx, setWithdrawCtx] = useState<{
     fid: bigint;
@@ -820,7 +689,6 @@ export default function AccountPage() {
     raised: bigint;
     goal: bigint;
     isFlexible: boolean;
-    // NEW: schedule info (preflight)
     allowedNow?: bigint;
     nextAt?: bigint;
     remaining?: bigint;
@@ -828,7 +696,6 @@ export default function AccountPage() {
   const [withdrawInput, setWithdrawInput] = useState<string>('');
   const [withdrawUi, setWithdrawUi] = useState<string>('');
 
-  // NEW: write states for refunds and withdrawals
   const { writeContractAsync } = useWriteContract();
   const [pendingRefund, setPendingRefund] = useState<{ id: bigint; hash: `0x${string}` } | null>(null);
   const { isLoading: isRefundMining, isSuccess: isRefundSuccess } = useWaitForTransactionReceipt({
@@ -901,7 +768,6 @@ export default function AccountPage() {
     }
   }
 
-  // ADD: diagnostics loader used by openRefundDialog/doQuickRefund
   async function loadRefundDiagnostics(fid: bigint) {
     try {
       if (!publicClient) return {};
@@ -925,7 +791,6 @@ export default function AccountPage() {
             args: [fid],
           }).catch(() => null)
         );
-        // NEW: refund commission (bps)
         reads.push(
           publicClient.readContract({
             address: storageAddress as `0x${string}`,
@@ -1017,7 +882,6 @@ export default function AccountPage() {
     }
   };
 
-  // NEW: open withdraw dialog for creator
   const openWithdrawDialog = async (fid: bigint) => {
     const idStr = fid.toString();
     const camp = (campaigns as any[])?.find((x) => x?.id?.toString?.() === idStr);
@@ -1034,7 +898,6 @@ export default function AccountPage() {
     setWithdrawInput('');
     setWithdrawUi('');
     setWithdrawOpen(true);
-    // NEW: preflight and enrich context (for flexible/partial withdrawals)
     const sim = await simulateWithdrawSchedule(fid, raised);
     if (sim) {
       setWithdrawCtx((prev) => prev ? { ...prev, allowedNow: sim.allowedNow, nextAt: sim.nextAt, remaining: sim.remaining } : prev);
@@ -1118,7 +981,6 @@ export default function AccountPage() {
     }
   };
 
-  // NEW: Quick refund from overlay using Router with preflight
   const doQuickRefund = async (fid: bigint) => {
     try {
       const idStr = fid.toString();
@@ -1193,7 +1055,6 @@ export default function AccountPage() {
     }
   };
 
-  // ADD: Withdraw handlers (used by Withdraw modal and overlay)
   const doFullWithdraw = async () => {
     if (!withdrawCtx) return;
     try {
@@ -1214,7 +1075,6 @@ export default function AccountPage() {
         return;
       }
 
-      // IMPORTANT: actual payout → Core.withdrawFunds via Router
       const txHash = await writeContractAsync({
         address: ROUTER_ADDRESS,
         abi: poliDaoRouterAbi,
@@ -1231,7 +1091,6 @@ export default function AccountPage() {
   const doCustomWithdraw = async () => {
     if (!withdrawCtx) return;
     try {
-      // Note: Core.withdrawFunds ignores a custom requested amount and enforces Security tranche.
       const requested = toBaseUnits(withdrawInput || '0', 6);
       if (requested <= 0n) {
         setWithdrawUi('Amount must be greater than 0.');
@@ -1293,7 +1152,6 @@ export default function AccountPage() {
     return map;
   }, [storageFundraiserResults, myCampaignIds]);
 
-  // UPDATED: prefer Storage-provided success, fallback to Router-based flags if missing
   const successById = React.useMemo(() => {
     // Prefer Storage
     if (storageProgressById.size > 0) {
@@ -1308,7 +1166,6 @@ export default function AccountPage() {
     return new Map<string, boolean>();
   }, [storageProgressById]);
 
-  // UPDATED: prefer Storage-provided raised/goal for rendering in "Twoje zbiórki"
   const progressById = React.useMemo(() => {
     if (storageProgressById.size > 0) {
       const m = new Map<string, { raised: bigint; goal: bigint }>();
@@ -1475,7 +1332,6 @@ export default function AccountPage() {
                             : c.isFlexible
                               ? `Flexible campaign #${idStr}`
                               : `Fundraiser #${idStr}`,
-                        // CHANGED: show real description if provided
                         description,
                         image: "/images/zbiorka.png",
                       };
@@ -1519,7 +1375,6 @@ export default function AccountPage() {
                                 </div>
                               </div>
                             ) : isFlexibleCampaign ? (
-                              // UPDATED: Info overlay always visible on touch, hover on desktop
                               <div
                                 className={`pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden ${
                                   isTouch ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
@@ -1537,7 +1392,6 @@ export default function AccountPage() {
                                 </div>
                               </div>
                             ) : (
-                              // UPDATED: Revoke overlay always visible on touch, hover on desktop
                               <div
                                 className={`pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden ${
                                   isTouch ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
@@ -1832,7 +1686,6 @@ export default function AccountPage() {
                   const noFunds = donatedNow <= 0n;
                   const disabled = isPending || noFunds;
 
-                  // CHANGED: static label
                   const label = 'Refunding all amount ...';
 
                   return (
@@ -2021,7 +1874,6 @@ function MyCampaignCard({
   progress?: { raised: bigint; goal: bigint }
 }) {
   const router = useRouter();
-  // NEW: touch detection for this card (standalone component scope)
   const [isTouch, setIsTouch] = useState(false);
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -2033,7 +1885,6 @@ function MyCampaignCard({
   }, []);
   const idStr = (campaign.id ?? 0n).toString();
 
-  // NEW: compute target/raised and treat goal==0 as flexible to hide progress
   const targetAmount = BigInt(progress?.goal ?? (campaign.goalAmount ?? campaign.target ?? 0n));
   const raisedAmount = BigInt(progress?.raised ?? (campaign.raisedAmount ?? campaign.raised ?? 0n));
   const isFlexibleComputed = Boolean(campaign.isFlexible) || targetAmount === 0n;
@@ -2046,7 +1897,6 @@ function MyCampaignCard({
     creator: campaign.creator as string,
     token: campaign.token as string,
     endTime: (campaign.endDate ?? campaign.endTime ?? 0n) as bigint,
-    // CHANGED: mark no-goal campaigns as flexible to hide progress bar
     isFlexible: isFlexibleComputed,
   };
 
@@ -2054,7 +1904,6 @@ function MyCampaignCard({
     mappedCampaign.targetAmount > 0n &&
     mappedCampaign.raisedAmount >= mappedCampaign.targetAmount;
 
-  // NEW: no-goal campaigns are always withdrawable
   const isNoGoal = mappedCampaign.targetAmount === 0n;
 
   // REPLACED: prefer campaign description if available
@@ -2069,7 +1918,6 @@ function MyCampaignCard({
         : campaign.isFlexible
           ? `Flexible campaign #${idStr}`
           : `Fundraiser #${idStr}`,
-    // CHANGED: show real description if provided, otherwise fallback
     description:
       descCandidate.length > 0
         ? descCandidate
@@ -2096,7 +1944,6 @@ function MyCampaignCard({
           </div>
         </div>
       ) : (
-        // CHANGED: full-card overlay, button centered on the image area (h-60)
         (isReached || isNoGoal) && (
           <div
             className={`pointer-events-none absolute inset-0 z-10 rounded-xl overflow-hidden ${

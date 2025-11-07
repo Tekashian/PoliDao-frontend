@@ -44,7 +44,6 @@ export default function ProposalCard() {
     args: selectedProposal !== null && address ? [BigInt(selectedProposal), address] : undefined,
   });
 
-  // NEW: stable boolean + auto-switch to results if voted
   const userHasVoted = Boolean(hasUserVoted);
   useEffect(() => {
     if (userHasVoted && !showResults) setShowResults(true);

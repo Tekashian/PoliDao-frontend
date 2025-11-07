@@ -141,7 +141,6 @@ export function useFundraisersModular(page = 0, pageSize = 50) {
         return;
       }
 
-      // Enhanced: use batch processing for better rate limit handling
       const MAX_FETCH_ALL = Number(process.env.NEXT_PUBLIC_MAX_FETCH_ALL ?? 1000);
       let start = page * pageSize + 1;
       let end = Math.min(start + pageSize - 1, total);

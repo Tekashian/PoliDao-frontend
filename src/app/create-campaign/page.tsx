@@ -27,13 +27,10 @@ interface FormData {
   location: string;
 }
 
-// NEW: zero address constant
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
-// NEW: USDC Sepolia address (must be used on testnet)
 const USDC_TESTNET_ADDRESS: `0x${string}` = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238';
 
-// NEW: helper to resolve USDC address by chain (Sepolia only)
 function getUsdcAddress(chainId?: number): `0x${string}` | null {
   if (!chainId) return null;
   // 11155111 = Sepolia
@@ -41,7 +38,6 @@ function getUsdcAddress(chainId?: number): `0x${string}` | null {
   return null;
 }
 
-// NEW: USDC ABI for token info
 const USDC_ABI = [
   {
     constant: true,
@@ -99,12 +95,10 @@ export default function CreateCampaignPage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // NEW: whitelist + selection
   type TokenInfo = { address: `0x${string}`; symbol: string; decimals?: number };
   const [tokensList, setTokensList] = useState<TokenInfo[]>([]);
   const [selectedTokenAddress, setSelectedTokenAddress] = useState<`0x${string}` | null>(null);
 
-  // NEW: store pre-transaction fundraiser count
   const preCountRef = useRef<bigint | null>(null);
 
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -207,10 +201,8 @@ export default function CreateCampaignPage() {
     return 'Transaction failed — check the data or try again';
   };
 
-  // FIX: fundraiserType zależy od typu kampanii: 0 = WITH_GOAL, 1 = WITHOUT_GOAL (dla elastycznych)
   const mapFundraiserType = (campaignType: 'target' | 'flexible'): number => (campaignType === 'target' ? 0 : 1);
 
-  // NEW: robust CID extractor for /api/upload responses
   const extractCidFromResponse = (x: any): string => {
     if (!x) return '';
     if (typeof x === 'string') return x;
@@ -486,7 +478,6 @@ export default function CreateCampaignPage() {
     }
   }, [createdId]);
 
-  // NEW: sprawdzanie czy adres jest uprawniony do tworzenia (probing potencjalnych nazw)
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -525,7 +516,6 @@ export default function CreateCampaignPage() {
     return () => { cancelled = true; };
   }, [address, publicClient]);
 
-  // FIX: resolve token info (USDC Sepolia) and populate dropdown + merge Router whitelist
   useEffect(() => {
     let cancelled = false;
     (async () => {

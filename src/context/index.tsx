@@ -1,15 +1,12 @@
 // src/context/index.tsx
 'use client'
 
-// Importy z twojego pliku config/index.tsx
-// Upewnij się, że plik config/index.tsx poprawnie eksportuje projectId i networks
 import { wagmiAdapter, projectId, networks as appNetworks } from "../config/index"
-import { createAppKit } from "@reown/appkit/react"; // Upewnij się, że używasz /react jeśli tak jest w najnowszej dokumentacji
-import { type Chain } from 'wagmi/chains'; // Potrzebne do rzutowania typu dla defaultNetwork
+import { createAppKit } from "@reown/appkit/react";
+import { type Chain } from 'wagmi/chains';
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React, { type ReactNode } from 'react';
-// Usunęliśmy import cookieToInitialState
 import { WagmiProvider, type Config } from "wagmi";
 
 const queryClient = new QueryClient();
@@ -47,33 +44,29 @@ if (!defaultNetworkChain && appNetworks.length > 0) {
 
 const modal = createAppKit({
     adapters: [wagmiAdapter],
-    projectId, // Tutaj używane jest projectId
-    // Upewnij się, że appNetworks jest poprawnie zdefiniowaną tablicą Chain[] w config/index.tsx
-    // i że zawiera przynajmniej jedną sieć, np. [sepolia]
-    networks: appNetworks as [Chain, ...Chain[]], // Rzutowanie dla createAppKit; upewnij się, że appNetworks nie jest puste
-    defaultNetwork: defaultNetworkChain, // Może być undefined, jeśli appNetworks jest puste
+    projectId,
+    networks: appNetworks as [Chain, ...Chain[]],
+    defaultNetwork: defaultNetworkChain,
     metadata,
     features: {
-        analytics: true, // Włącz/wyłącz według potrzeb
-        email: true,     // Włącz/wyłącz według potrzeb
-        socials: ['google', 'x', 'github', 'discord', 'farcaster'], // Dostosuj listę
+        analytics: true,
+        email: true,
+        socials: ['google', 'x', 'github', 'discord', 'farcaster'],
         emailShowWallets: true
     },
-    themeMode: 'light', // Możesz zmienić na 'dark' lub 'system'
+    themeMode: 'light',
     themeVariables: {
-        '--w3m-accent': '#68CC9C', // Przykładowy kolor akcentu
+        '--w3m-accent': '#68CC9C',
         '--w3m-color-mix': '#68CC9C',
         '--w3m-color-mix-strength': 40,
-        '--w3m-border-radius-master': '4px', // Przykładowy promień zaokrąglenia
+        '--w3m-border-radius-master': '4px',
     }
 });
 
-// ContextProvider nie przyjmuje już propsów związanych z cookies/headers
 function ContextProvider({ children }: { children: ReactNode }) {
     const config = wagmiAdapter.wagmiConfig as Config;
 
     return (
-        // WagmiProvider jest teraz bez `initialState`
         <WagmiProvider config={config}>
             <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
         </WagmiProvider>

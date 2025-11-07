@@ -2,15 +2,12 @@
 import { cookieStorage, createStorage } from "wagmi";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 // Upewnij się, że importujesz Chain, jeśli jest potrzebny do typowania `networks`
-import { mainnet, sepolia} from "@reown/appkit/networks"; // lub z wagmi/chains
+import { mainnet, sepolia} from "@reown/appkit/networks";
 import { http, fallback } from "viem";
 
-// 1. Tymczasowo zahardkoduj swój Project ID, aby wykluczyć problemy z .env
-// export const projectId = "35507617726bb609e677aecfe94eaa82";
-// Poniżej oryginalny sposób ładowania - przywrócisz go później
 export const projectId = process.env.NEXT_PUBLIC_PROJECT_ID;
 
-if (!projectId) { // Możesz tymczasowo zakomentować to oryginalne sprawdzenie
+if (!projectId) {
   throw new Error("Project Id is not defined.");
 }
 
