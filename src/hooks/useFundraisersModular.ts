@@ -102,15 +102,20 @@ async function fetchFundraiserCached(provider: ethers.AbstractProvider, id: numb
 }
 function useProvider() {
   return useMemo(() => {
-    if (typeof window !== 'undefined' && (window as any).ethereum) {
-      // BrowserProvider do odczytów też działa (ethers v6)
-      return new ethers.BrowserProvider((window as any).ethereum);
-    }
     const url =
       process.env.NEXT_PUBLIC_RPC_URL ||
       process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL ||
-      'https://rpc.sepolia.org';
-    return new ethers.JsonRpcProvider(url);
+      'https://sepolia.infura.io/v3/a5b92b367ca74b259a2f48df6e8dcfa1';
+    
+    const provider = new ethers.JsonRpcProvider(url);
+    
+    Object.defineProperty(provider, '_network', {
+      value: { chainId: 11155111n, name: 'sepolia' },
+      writable: false,
+      configurable: false
+    });
+    
+    return provider;
   }, []);
 }
 
