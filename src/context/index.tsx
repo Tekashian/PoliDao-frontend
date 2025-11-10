@@ -1,51 +1,35 @@
-// src/context/index.tsx
 'use client'
 
-import { wagmiAdapter, projectId, networks as appNetworks } from "../config/index"
+import { wagmiAdapter, projectId } from "../config/index"
 import { createAppKit } from "@reown/appkit/react";
 import { type Chain } from 'wagmi/chains';
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React, { type ReactNode } from 'react';
 import { WagmiProvider, type Config } from "wagmi";
+import { sepolia } from "@reown/appkit/networks";
 
 const queryClient = new QueryClient();
 
-// To sprawdzenie jest dobre, ale upewnij się, że problem leży w wartości, a nie tylko w tym sprawdzeniu
 if (!projectId) {
-    // Ten błąd powinien zatrzymać budowanie, jeśli NEXT_PUBLIC_PROJECT_ID nie jest ustawione
-    throw new Error('Project Id is not defined. Check NEXT_PUBLIC_PROJECT_ID in your .env file or if it is hardcoded in config. (Error from context/index.tsx)');
+    throw new Error('Project Id is not defined. Check NEXT_PUBLIC_PROJECT_ID in your .env file or if it is hardcoded in config.');
 }
 
-// --- DODANY CONSOLE.LOG ---
-// Wyświetlamy projectId, które będzie użyte do inicjalizacji Reown AppKit
-console.log("[CONTEXT] Attempting to initialize Reown AppKit with Project ID:", projectId);
-// --------------------------
+console.log("[CONTEXT] Initializing Reown AppKit with Project ID:", projectId);
 
 const metadata = {
-    name: "PoliDao", // Możesz dostosować
-    description: "PoliDao - EVM ", // Możesz dostosować
-    url: typeof window !== 'undefined' ? window.location.origin : "https://default.example.com", // Domyślny URL dla SSR
-    icons: ["https://avatars.githubusercontent.com/u/37784886"] // Przykładowa ikona, zmień na swoją
+    name: "PoliDao",
+    description: "PoliDao - EVM ",
+    url: typeof window !== 'undefined' ? window.location.origin : "https://default.example.com",
+    icons: ["https://avatars.githubusercontent.com/u/37784886"]
 };
 
-// Ustalenie defaultNetwork. Zakładamy, że appNetworks (z config/index.tsx) to [sepolia]
-// Jeśli appNetworks jest puste, defaultNetworkChain będzie undefined.
-const defaultNetworkChain = appNetworks.length > 0 ? appNetworks[0] as unknown as Chain : undefined;
+const defaultNetworkChain = sepolia as unknown as Chain;
 
-if (!defaultNetworkChain && appNetworks.length > 0) {
-    console.warn("Warning: Could not determine defaultNetworkChain correctly, ensure `networks` in `config/index.tsx` is an array of Chain objects from `@reown/appkit/networks` or `wagmi/chains`.");
-} else if (appNetworks.length === 0) {
-    console.error("ERROR: The `networks` array in `config/index.tsx` is empty. Reown AppKit requires at least one network.");
-    // Możesz tu rzucić błędem, aby zatrzymać aplikację, jeśli to krytyczne
-    // throw new Error("Reown AppKit requires at least one network defined in config/index.tsx.");
-}
-
-
-const modal = createAppKit({
+createAppKit({
     adapters: [wagmiAdapter],
     projectId,
-    networks: appNetworks as [Chain, ...Chain[]],
+    networks: [sepolia] as unknown as [Chain, ...Chain[]],
     defaultNetwork: defaultNetworkChain,
     metadata,
     features: {
