@@ -110,16 +110,10 @@ export function useGetAllFundraisers() {
     campaignCount,
     isLoading,
     error,
-    refetchCampaigns: async () => {
-      // prosty re-run: zmień zależność przez no-op state
-      // lub wywołaj ponownie efekt ręcznie
-      // Możesz też tu przenieść logikę z efektu do funkcji i współdzielić.
-      // Dla prostoty: nic – konsument może wymusić re-render.
-    },
+    refetchCampaigns: async () => {},
   };
 }
 
-// Hook do pobierania wszystkich propozycji – pozostaje jak był (Router nie ma getterów propozycji)
 export function useGetAllProposals() {
   const { data: proposalIds, isLoading: idsLoading, error: idsError, refetch: refetchIds } = useReadContract({
     address: polidaoContractConfig.address,
@@ -147,7 +141,7 @@ export function useGetAllProposals() {
     for (let i = 0; i < ids.length; i++) {
       const res = multiData[i];
       if (res?.error || !res.result) continue;
-      const p = res.result as any;
+      const p = res.result;
       try {
         const proposal: Proposal = {
           id: p.id ?? ids[i],
@@ -160,7 +154,6 @@ export function useGetAllProposals() {
         };
         proposals.push(proposal);
       } catch {
-        // pomijamy uszkodzony wpis
       }
     }
   }
@@ -191,8 +184,8 @@ export function usePlatformStats(rpcUrl: string) {
       try {
         const s = await fetchPlatformStats(provider);
         if (mounted) setStats(s);
-      } catch (e: any) {
-        if (mounted) setError(e?.message ?? 'Failed to load stats');
+      } catch (e) {
+        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load stats');
       } finally {
         if (mounted) setLoading(false);
       }
@@ -217,9 +210,9 @@ export function useUserStatus(rpcUrl: string, user?: string) {
       setError(null);
       try {
         const s = await fetchUserStatus(provider, user);
-        if (mounted) setData(s as any);
-      } catch (e: any) {
-        if (mounted) setError(e?.message ?? 'Failed to load user status');
+        if (mounted) setData(s);
+      } catch (e) {
+        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load user status');
       } finally {
         if (mounted) setLoading(false);
       }

@@ -1,10 +1,7 @@
-// src/blockchain/contracts.ts
-
 import { ethers } from 'ethers';
 import routerAbi from './routerAbi';
 import coreAbi from './coreAbi';
 
-// Router-only source of truth
 export const ROUTER_ADDRESS = '0xB8DDB0D2Bce9200C87e53Ed06F4Ed2a15dde3423' as `0x${string}`;
 export const ROUTER_ABI = routerAbi;
 
@@ -12,21 +9,17 @@ export const CORE_ADDRESS = '0x9362d1b929c8cC161830292b95Ad5E1187239a38' as `0x$
 
 export const ANALYTICS_ADDRESS = '0x687e6294cf28D1b0D12AF25D8B23f298A5F1705B' as `0x${string}`;
 
-// Backward-compatible config for wagmi hooks/components
 export const polidaoContractConfig = {
   address: ROUTER_ADDRESS,
   abi: ROUTER_ABI,
 } as const;
 
-// Legacy alias so old imports keep working (recommended to migrate to ROUTER_ABI)
 export const POLIDAO_ABI = ROUTER_ABI;
 
-// Optional: default ERC20 token address for create/donate flows (set in .env)
 export const DEFAULT_TOKEN_ADDRESS =
   (process.env.NEXT_PUBLIC_DEFAULT_TOKEN_ADDRESS as `0x${string}`) ||
   ('0x0000000000000000000000000000000000000000' as const);
 
-// Fabryka kontraktu Router
 export function getRouterContract(providerOrSigner: ethers.Signer | ethers.AbstractProvider) {
   return new ethers.Contract(ROUTER_ADDRESS, routerAbi, providerOrSigner);
 }
@@ -35,19 +28,14 @@ export function getCoreContract(providerOrSigner: ethers.Signer | ethers.Abstrac
   return new ethers.Contract(CORE_ADDRESS, coreAbi, providerOrSigner);
 }
 
-export async function getCoreAddress(
-  providerOrSigner: ethers.Signer | ethers.AbstractProvider
-): Promise<`0x${string}`> {
-  const router = new ethers.Contract(ROUTER_ADDRESS, routerAbi, providerOrSigner) as any;
-  const addr = await router.coreContract();
-  return addr as `0x${string}`;
+export async function getCoreAddress(): Promise<`0x${string}`> {
+  return CORE_ADDRESS;
 }
 
-// Enhanced retry function optimized for free RPC endpoints
 async function retryWithBackoff<T>(
   fn: () => Promise<T>,
-  maxRetries = 2, // Optimal retry count for free endpoints
-  baseDelay = 1000, // Conservative base delay
+  maxRetries = 2,
+  baseDelay = 1000,
   context = 'operation'
 ): Promise<T> {
   let lastError: any;
@@ -183,20 +171,18 @@ export async function fetchFundraiserProgress(
   };
 }
 
-// Enhanced count fetching with retry
 export async function fetchFundraiserCount(provider: ethers.AbstractProvider) {
   return retryWithBackoff(async () => {
-    const coreAddr = await getCoreAddress(provider);
+    const coreAddr = await getCoreAddress();
     const core = new ethers.Contract(coreAddr, coreAbi, provider);
     const count: bigint = await core.getFundraiserCount();
     return count;
   }, 3, 1000, 'fetchFundraiserCount');
 }
 
-// Enhanced single fundraiser fetching with retry
 export async function fetchFundraiser(provider: ethers.AbstractProvider, id: bigint | number) {
   return retryWithBackoff(async () => {
-    const coreAddr = await getCoreAddress(provider);
+    const coreAddr = await getCoreAddress();
     const core = new ethers.Contract(coreAddr, coreAbi, provider);
     const [details, basic] = await Promise.all([
       core.getFundraiserDetails(id),
