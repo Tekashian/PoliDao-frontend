@@ -4,6 +4,7 @@ import { polidaoContractConfig } from '../blockchain/contracts';
 import { sepolia } from '@reown/appkit/networks';
 import { useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
+import { getRpcUrls } from '@/lib/provider';
 import { fetchPlatformStats, fetchUserStatus, fetchFundraiser, fetchFundraiserCount } from '@/blockchain/contracts';
 
 // Interfejs dla kampanii zgodny z PoliDAO
@@ -35,19 +36,15 @@ export interface Proposal {
 // Hook do pobierania wszystkich fundraiserów – teraz przez Router
 export function useGetAllFundraisers() {
   const provider = useMemo(() => {
-    const url =
-      process.env.NEXT_PUBLIC_RPC_URL ||
-      process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL ||
-      'https://sepolia.infura.io/v3/a5b92b367ca74b259a2f48df6e8dcfa1';
-    
+    const urls = getRpcUrls();
+    const url = urls[0] || 'https://rpc.sepolia.org';
+
     const provider = new ethers.JsonRpcProvider(url);
-    
     Object.defineProperty(provider, '_network', {
       value: { chainId: 11155111n, name: 'sepolia' },
       writable: false,
-      configurable: false
+      configurable: false,
     });
-    
     return provider;
   }, []);
 

@@ -40,11 +40,14 @@ createAppKit({
     },
     themeMode: 'light',
     themeVariables: {
-        '--w3m-accent': '#68CC9C',
-        '--w3m-color-mix': '#68CC9C',
+        '--w3m-accent': '#10b981',
+        '--w3m-accent-fill-color': '#ffffff',
+        '--w3m-color-mix': '#10b981',
         '--w3m-color-mix-strength': 40,
-        '--w3m-border-radius-master': '4px',
-    }
+        '--w3m-border-radius-master': '12px',
+        '--w3m-overlay-background-color': 'rgba(0,0,0,0.45)',
+        '--w3m-background-color': '#ffffff'
+    } as unknown as Record<string, string>
 });
 
 function ContextProvider({ children }: { children: ReactNode }) {

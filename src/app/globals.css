@@ -51,6 +51,14 @@ html, body, #__next {
   height: 100%;
 }
 
+/* Blur the app content when wallet modal is open (class toggled by Header) */
+.wallet-modal-open .campaign,
+.wallet-modal-open main,
+.wallet-modal-open #__next > div {
+  filter: blur(6px) saturate(90%);
+  transition: filter 200ms ease;
+}
+
 /* Links */
 a {
   color: var(--primary);

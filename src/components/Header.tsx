@@ -514,6 +514,9 @@ const Header = () => {
 
   useEffect(() => {
     if (walletModalOpen) setIsMobileMenuOpen(false);
+    try {
+      document.body.classList.toggle('wallet-modal-open', walletModalOpen);
+    } catch {}
   }, [walletModalOpen]);
 
   if (!isMounted) {
@@ -600,7 +603,7 @@ const Header = () => {
             {darkMode ? <SunIcon /> : <MoonIcon />}
           </button>
           <div className={styles.connectWalletButtonWrapper}>
-            <w3m-button />
+            <appkit-button />
           </div>
         </div>
 
@@ -733,7 +736,7 @@ const Header = () => {
                 style={{ display: 'flex', alignItems: 'center', gap: 8 }}
                 onClick={() => setIsMobileMenuOpen(false)}
               >
-                <w3m-button />
+                <appkit-button />
               </div>
             </div>
           </div>

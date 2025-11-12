@@ -36,7 +36,8 @@ import Image from 'next/image';
 import { useAppKitAccount, useAppKitNetwork } from "@reown/appkit/react";
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useReadContracts } from "wagmi";
 import { formatUnits, parseUnits } from "viem";
-import { Interface, JsonRpcProvider, keccak256, toUtf8Bytes } from 'ethers';
+import { Interface, keccak256, toUtf8Bytes } from 'ethers';
+import { getSmartProvider } from '../../..//lib/provider';
 import { poliDaoRouterAbi } from '../../../blockchain/routerAbi';
 import { ROUTER_ADDRESS } from '../../../blockchain/contracts';
 import { poliDaoAnalyticsAbi } from '../../../blockchain/analyticsAbi';
@@ -610,18 +611,13 @@ export default function CampaignPage() {
   useEffect(() => {
     if (selectedIdKey < 0) return;
 
-    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL;
-    if (!rpcUrl) {
-      console.warn('Brak RPC URL');
-      setDonations([]);
-      return;
-    }
+    // Provider is resolved via smart fallback (Infura/Alchemy/public)
 
     let disposed = false;
 
     const fetchDonationLogs = async () => {
       try {
-        const provider = new JsonRpcProvider(rpcUrl);
+  const provider = await getSmartProvider();
 
         const fundraiserTopic = '0x' + BigInt(selectedIdKey).toString(16).padStart(64, '0');
 
@@ -700,17 +696,13 @@ export default function CampaignPage() {
   useEffect(() => {
     if (selectedIdKey < 0) return;
 
-    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL;
-    if (!rpcUrl) {
-      console.warn('Brak RPC URL');
-      return;
-    }
+    // Provider is resolved via smart fallback (Infura/Alchemy/public)
 
     let disposed = false;
 
     const fetchUpdates = async () => {
       try {
-        const provider = new JsonRpcProvider(rpcUrl);
+  const provider = await getSmartProvider();
 
         // 1) Try Updates module (resolved via Storage, fallback Core)
         let entriesFromUpdates: Update[] = [];
@@ -1230,13 +1222,18 @@ export default function CampaignPage() {
       <Header />
       
       {/* Hero with blur */}
-      <div className="relative w-full h-[600px] -mt-56">
-        <div className="absolute inset-0 -z-10">
+      {/* NOTE: Horizontal scrollbar fix: the previous version scaled the hero image (scale-110)
+          without any overflow clipping, causing the absolutely positioned, enlarged image
+          to extend beyond the viewport width and produce a horizontal scroll.
+          Solution: remove scale-110 (unnecessary for slight zoom effect) and add overflow-hidden
+          to the wrapper so any future transforms or blurs stay confined. */}
+      <div className="relative w-full h-[600px] -mt-56 overflow-hidden">
+        <div className="absolute inset-0 -z-10 overflow-hidden">
           <Image
             src={displayImage}
             alt="Tło rozmyte kampanii"
             fill
-            className="object-cover object-top w-full h-full blur-lg scale-110"
+            className="object-cover object-top w-full h-full blur-lg"
             priority
           />
           <div className="absolute inset-0 bg-black opacity-20" />

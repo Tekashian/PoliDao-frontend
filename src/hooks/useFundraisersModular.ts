@@ -2,6 +2,7 @@
 // Enumeracja fundraiserów w architekturze modularnej (Core + Storage).
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
+import { getRpcUrls } from '@/lib/provider';
 import { fetchFundraiser, fetchFundraiserCount } from '@/blockchain/contracts';
 
 export type ModularFundraiser = {
@@ -102,10 +103,8 @@ async function fetchFundraiserCached(provider: ethers.AbstractProvider, id: numb
 }
 function useProvider() {
   return useMemo(() => {
-    const url =
-      process.env.NEXT_PUBLIC_RPC_URL ||
-      process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL ||
-      'https://sepolia.infura.io/v3/a5b92b367ca74b259a2f48df6e8dcfa1';
+    const urls = getRpcUrls();
+    const url = urls[0] || 'https://rpc.sepolia.org';
     
     const provider = new ethers.JsonRpcProvider(url);
     
