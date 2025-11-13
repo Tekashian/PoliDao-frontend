@@ -1,13 +1,19 @@
 import { ethers } from 'ethers';
 import routerAbi from './routerAbi';
 import coreAbi from './coreAbi';
+import storageAbi from './storageAbi';
 
-export const ROUTER_ADDRESS = '0xB8DDB0D2Bce9200C87e53Ed06F4Ed2a15dde3423' as `0x${string}`;
+// Updated contract addresses (Router/Core/Storage) per migration request
+export const ROUTER_ADDRESS = '0x1B3eb6b653dc1f5caa084aE8a33FcA0aF609dE2b' as `0x${string}`;
 export const ROUTER_ABI = routerAbi;
 
-export const CORE_ADDRESS = '0x9362d1b929c8cC161830292b95Ad5E1187239a38' as `0x${string}`;
+// New proxy Core address (minimal ABI now) – retained for compatibility where referenced
+export const CORE_ADDRESS = '0xD573d2F7b33363c8A7bE90c93389Ee2fc30f32eb' as `0x${string}`;
 
-export const ANALYTICS_ADDRESS = '0x687e6294cf28D1b0D12AF25D8B23f298A5F1705B' as `0x${string}`;
+// Direct Storage address (module resolution & media/updates mapping)
+export const STORAGE_ADDRESS = '0xe7f4fF854dBfDFA1A454278E3F7127e4bb4d2B6B' as `0x${string}`;
+
+// Legacy constant removed: ANALYTICS_ADDRESS is now resolved dynamically from Storage.modules('ANALYTICS')
 
 export const polidaoContractConfig = {
   address: ROUTER_ADDRESS,
@@ -32,25 +38,47 @@ export async function getCoreAddress(): Promise<`0x${string}`> {
   return CORE_ADDRESS;
 }
 
+// Graceful router read helper: returns null on CALL_EXCEPTION / missing revert data
+export async function safeRouterRead<T>(
+  provider: ethers.AbstractProvider,
+  fn: (router: ethers.Contract) => Promise<T>,
+  context: string
+): Promise<T | null> {
+  const router = new ethers.Contract(ROUTER_ADDRESS, routerAbi, provider);
+  try {
+    return await fn(router);
+  } catch (e) {
+    const err = e as Error & { code?: string; message?: string };
+    if (err?.code === 'CALL_EXCEPTION' || /missing revert data/i.test(err?.message || '')) {
+      console.warn(`Router read failed (${context}) – treating as null`);
+      return null;
+    }
+    throw err;
+  }
+}
+
 async function retryWithBackoff<T>(
   fn: () => Promise<T>,
   maxRetries = 2,
   baseDelay = 1000,
   context = 'operation'
 ): Promise<T> {
-  let lastError: any;
+  let lastError: unknown;
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await fn();
-    } catch (error: any) {
+    } catch (error) {
       lastError = error;
       
       // Check if this is a rate limit error
-      const isRateLimit = error?.message?.includes('Too Many Requests') ||
-                         error?.message?.includes('-32005') ||
-                         error?.code === -32005 ||
-                         error?.status === 429;
+  const err = error as (Error & { code?: string; status?: number });
+      const msg: string = err?.message || '';
+  const codeStr = String(err?.code ?? '');
+  const isRateLimit = msg.includes('Too Many Requests') ||
+         msg.includes('-32005') ||
+         codeStr === '-32005' ||
+         err?.status === 429;
       
       if (attempt === maxRetries) {
         console.error(`${context} failed after ${maxRetries + 1} attempts:`, error);
@@ -64,7 +92,7 @@ async function retryWithBackoff<T>(
       // For rate limits, wait longer
       const actualDelay = isRateLimit ? Math.max(delay, 2000 + Math.random() * 1000) : delay;
       
-      console.warn(`${context} attempt ${attempt + 1} failed, retrying in ${actualDelay}ms:`, error?.message);
+  console.warn(`${context} attempt ${attempt + 1} failed, retrying in ${actualDelay}ms:`, msg);
       await new Promise(resolve => setTimeout(resolve, actualDelay));
     }
   }
@@ -80,7 +108,7 @@ async function processBatch<T, R>(
   context = 'batch'
 ): Promise<R[]> {
   const results: R[] = [];
-  const errors: any[] = [];
+  const errors: unknown[] = [];
   
   // Process all items in parallel with concurrency limit
   const semaphore = Array(concurrency).fill(null);
@@ -110,7 +138,9 @@ async function processBatch<T, R>(
   
   // If too many failures, throw an aggregate error
   if (errors.length > 0 && results.length === 0) {
-    throw new Error(`All batch operations failed. Sample error: ${errors[0]?.message}`);
+    const first = errors[0] as (Error & { message?: string }) | undefined;
+    const msg = first?.message || 'Unknown error';
+    throw new Error(`All batch operations failed. Sample error: ${msg}`);
   }
   
   return results;
@@ -153,55 +183,85 @@ export type RouterFundraiserProgress = {
   suspensionTime: bigint;
 };
 
+type RawRouterProgress = [
+  bigint, // raised
+  bigint, // goal
+  bigint, // percentage
+  bigint, // donorsCount
+  bigint, // timeLeft
+  bigint, // refundDeadline
+  boolean, // isSuspended
+  bigint // suspensionTime
+];
+
 export async function fetchFundraiserProgress(
   provider: ethers.AbstractProvider,
   id: number | bigint
 ): Promise<RouterFundraiserProgress> {
-  const contract = new ethers.Contract(ROUTER_ADDRESS, routerAbi, provider) as any;
-  const p: any = await contract.getFundraiserProgress(id);
+  const contract = new ethers.Contract(ROUTER_ADDRESS, routerAbi, provider);
+  const p = await contract.getFundraiserProgress(id) as RawRouterProgress;
   return {
-    raised: (p?.[0] ?? p?.raised ?? 0n) as bigint,
-    goal: (p?.[1] ?? p?.goal ?? 0n) as bigint,
-    percentage: (p?.[2] ?? p?.percentage ?? 0n) as bigint,
-    donorsCount: (p?.[3] ?? p?.donorsCount ?? 0n) as bigint,
-    timeLeft: (p?.[4] ?? p?.timeLeft ?? 0n) as bigint,
-    refundDeadline: (p?.[5] ?? p?.refundDeadline ?? 0n) as bigint,
-    isSuspended: Boolean(p?.[6] ?? p?.isSuspended ?? false),
-    suspensionTime: (p?.[7] ?? p?.suspensionTime ?? 0n) as bigint,
+    raised: p[0] ?? 0n,
+    goal: p[1] ?? 0n,
+    percentage: p[2] ?? 0n,
+    donorsCount: p[3] ?? 0n,
+    timeLeft: p[4] ?? 0n,
+    refundDeadline: p[5] ?? 0n,
+    isSuspended: p[6] ?? false,
+    suspensionTime: p[7] ?? 0n,
   };
 }
 
+// Fetch total fundraiser count via Router (Core no longer exposes this in new minimal ABI)
 export async function fetchFundraiserCount(provider: ethers.AbstractProvider) {
   return retryWithBackoff(async () => {
-    const coreAddr = await getCoreAddress();
-    const core = new ethers.Contract(coreAddr, coreAbi, provider);
-    const count: bigint = await core.getFundraiserCount();
+    const router = new ethers.Contract(ROUTER_ADDRESS, routerAbi, provider);
+    const count: bigint = await router.getFundraiserCount();
     return count;
   }, 3, 1000, 'fetchFundraiserCount');
 }
 
 export async function fetchFundraiser(provider: ethers.AbstractProvider, id: bigint | number) {
   return retryWithBackoff(async () => {
-    const coreAddr = await getCoreAddress();
-    const core = new ethers.Contract(coreAddr, coreAbi, provider);
-    const [details, basic] = await Promise.all([
-      core.getFundraiserDetails(id),
-      core.getFundraiserBasicInfo(id),
-    ]);
-    // Map details as before
-    const mappedDetails = details as FundraiserDetails;
+    const fundraiserId = BigInt(id);
+    if (fundraiserId < 1n) throw new Error('Invalid fundraiser id');
+
+    const detailsRaw = await safeRouterRead(provider, r => r.getFundraiserDetails(fundraiserId), 'getFundraiserDetails');
+    if (!detailsRaw) throw new Error(`Fundraiser ${fundraiserId} not found`);
+    const progressRaw = await safeRouterRead(provider, r => r.getFundraiserProgress(fundraiserId), 'getFundraiserProgress');
+    // If progress not available, fabricate zeroed progress to allow listing
+    const mappedDetails = detailsRaw as FundraiserDetails;
+
+    // If both detail raisedAmount and progress raised are zero, attempt Storage fallback.
+    let storageRaised: bigint | null = null;
+    let storageGoal: bigint | null = null;
+    if ((mappedDetails.raisedAmount === 0n) && (!progressRaw || progressRaw[0] === 0n)) {
+      const storage = new ethers.Contract(STORAGE_ADDRESS, storageAbi, provider);
+      try {
+        // Storage.fundraisers(fundraiserId) returns PackedFundraiserData tuple
+        const packed: any = await storage.fundraisers(fundraiserId);
+        // packed.goalAmount, packed.raisedAmount (uint128 each)
+        if (packed) {
+          storageGoal = packed.goalAmount ?? null;
+          storageRaised = packed.raisedAmount ?? null;
+        }
+      } catch (e) {
+        console.warn('Storage fallback failed for fundraiser', fundraiserId.toString(), e);
+      }
+    }
+    const p = (progressRaw || [0n, mappedDetails.goalAmount, 0n, 0n, 0n, 0n, false, 0n]) as RawRouterProgress;
     const progress: FundraiserProgress = {
-      raised: (basic?.[2] ?? basic?.raised ?? mappedDetails.raisedAmount ?? 0n) as bigint,
-      goal: (basic?.[3] ?? basic?.goal ?? mappedDetails.goalAmount ?? 0n) as bigint,
-      percentage: 0n,
-      donorsCount: 0n,
-      timeLeft: 0n,
-      refundDeadline: 0n,
-      isSuspended: Boolean((details as any)?.isSuspended ?? false),
-      suspensionTime: 0n,
+      raised: (p[0] && p[0] > 0n) ? p[0] : (storageRaised ?? mappedDetails.raisedAmount ?? 0n),
+      goal: (p[1] && p[1] > 0n) ? p[1] : (storageGoal ?? mappedDetails.goalAmount ?? 0n),
+      percentage: p[2] ?? 0n,
+      donorsCount: p[3] ?? 0n,
+      timeLeft: p[4] ?? 0n,
+      refundDeadline: p[5] ?? 0n,
+      isSuspended: p[6] ?? false,
+      suspensionTime: p[7] ?? 0n,
     };
-    return { id: BigInt(id), details: mappedDetails, progress };
-  }, 2, 1200, `fetchFundraiser[${id}]`);
+    return { id: fundraiserId, details: mappedDetails, progress };
+  }, 1, 900, `fetchFundraiser[${id}]`);
 }
 
 // Safe wrapper – zwraca null, jeśli ID nie istnieje/revertuje

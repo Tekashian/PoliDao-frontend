@@ -72,19 +72,23 @@ export function useGetAllFundraisers() {
 
         // Przyjmujemy 1-based IDs: 1..total
         const ids = Array.from({ length: total }, (_, i) => i + 1);
-        // Równoległe pobranie szczegółów
-        const rows = await Promise.all(
+        // Równoległe pobranie szczegółów (bez przerwania na pojedynczym błędzie)
+        const settled = await Promise.allSettled(
           ids.map((id) => fetchFundraiser(provider as ethers.Provider, id))
         );
+        const rows = settled
+          .filter(r => r.status === 'fulfilled')
+          .map(r => (r as PromiseFulfilledResult<ReturnType<typeof fetchFundraiser>>).value)
+          .filter(r => !!r && r.details);
 
         if (!mounted) return;
 
         // Mapowanie do interfejsu Campaign używanego w UI
-        const mapped: Campaign[] = rows.map((row, idx) => {
+        const mapped: Campaign[] = rows.map((row) => {
           const d = row.details;
           const p = row.progress;
           return {
-            id: BigInt(idx + 1),
+            id: row.id,
             creator: (d.creator as `0x${string}`),
             token: (d.token as `0x${string}`),
             target: d.goalAmount,
@@ -92,7 +96,7 @@ export function useGetAllFundraisers() {
             endTime: d.endDate,
             isFlexible: false, // Router nie zwraca tego pola
             closureInitiated: false, // brak w Routerze
-            campaignId: idx,
+            campaignId: Number(row.id),
           };
         });
 

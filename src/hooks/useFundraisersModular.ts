@@ -210,7 +210,7 @@ export function useFundraisersModular(page = 0, pageSize = 50) {
         throw new Error(`Unable to fetch any fundraisers (total: ${total}). This may be due to rate limiting.`);
       }
 
-      const mapped: ModularFundraiser[] = rows.map((row) => {
+      const mapped: ModularFundraiser[] = rows.filter(r => !!r && r.details).map((row) => {
         const d = row.details as any;
         const p = row.progress as any;
 
@@ -242,7 +242,7 @@ export function useFundraisersModular(page = 0, pageSize = 50) {
         };
       });
 
-      setFundraisers(mapped);
+  setFundraisers(mapped.filter(m => !!m.title));
     } catch (e: any) {
       console.error('useFundraisersModular load error:', e);
       setError(e instanceof Error ? e : new Error(e?.message ?? 'Failed to load fundraisers'));

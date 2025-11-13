@@ -8,7 +8,6 @@ import {
   Typography,
   Button,
   Chip,
-  Grid,
   Container,
   Dialog,
   DialogTitle,
@@ -39,10 +38,10 @@ import { formatUnits, parseUnits } from "viem";
 import { Interface, keccak256, toUtf8Bytes } from 'ethers';
 import { getSmartProvider } from '../../..//lib/provider';
 import { poliDaoRouterAbi } from '../../../blockchain/routerAbi';
-import { ROUTER_ADDRESS } from '../../../blockchain/contracts';
+import { ROUTER_ADDRESS, STORAGE_ADDRESS } from '../../../blockchain/contracts';
 import { poliDaoAnalyticsAbi } from '../../../blockchain/analyticsAbi';
-import { poliDaoCoreAbi } from '../../../blockchain/coreAbi';
-import { ANALYTICS_ADDRESS } from '../../../blockchain/contracts';
+// Core ABI minimized post-migration; direct module events now parsed via Storage/Analytics if needed
+// import { poliDaoCoreAbi } from '../../../blockchain/coreAbi'; // no longer used for event parsing
 import { poliDaoStorageAbi } from '../../../blockchain/storageAbi';
 
 import { sepolia } from 'viem/chains';
@@ -126,8 +125,10 @@ interface Update {
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
 
 const MEDIA_KEY = keccak256(toUtf8Bytes('MEDIA')) as `0x${string}`;
-
 const UPDATES_KEY = keccak256(toUtf8Bytes('UPDATES')) as `0x${string}`;
+const ANALYTICS_KEY = keccak256(toUtf8Bytes('ANALYTICS')) as `0x${string}`;
+// keep module keys for future media/update/analytics integration
+void MEDIA_KEY; void UPDATES_KEY; void ANALYTICS_KEY;
 
 export default function CampaignPage() {
   const params = useParams();
@@ -173,66 +174,57 @@ export default function CampaignPage() {
   const idNum = Number(campaignId);
   const invalid = !campaignId || Number.isNaN(idNum) || idNum < 0;
 
-  // WSZYSTKIE useMemo muszą być w stałej kolejności
-  const calls = useMemo(() => {
-    if (invalid) return [];
-    const primary = {
-      address: ROUTER_ADDRESS,
-      abi: poliDaoRouterAbi,
-      functionName: 'getFundraiserDetails',
-      args: [BigInt(idNum)],
-      chainId: sepolia.id,
-    } as const;
-    const alt = idNum > 0 ? {
-      address: ROUTER_ADDRESS,
-      abi: poliDaoRouterAbi,
-      functionName: 'getFundraiserDetails',
-      args: [BigInt(idNum - 1)],
-      chainId: sepolia.id,
-    } as const : null;
-    return alt ? [primary, alt] : [primary];
-  }, [idNum, invalid]);
-
-  // PRZENIESIONE: useReadContracts PRZED useMemo który używa data
-  const { data, isLoading, error: contractError } = useReadContracts({
-    contracts: calls,
-    query: { enabled: calls.length > 0 }
+  // Fundraiser count – gate detail calls to valid IDs to avoid revert
+  const { data: totalFundraisers } = useReadContract({
+    address: ROUTER_ADDRESS,
+    abi: poliDaoRouterAbi,
+    functionName: 'getFundraiserCount',
+    chainId: sepolia.id,
   });
 
-  // TERAZ możemy bezpiecznie użyć data w useMemo
+  const validId = useMemo(() => {
+    if (invalid) return null;
+    const total = Number(totalFundraisers ?? 0n);
+    if (idNum < 1 || (total > 0 && idNum > total)) return null;
+    return BigInt(idNum);
+  }, [idNum, invalid, totalFundraisers]);
+
+  // Read details only for a valid existing ID
+  const { data: detailsTuple, isLoading: isDetailsLoading, error: detailsError } = useReadContract({
+    address: ROUTER_ADDRESS,
+    abi: poliDaoRouterAbi,
+    functionName: 'getFundraiserDetails',
+    args: validId ? [validId] : undefined,
+    chainId: sepolia.id,
+    query: { enabled: !!validId },
+  });
+
   const parsed = useMemo(() => {
-    if (!data || !Array.isArray(data)) return null;
-    for (let i = 0; i < data.length; i++) {
-      const res = data[i];
-      if (!res || res.error || !res.result) continue;
-      const raw: any = res.result;
-      const creator = (raw.creator ?? raw[9] ?? ZERO_ADDR) as string;
-      if (creator && creator.toLowerCase() !== ZERO_ADDR) {
-        const endDate = (raw.endDate ?? raw[3] ?? 0n) as bigint;
-        const fundraiserType = Number(raw.fundraiserType ?? raw[4] ?? 0);
-        const token = (raw.token ?? raw[6] ?? ZERO_ADDR) as `0x${string}`;
-        const goalAmount = (raw.goalAmount ?? raw[7] ?? 0n) as bigint;
-        const raisedAmount = (raw.raisedAmount ?? raw[8] ?? 0n) as bigint;
-        const status = Number(raw.status ?? raw[5] ?? 0);
-        const title = (raw.title ?? raw[0] ?? '') as string;
-        const description = (raw.description ?? raw[1] ?? '') as string;
-        const realId = i === 0 ? idNum : Math.max(idNum - 1, 0);
-        return {
-          id: realId,
-          creator: creator as `0x${string}`,
-          token,
-          goalAmount,
-          raisedAmount,
-          endDate,
-          isFlexible: goalAmount === 0n || fundraiserType === 1,
-          status,
-          title,
-          description,
-        };
-      }
-    }
-    return null;
-  }, [data, idNum]);
+    if (!detailsTuple || !validId) return null;
+    const raw: any = detailsTuple;
+    const creator = (raw.creator ?? raw[9] ?? ZERO_ADDR) as string;
+    if (!creator || creator.toLowerCase() === ZERO_ADDR) return null;
+    const endDate = (raw.endDate ?? raw[3] ?? 0n) as bigint;
+    const fundraiserType = Number(raw.fundraiserType ?? raw[4] ?? 0);
+    const token = (raw.token ?? raw[6] ?? ZERO_ADDR) as `0x${string}`;
+    const goalAmount = (raw.goalAmount ?? raw[7] ?? 0n) as bigint;
+    const raisedAmount = (raw.raisedAmount ?? raw[8] ?? 0n) as bigint;
+    const status = Number(raw.status ?? raw[5] ?? 0);
+    const title = (raw.title ?? raw[0] ?? '') as string;
+    const description = (raw.description ?? raw[1] ?? '') as string;
+    return {
+      id: Number(validId),
+      creator: creator as `0x${string}`,
+      token,
+      goalAmount,
+      raisedAmount,
+      endDate,
+      isFlexible: goalAmount === 0n || fundraiserType === 1,
+      status,
+      title,
+      description,
+    };
+  }, [detailsTuple, validId]);
 
   // Choose first valid response (creator != zero) and normalize
   const selectedFundraiserId = parsed ? parsed.id : null;
@@ -282,74 +274,38 @@ export default function CampaignPage() {
   // Etherscan base (Sepolia)
   const ETHERSCAN_BASE = 'https://sepolia.etherscan.io';
 
-  const { data: coreAddress } = useReadContract({
-    address: ROUTER_ADDRESS,
-    abi: poliDaoRouterAbi,
-    functionName: 'coreContract',
-    chainId: sepolia.id,
-  });
+  // New module resolution (post-migration): direct Storage address & modules mapping keys
+  const STORAGE_ADDRESS = '0xe7f4fF854dBfDFA1A454278E3F7127e4bb4d2B6B' as `0x${string}`;
+  const ANALYTICS_KEY = keccak256(toUtf8Bytes('ANALYTICS')) as `0x${string}`;
 
-  const { data: coreSpender } = useReadContract({
-    address: coreAddress as `0x${string}` | undefined,
-    abi: poliDaoCoreAbi,
-    functionName: 'spenderAddress',
+  const { data: analyticsAddrFromStorage } = useReadContract({
+    address: STORAGE_ADDRESS,
+    abi: poliDaoStorageAbi,
+    functionName: 'modules',
+    args: [ANALYTICS_KEY],
     chainId: sepolia.id,
-    query: { enabled: !!coreAddress },
-  });
-
-  const { data: analyticsAddress } = useReadContract({
-    address: coreAddress as `0x${string}` | undefined,
-    abi: poliDaoCoreAbi,
-    functionName: 'analyticsModule',
-    chainId: sepolia.id,
-    query: { enabled: !!coreAddress },
-  });
-
-  const { data: storageAddress } = useReadContract({
-    address: coreAddress as `0x${string}` | undefined,
-    abi: poliDaoCoreAbi,
-    functionName: 'storageContract',
-    chainId: sepolia.id,
-    query: { enabled: !!coreAddress },
-  });
-
-  const { data: updatesModuleAddress } = useReadContract({
-    address: coreAddress as `0x${string}` | undefined,
-    abi: poliDaoCoreAbi,
-    functionName: 'updatesModule',
-    chainId: sepolia.id,
-    query: { enabled: !!coreAddress },
   });
 
   const { data: updatesAddrFromStorage } = useReadContract({
-    address: storageAddress as `0x${string}` | undefined,
+    address: STORAGE_ADDRESS,
     abi: poliDaoStorageAbi,
     functionName: 'modules',
     args: [UPDATES_KEY],
     chainId: sepolia.id,
-    query: { enabled: !!storageAddress },
   });
 
-  // WSZYSTKIE useMemo dla derived values
+  // Derived module addresses
   const analyticsResolved = useMemo(() => {
     const zero = ZERO_ADDR.toLowerCase();
-    const fixed = (ANALYTICS_ADDRESS as string | undefined)?.toLowerCase?.();
-    const fromCore = (analyticsAddress as string | undefined)?.toLowerCase?.();
-    if (fixed && fixed !== zero) return ANALYTICS_ADDRESS as `0x${string}`;
-    if (fromCore && fromCore !== zero) return analyticsAddress as `0x${string}`;
-    return undefined;
-  }, [analyticsAddress]);
+    const addr = (analyticsAddrFromStorage as string | undefined)?.toLowerCase?.();
+    return addr && addr !== zero ? (analyticsAddrFromStorage as `0x${string}`) : undefined;
+  }, [analyticsAddrFromStorage]);
 
   const updatesResolved = useMemo(() => {
     const zero = ZERO_ADDR.toLowerCase();
-    const fromStorage = (updatesAddrFromStorage as string | undefined)?.toLowerCase?.();
-    const fromCore = (updatesModuleAddress as string | undefined)?.toLowerCase?.();
-    const chosen =
-      fromStorage && fromStorage !== zero ? (updatesAddrFromStorage as `0x${string}`) :
-      fromCore && fromCore !== zero ? (updatesModuleAddress as `0x${string}`) :
-      undefined;
-    return chosen;
-  }, [updatesAddrFromStorage, updatesModuleAddress]);
+    const addr = (updatesAddrFromStorage as string | undefined)?.toLowerCase?.();
+    return addr && addr !== zero ? (updatesAddrFromStorage as `0x${string}`) : undefined;
+  }, [updatesAddrFromStorage]);
 
   // Diagnostyka: brak adresu modułu Analytics -> zapytania donors są wyłączone
   useEffect(() => {
@@ -429,11 +385,9 @@ export default function CampaignPage() {
 
   // Memoized values dla spender logic
   const spenderCandidates = React.useMemo(() => {
-    const list: string[] = [];
-    if (coreSpender && String(coreSpender).toLowerCase() !== ZERO_ADDR.toLowerCase()) list.push(String(coreSpender));
-    if (coreAddress && String(coreAddress).toLowerCase() !== ZERO_ADDR.toLowerCase()) list.push(String(coreAddress));
-    return Array.from(new Set(list.map(x => x.toLowerCase()))) as `0x${string}`[];
-  }, [coreSpender, coreAddress]);
+    // After migration the Router handles donation flows – treat Router as spender
+    return [ROUTER_ADDRESS] as `0x${string}`[];
+  }, []);
 
   const allowanceCalls = React.useMemo(() => {
     if (!campaignData?.token || !address || spenderCandidates.length === 0) return [];
@@ -503,12 +457,12 @@ export default function CampaignPage() {
       setLoading(false);
       return;
     }
-    if (isLoading) {
+    if (isDetailsLoading) {
       setLoading(true);
       return;
     }
-    if (contractError) {
-      setError(`Błąd pobierania danych kampanii: ${contractError.message}`);
+    if (detailsError) {
+      setError(`Błąd pobierania danych kampanii: ${detailsError.message}`);
       setLoading(false);
       return;
     }
@@ -544,7 +498,7 @@ export default function CampaignPage() {
     setUniqueDonorsCount(Number(donorsCount));
     setError(null);
     setLoading(false);
-  }, [invalid, isLoading, contractError, parsed, progressTuple, progressError]);
+  }, [invalid, isDetailsLoading, detailsError, parsed, progressTuple, progressError]);
 
   // 2. Update refresh time
   useEffect(() => {
@@ -607,90 +561,69 @@ export default function CampaignPage() {
     setDonors(aggregated);
   }, [donations, donors.length]);
 
-  // 6. Fetch donation logs
+  // 6. Fetch donation logs (migrated to Analytics module events)
+  const { data: analyticsModuleAddress } = useReadContract({
+    address: STORAGE_ADDRESS,
+    abi: poliDaoStorageAbi,
+    functionName: 'modules',
+    args: [ANALYTICS_KEY],
+    chainId: sepolia.id,
+  });
+
   useEffect(() => {
     if (selectedIdKey < 0) return;
-
-    // Provider is resolved via smart fallback (Infura/Alchemy/public)
+    if (!analyticsModuleAddress || analyticsModuleAddress === ZERO_ADDR) return; // analytics module not set yet
 
     let disposed = false;
 
     const fetchDonationLogs = async () => {
       try {
-  const provider = await getSmartProvider();
-
-        const fundraiserTopic = '0x' + BigInt(selectedIdKey).toString(16).padStart(64, '0');
-
-        const parseLogs = async (logs: any[], iface: Interface) => {
-          const items = await Promise.all(
-            logs.map(async (log) => {
-              try {
-                const decoded = iface.parseLog(log as any);
-                const args = decoded.args as any;
-
-                const fundraiserId = (args?.fundraiserId ?? args?.id ?? args?.[0] ?? null) as bigint | null;
-                if (fundraiserId === null || Number(fundraiserId) !== Number(selectedIdKey)) return null;
-
-                const donor = (args?.donor ?? args?.[1] ?? ZERO_ADDR) as string;
-                const amountRaw = (args?.amount ?? args?.[3] ?? 0n) as bigint;
-
-                const block = await provider.getBlock(log.blockHash!);
-                const tsMs = block?.timestamp ? Number(block.timestamp) * 1000 : Date.now();
-
-                return {
-                  donor: donor?.toLowerCase?.() || ZERO_ADDR,
-                  amount: Number(formatUnits(amountRaw, decimalsKey)),
-                  timestamp: tsMs,
-                  txHash: log.transactionHash || '',
-                } as DonationLog;
-              } catch {
-                return null;
-              }
-            })
-          );
-
-          return items.filter((x): x is DonationLog => !!x).sort((a, b) => b.timestamp - a.timestamp);
-        };
-
-        // 1) Try Core logs
-        let items: DonationLog[] = [];
-        if (coreAddress) {
-          const coreIface = new Interface(poliDaoCoreAbi as any);
-          const coreEv = (coreIface as any).getEvent?.('DonationMade') ?? (coreIface.fragments.find((f: any) => f.type === 'event' && f.name === 'DonationMade'));
-          const coreTopic = (coreIface as any).getEventTopic ? (coreIface as any).getEventTopic(coreEv) : (coreIface as any).getEventTopic?.('DonationMade');
-
-          const coreStart = process.env.NEXT_PUBLIC_CORE_START_BLOCK;
-          const fromBlockCore = coreStart ? BigInt(coreStart) : 0n;
-
-          const logsCore = await provider.getLogs({
-            address: coreAddress as string,
-            fromBlock: fromBlockCore,
-            toBlock: 'latest',
-            topics: [coreTopic, fundraiserTopic],
-          });
-
-          if (logsCore.length > 0) {
-            items = await parseLogs(logsCore, coreIface);
-          }
+        const provider = await getSmartProvider();
+        const iface = new Interface(poliDaoAnalyticsAbi as any);
+        const ev = (iface as any).getEvent?.('DonationMade') ?? (iface.fragments.find((f: any) => f.type === 'event' && f.name === 'DonationMade'));
+        if (!ev) {
+          if (!disposed) setDonations([]);
+          return;
         }
+        const topic = (iface as any).getEventTopic ? (iface as any).getEventTopic(ev) : (iface as any).getEventTopic?.('DonationMade');
+        const fundraiserTopic = '0x' + BigInt(selectedIdKey).toString(16).padStart(64, '0');
+        const fromBlock = process.env.NEXT_PUBLIC_ANALYTICS_START_BLOCK ? BigInt(process.env.NEXT_PUBLIC_ANALYTICS_START_BLOCK) : 0n;
 
-        // 2) Router fallback usunięty – Router nie emituje DonationMade, więc i tak nic nie zwróci.
-        // if (!items.length) { ... }  <-- intentionally removed
+        const logs = await provider.getLogs({
+          address: analyticsModuleAddress as string,
+          fromBlock,
+          toBlock: 'latest',
+          topics: [topic, fundraiserTopic],
+        });
 
-        if (!disposed) setDonations(items);
+        const parsed: DonationLog[] = [];
+        for (const log of logs) {
+          try {
+            const decoded = iface.parseLog(log as any);
+            const args = decoded.args as any;
+            const donorAddr = (args?.donor ?? args?.[1] ?? ZERO_ADDR) as string;
+            const amountRaw = (args?.amount ?? args?.[3] ?? 0n) as bigint;
+            const block = await provider.getBlock(log.blockHash!);
+            const tsMs = block?.timestamp ? Number(block.timestamp) * 1000 : Date.now();
+            parsed.push({
+              donor: donorAddr.toLowerCase(),
+              amount: Number(formatUnits(amountRaw, decimalsKey)),
+              timestamp: tsMs,
+              txHash: log.transactionHash || '',
+            });
+          } catch {/* ignore single log parse */}
+        }
+        if (!disposed) setDonations(parsed.sort((a,b)=>b.timestamp-a.timestamp));
       } catch (err) {
-        console.warn('Błąd pobierania logów donacji:', err);
+        console.warn('Błąd pobierania logów donacji (Analytics):', err);
         if (!disposed) setDonations([]);
       }
     };
 
     fetchDonationLogs();
     const interval = setInterval(fetchDonationLogs, 15000);
-    return () => {
-      disposed = true;
-      clearInterval(interval);
-    };
-  }, [selectedIdKey, chainKey, decimalsKey, coreAddress]);
+    return () => { disposed = true; clearInterval(interval); };
+  }, [selectedIdKey, chainKey, decimalsKey, analyticsModuleAddress]);
 
   // 8. Fetch updates
   useEffect(() => {
@@ -1087,7 +1020,7 @@ export default function CampaignPage() {
   };
 
   // Show loading state – only core read
-  if (loading || isLoading) {
+  if (loading || isDetailsLoading) {
     return (
       <div className="campaign cp-root min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
         <Header />
@@ -1660,20 +1593,18 @@ export default function CampaignPage() {
 
           <Box sx={{ mb: 2 }}>
             <Typography variant="body2" sx={{ mb: 1 }}>Szybka wpłata:</Typography>
-            <Grid container spacing={1}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1 }}>
               {[10, 50, 100, 500].map((amount) => (
-                <Grid item xs={6} key={amount}>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    fullWidth
-                    onClick={() => setDonateAmount(amount.toString())}
-                  >
-                    {amount} {displayTokenSymbol}
-                  </Button>
-                </Grid>
+                <Button
+                  key={amount}
+                  variant="outlined"
+                  size="small"
+                  onClick={() => setDonateAmount(amount.toString())}
+                >
+                  <>{amount} {displayTokenSymbol}</>
+                </Button>
               ))}
-            </Grid>
+            </Box>
           </Box>
           
           {needsApproval && (
