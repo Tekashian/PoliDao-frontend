@@ -1260,9 +1260,9 @@ export default function HomePage() {
         {/* NEW: Trust + Counter + Extra value guarded by data availability */}
         <div className="mt-12 py-10">
           <div className="container mx-auto px-4">
-            <div className="grid gap-8 md:grid-cols-3 items-center text-center">
+            <div className="grid gap-4 md:gap-8 md:grid-cols-3 items-stretch text-center">
               {/* Left: Trustworthy */}
-              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 flex flex-col">
                 <div className="text-4xl mb-3">🛡️</div>
                 <h3 className="text-lg font-bold text-gray-800 mb-1">Trustworthy</h3>
                 <p className="text-gray-600 text-sm">
@@ -1271,22 +1271,22 @@ export default function HomePage() {
               </div>
 
               {/* Center: Big counter (show placeholder when campaigns unavailable) */}
-              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8">
-                <div className="text-5xl sm:text-6xl font-extrabold bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(90deg,#10b981,#065f46)' }}>
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 flex flex-col overflow-hidden">
+                <div className="text-4xl sm:text-5xl md:text-6xl font-extrabold bg-clip-text text-transparent break-words" style={{ backgroundImage: 'linear-gradient(90deg,#10b981,#065f46)', wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                   {/* ...existing code to compute totalRaisedUSDC... */}
                   {/* If rate-limited and no data yet, show 0 for clarity */}
                   {fundraisers && fundraisers.length >= 0 ? totalRaisedUSDC : '0'} USDC
                 </div>
-                <p className="text-gray-700 font-semibold mt-2">
+                <p className="text-gray-700 font-semibold mt-2 text-sm sm:text-base">
                   Raised on PolyFund (on‑chain)
                 </p>
-                <p className="text-gray-500 text-sm mt-1">
+                <p className="text-gray-500 text-xs sm:text-sm mt-1">
                   Updated in real-time based on contract data
                 </p>
               </div>
 
               {/* Right: Something extra */}
-              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 flex flex-col">
                 <div className="text-4xl mb-3">🔍</div>
                 <h3 className="text-lg font-bold text-gray-800 mb-1">Open‑source and on‑chain</h3>
                 <p className="text-gray-600 text-sm">
